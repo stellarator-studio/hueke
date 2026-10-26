@@ -1,0 +1,5 @@
+name: hueke-core
+channels:
+  - conda-forge
+dependencies:
+  - nodejs=22
