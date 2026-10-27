@@ -3,14 +3,15 @@
 import { balance, type AccountTreeRow, type Hueke } from "../../index.js";
 import { UsageError, type CliIO } from "../io.js";
 import { amountText, csv, table } from "../output.js";
-import { FILTERS, filtered, type Command, type Options } from "./command.js";
+import { FILTERS, filtered, OCCURRENCE, type Command, type Options } from "./command.js";
 import { commodityMap } from "./postings.js";
 
 export const balanceCommand: Command = {
   usage:
-    "balance [account...] --file <path> [--at <time>] [--period <time>] [--depth <n>]\n" +
-    "  [--format table|csv]",
-  options: [...FILTERS, "depth"],
+    "balance [account...] --file <path> [--at <time>] [--period <time>] [--overlaps <time>]\n" +
+    "  [--covers <time>] [--axis <axis>] [--status <status,...>] [--involves <commodity,...>]\n" +
+    "  [--planned] [--cancelled] [--depth <n>] [--strict] [--format table|csv]",
+  options: [...FILTERS, ...OCCURRENCE, "depth"],
   run(hueke: Hueke, args: readonly string[], options: Options, io: CliIO): number {
     const depth = options.depth === undefined ? undefined : Number(options.depth);
     if (depth !== undefined && !(Number.isInteger(depth) && depth >= 1))

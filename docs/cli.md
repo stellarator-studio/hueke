@@ -6,15 +6,15 @@
 
 | Feature | Status |
 | --- | --- |
-| Loading | `specified` |
-| Commands | `specified` |
-| Filters | `specified` |
-| Output | `specified` |
+| Loading | `implemented` |
+| Commands | `implemented` |
+| Filters | `implemented` |
+| Output | `implemented` |
 | Exit status | `implemented` |
 
 ## Concepts
 
-The command is named `hueke`. It computes nothing the API does not return, and it never writes files.
+The command is named `hueke`. It computes nothing the API does not return, apart from the running balance of `reconcile --balance`, and it never writes files.
 
 ```text
 hueke <command> [arguments] --file <path> [options]
@@ -24,7 +24,7 @@ hueke <command> [arguments] --file <path> [options]
 
 ### Loading
 
-Status: `specified`
+Status: `implemented`
 
 | Option | Meaning |
 | --- | --- |
@@ -38,7 +38,7 @@ Status: `specified`
 
 ### Commands
 
-Status: `specified`
+Status: `implemented`
 
 | Command | Arguments | API |
 | --- | --- | --- |
@@ -53,7 +53,7 @@ Status: `specified`
 
 ### Filters
 
-Status: `specified`
+Status: `implemented`
 
 `balance`, `query` and `register` build one query from these options. Together they combine with AND.
 
@@ -74,10 +74,11 @@ Status: `specified`
 - Without `--axis`, these commands use the API's default, `effective` (see [core/query.md](core/query.md), "Axis of a query").
 - `--depth <n>` (`balance` only, n from 1) leaves out rows whose account has more than n segments. It changes only what is shown.
 - `reconcile` takes no filters: it reads `--at` as its `at`.
+- `--balance` (`reconcile` only) adds the balance after each of the period's postings, and moves opening and closing into that balance column. It changes only what is shown.
 
 ### Output
 
-Status: `specified`
+Status: `implemented`
 
 `--format table` (default) or `csv`. `reconcile` and `register` have only `table`.
 
@@ -87,7 +88,7 @@ Status: `specified`
 | `balance` | Row of `balance`, in its order, and then one line per commodity | `account`, `subtotal`, `depth`, `value`, `commodity` |
 | `register` | Row of `register`, in its order, and then one line per commodity; after a row, its postings as `query` rows | Table only |
 | `query` | Matched posting, in query order | `date`, `transaction`, `posting`, `occurrence`, `status`, `account`, `value`, `commodity`, `description` |
-| `reconcile` | View, one per commodity | The account, commodity and range, opening, the period's postings, closing, asserted, difference, then the uncleared postings as `query` rows |
+| `reconcile` | View, one per commodity | The account, commodity and range, opening, the period's postings, closing, asserted, difference, then the uncleared postings as `query` rows. With `--balance`, each posting of the period also shows the balance after it, and the amounts of opening and closing are shown in that column |
 
 - `date` is the time on the query's axis, as written: the transaction's accounting time on `accounting`, the posting's effective time on `effective`, the transaction's effective time on `txn-effective` (see [core/time.md](core/time.md), "API"). In `reconcile`, it is always the posting's effective time.
 - **Tables.** Each table is aligned on its own: in `register`, the account rows share one alignment and each row's postings another; in `reconcile`, each view has its own. Amounts are padded with zeros to the commodity's precision and never rounded. `balance` indents each account two spaces per segment after the first and marks subtotal rows `(total)`. `query` shows a mark: `!` planned, `#` cancelled, `*` cleared. `check` prints `<source>:<line>:<column>: <severity> <code>: <message>`. Several `reconcile` views are separated by a blank line.
@@ -167,6 +168,21 @@ uncleared
 2026-10-03    Bank:Checking  -500 NTD  Bookstore
 ```
 
+```text
+$ hueke reconcile Bank:Checking --file main.hueke --at 2026-10-25 --balance
+Bank:Checking  NTD  start .. 2026-10-25
+opening                       0 NTD
+2026-10-01  *  12300 NTD  12300 NTD  Opening
+2026-10-03      -500 NTD  11800 NTD  Bookstore
+2026-10-14  *  -2700 NTD   9100 NTD  Supermarket
+closing                    9100 NTD
+asserted        9100 NTD
+difference         0 NTD
+
+uncleared
+2026-10-03    Bank:Checking  -500 NTD  Bookstore
+```
+
 | Command | Result |
 | --- | --- |
 | `hueke check --file main.hueke` | No output, status 0 |
@@ -175,6 +191,8 @@ uncleared
 | `hueke balance --root ledger --file main.hueke` | Status 2: `main.hueke` in the current directory is outside `--root` |
 | `hueke balance Expenses --file main.hueke --period 2026-10 --depth 1` | One row: `3200 NTD  Expenses (total)` |
 | `hueke query --file main.hueke --status none --format csv` | A header and the two `Bookstore` postings |
+| `hueke reconcile Bank:Checking --file main.hueke --at 2026-10-25 --balance` | The view with the balance after each posting, as above |
+| `hueke balance --file main.hueke --balance` | Status 2: `hueke: --balance does not apply to balance` |
 | `hueke reconcile --file main.hueke --at 2026-10-25` | Status 2: `hueke: reconcile takes exactly one account` |
 | `hueke balance --file main.hueke --format xml` | Status 2: `hueke: unknown format "xml"` |
 | `hueke balance --file main.hueke --period 2026-13` | Status 2; the message names `parse.invalid-time` |

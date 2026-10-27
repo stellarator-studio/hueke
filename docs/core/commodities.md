@@ -6,11 +6,11 @@ A **commodity** is what an amount is counted in: a currency, a security, loyalty
 
 | Feature | Status |
 | --- | --- |
-| Commodity declarations | `specified` |
-| Commodity aliases | `specified` |
-| Precision | `specified` |
-| Inferred precision | `specified` |
-| Item mode | `specified` |
+| Commodity declarations | `implemented` |
+| Commodity aliases | `implemented` |
+| Precision | `implemented` |
+| Inferred precision | `implemented` |
+| Item mode | `implemented` |
 
 ## Concepts
 
@@ -30,7 +30,7 @@ A **commodity** is what an amount is counted in: a currency, a security, loyalty
 
 ### Commodity declarations
 
-Status: `specified`
+Status: `implemented`
 
 - A commodity is declared with `commodity <code>`; its properties are written on the lines below (see [../dsl/records.md](../dsl/records.md), "Declarations").
 - A commodity used without a declaration, in an amount, a price or a cost, is created during normalization (see [ledger.md](ledger.md), "Declarations and strict mode").
@@ -38,7 +38,7 @@ Status: `specified`
 
 ### Commodity aliases
 
-Status: `specified`
+Status: `implemented`
 
 - An alias may replace the code in any amount: a `prefix` alias before the number, a `suffix` alias after it. How it is written is described in [../dsl/records.md](../dsl/records.md), "Amounts".
 - An alias on the wrong side (`180NT$` for a prefix alias) is `parse.invalid-number`.
@@ -47,14 +47,14 @@ Status: `specified`
 
 ### Precision
 
-Status: `specified`
+Status: `implemented`
 
 - One precision per commodity; it cannot vary by account.
 - `precision <whole number>` declares it. Amounts with more decimal places are described in [transactions.md](transactions.md), "Postings".
 
 ### Inferred precision
 
-Status: `specified`
+Status: `implemented`
 
 - When `precision` is not declared, including for undeclared commodities, the precision is the largest number of decimal places among that commodity's posting and Balance amounts as written. An expression's decimal places are counted as in [values.md](values.md), "Arithmetic".
 - Only records that are loaded count. A transaction that is not loaded (for example `txn.amount-not-inferable`) does not affect the precision.
@@ -63,7 +63,7 @@ Status: `specified`
 
 ### Item mode
 
-Status: `specified`
+Status: `implemented`
 
 Item mode is for things counted one by one: a camera, a book lent to a friend. Ordinary consumables such as milk or fuel use the normal mode.
 

@@ -1,11 +1,25 @@
-// Reads numbers and amounts as written (docs/core/values.md): `.` is the decimal mark and `,`
-// groups digits by three.
+// Reads numbers and amounts as written, once `option decimal-mark`, `group-mark` and the
+// Commodity aliases are known (docs/core/values.md, docs/core/commodities.md).
 
 import type { Decimal, Id } from "./types.js";
 import { decimal, neg, rational } from "./decimal.js";
 import { closing, evaluate, ExpressionError } from "./expression.js";
 
+export interface NumberFormat {
+  readonly decimalMark: "." | ",";
+  readonly groupMark: "," | "." | "'" | null; // null: no group mark
+}
+
+export interface AliasTable {
+  readonly prefix: ReadonlyMap<string, Id>;
+  readonly suffix: ReadonlyMap<string, Id>;
+  /** Aliases that conflict; an amount using one is not loaded. */
+  readonly conflicted: ReadonlySet<string>;
+}
+
 export class NumberError extends Error {}
+/** The amount uses a conflicting alias: the record is dropped without another diagnostic. */
+export class ConflictedAlias extends Error {}
 
 export interface ParsedNumber {
   readonly value: Decimal;
@@ -18,10 +32,12 @@ export interface ParsedAmount extends ParsedNumber {
   readonly commodity: Id;
 }
 
+const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /** A signed number such as "-1,500.25", or an expression such as "(1000/3)". */
-export function parseNumber(text: string): ParsedNumber {
+export function parseNumber(text: string, format: NumberFormat): ParsedNumber {
   const negative = text.startsWith("-");
-  return signed(parseBody(negative ? text.slice(1) : text), negative);
+  return signed(parseBody(negative ? text.slice(1) : text, format), negative);
 }
 
 function signed(n: ParsedNumber, negative: boolean): ParsedNumber {
@@ -30,26 +46,28 @@ function signed(n: ParsedNumber, negative: boolean): ParsedNumber {
 }
 
 /** An unsigned number or a parenthesized expression. */
-function parseBody(body: string): ParsedNumber {
-  if (!body.startsWith("(")) return parseUnsigned(body);
+function parseBody(body: string, format: NumberFormat): ParsedNumber {
+  if (!body.startsWith("(")) return parseUnsigned(body, format);
   try {
-    return { ...evaluate(body, parseUnsigned), expression: body };
+    return { ...evaluate(body, (t) => parseUnsigned(t, format)), expression: body };
   } catch (e) {
     if (e instanceof ExpressionError) throw new NumberError(e.message);
     throw e;
   }
 }
 
-function parseUnsigned(body: string): ParsedNumber {
-  const at = body.indexOf(".");
+function parseUnsigned(body: string, format: NumberFormat): ParsedNumber {
+  const { decimalMark, groupMark } = format;
+  const at = body.indexOf(decimalMark);
   const whole = at < 0 ? body : body.slice(0, at);
   const fraction = at < 0 ? "" : body.slice(at + 1);
   if (at >= 0 && !/^\d+$/.test(fraction)) throw new NumberError(`"${body}" is not a number`);
   let digits = whole;
-  if (whole.includes(",")) {
-    if (!/^\d{1,3}(?:,\d{3})+$/.test(whole))
+  if (groupMark !== null && whole.includes(groupMark)) {
+    const pattern = new RegExp(`^\\d{1,3}(?:${escape(groupMark)}\\d{3})+$`);
+    if (!pattern.test(whole))
       throw new NumberError(`"${body}": digit groups must have three digits`);
-    digits = whole.split(",").join("");
+    digits = whole.split(groupMark).join("");
   }
   if (!/^\d+$/.test(digits)) throw new NumberError(`"${body}" is not a number`);
   return {
@@ -58,17 +76,43 @@ function parseUnsigned(body: string): ParsedNumber {
   };
 }
 
-/** An amount: "180 NTD", "180NTD", "-1,500.25 USD", "(1000/3) NTD". */
-export function parseAmount(text: string): ParsedAmount {
+/**
+ * An amount: "180 NTD", "180NTD", "NT$180", "NT$ 180", "-180dollars", "180 dollars", "(1000/3) NTD".
+ */
+export function parseAmount(text: string, format: NumberFormat, aliases: AliasTable): ParsedAmount {
   const negative = text.startsWith("-");
   const body = negative ? text.slice(1) : text;
+  const sign = (n: ParsedNumber, commodity: Id): ParsedAmount => ({
+    ...signed(n, negative),
+    commodity,
+  });
+
+  if (!/^[\d(]/.test(body)) {
+    // A prefix alias: the longest one that matches.
+    let best: string | undefined;
+    for (const alias of [...aliases.prefix.keys(), ...aliases.conflicted])
+      if (body.startsWith(alias) && (best === undefined || alias.length > best.length))
+        best = alias;
+    if (best === undefined) throw new NumberError(`"${text}" is not an amount`);
+    if (aliases.conflicted.has(best)) throw new ConflictedAlias(best);
+    const commodity = aliases.prefix.get(best);
+    if (commodity === undefined) throw new NumberError(`"${best}" is a suffix alias`);
+    return sign(parseBody(body.slice(best.length).trim(), format), commodity);
+  }
+
   const numberText = body.startsWith("(")
     ? body.slice(0, closing(body) + 1)
-    : /^[\d.,]+/.exec(body)?.[0];
+    : /^[\d.,']+/.exec(body)?.[0];
   const unit = body.slice(numberText?.length ?? 0).trim();
   if (!numberText || unit === "") throw new NumberError(`"${text}" has no commodity`);
-  if (!/^\p{L}[\p{L}\p{N}_.-]*$/u.test(unit)) throw new NumberError(`"${unit}" is not a commodity`);
-  return { ...signed(parseBody(numberText), negative), commodity: unit };
+  if (aliases.conflicted.has(unit)) throw new ConflictedAlias(unit);
+  const suffix = aliases.suffix.get(unit);
+  let commodity: Id;
+  if (suffix !== undefined) commodity = suffix;
+  else if (aliases.prefix.has(unit)) throw new NumberError(`"${unit}" is a prefix alias`);
+  else if (/^\p{L}[\p{L}\p{N}_.-]*$/u.test(unit)) commodity = unit;
+  else throw new NumberError(`"${unit}" is not a commodity`);
+  return sign(parseBody(numberText, format), commodity);
 }
 
 /** The parts of a breakdown figure, as written: `3cups * 40 NTD = 120 NTD` (docs/dsl/records.md). */
@@ -84,8 +128,8 @@ export interface FigureValue extends ParsedNumber {
 }
 
 /** A quantity, then an optional unit label, joined or not: "3cups", "3 cups", "-2". */
-const QUANTITY = /^(-?[\d.,]+)\s*(\p{L}+)?$/u;
-const BARE = /^-?[\d.,]+$/;
+const QUANTITY = /^(-?[\d.,']+)\s*(\p{L}+)?$/u;
+const BARE = /^-?[\d.,']+$/;
 
 /** Splits a figure into quantity, `*` unit price and `=` total; throws NumberError when out of shape. */
 export function splitFigure(text: string): FigureParts {
@@ -108,7 +152,11 @@ export function splitFigure(text: string): FigureParts {
   };
 }
 
-/** A unit price or total: a number, or an amount with its commodity ("40", "120 NTD"). */
-export function parseFigureValue(text: string): FigureValue {
-  return BARE.test(text) ? parseNumber(text) : parseAmount(text);
+/** A unit price or total: a number, or an amount with its commodity ("40", "NT$40", "120 NTD"). */
+export function parseFigureValue(
+  text: string,
+  format: NumberFormat,
+  aliases: AliasTable,
+): FigureValue {
+  return BARE.test(text) ? parseNumber(text, format) : parseAmount(text, format, aliases);
 }

@@ -7,10 +7,10 @@ Core never sees files. The platform parses each file into a **module** and loads
 | Feature | Status |
 | --- | --- |
 | Loading and initialization | `implemented` |
-| Declarations and strict mode | `specified` |
-| Duplicate declarations | `specified` |
-| Normalization | `specified` |
-| IDs | `specified` |
+| Declarations and strict mode | `implemented` |
+| Duplicate declarations | `implemented` |
+| Normalization | `implemented` |
+| IDs | `implemented` |
 | Source positions | `implemented` |
 
 ## Concepts
@@ -61,7 +61,7 @@ The platform reads each file, parses its text into a module, and loads it under 
 
 ### Declarations and strict mode
 
-Status: `specified`
+Status: `implemented`
 
 Accounts and commodities may be declared, or used without a declaration. Strict mode is turned on per kind with the ledger setting `strict`. Kinds not listed follow normal mode.
 
@@ -77,7 +77,7 @@ Accounts and commodities may be declared, or used without a declaration. Strict 
 
 ### Duplicate declarations
 
-Status: `specified`
+Status: `implemented`
 
 - When the root module declares a commodity, an account or an account root more than once, the first declaration is used and the later ones are ignored. Each later one is `declaration.duplicate` (error), naming the first one as `<module>:<line>`. This holds in every mode, strict or not.
 - Declarations in included modules are never duplicates (see [modules.md](modules.md), "Declarations in included modules").
@@ -85,7 +85,7 @@ Status: `specified`
 
 ### Normalization
 
-Status: `specified`
+Status: `implemented`
 
 Initialization turns the Raw models into the derived model in fixed steps. The result does not depend on the order records are written in, except where these documents say source order decides.
 
@@ -100,7 +100,7 @@ flowchart TD
 | Step | What happens |
 | --- | --- |
 | 1. Modules | Find the root, follow its `include`s (see [modules.md](modules.md)), collect parse diagnostics, and drop unsupported syntax (see [diagnostics.md](diagnostics.md), "Unsupported syntax"). |
-| 2. Declarations | Read the root module's account roots (built-in and declared), then its ledger settings; then its commodities with their aliases, and its accounts. Declarations in included modules are not read (see [modules.md](modules.md)). [specified] |
+| 2. Declarations | Read the root module's account roots (built-in and declared), then its ledger settings; then its commodities with their aliases, and its accounts. Declarations in included modules are not read (see [modules.md](modules.md)). |
 | 3–5. Records | Read numbers, amounts and times now that the settings are known. Resolve names. Inherit times, status and tags. Turn prices and costs into totals. Fill in omitted amounts. |
 | 6. Expansion | Expand `pad` Balances point by point (see [balance.md](balance.md)). Sort transactions. Create undeclared accounts and commodities, and infer precisions. |
 | 7. Validation | Balancing, precision, item rules, `hard` Balance assertions. |
@@ -111,7 +111,7 @@ flowchart TD
 
 ### IDs
 
-Status: `specified`
+Status: `implemented`
 
 | Record | ID |
 | --- | --- |

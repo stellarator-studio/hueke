@@ -6,7 +6,7 @@ import { csv } from "../output.js";
 import { noArguments, type Command, type Options } from "./command.js";
 
 export const checkCommand: Command = {
-  usage: "check --file <path> [--format table|csv]",
+  usage: "check --file <path> [--strict] [--format table|csv]",
   options: [],
   run(hueke: Hueke, args: readonly string[], options: Options, io: CliIO): number {
     noArguments("check", args);

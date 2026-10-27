@@ -1,7 +1,8 @@
-// Test helpers for the use cases: the shared declarations plus a case's DSL, loaded as one file.
+// Test helpers for the use cases: the shared declarations plus a case's DSL, loaded as one file,
+// or several modules of one ledger.
 
 import { balance, check, Hueke, parse, query, type HuekeOptions } from "../../srcs/index.js";
-import type { AccountTreeRow, Amount, Diagnostic } from "../../srcs/index.js";
+import type { AccountTreeRow, Amount, Diagnostic, Transaction } from "../../srcs/index.js";
 
 /** The shared declarations of the use cases. */
 export const SHARED = `option timezone Asia/Taipei
@@ -18,6 +19,13 @@ commodity USD
     precision 2
 commodity AAPL
     precision 0
+commodity camera-01
+    item
+
+account Assets:Cash
+    primary NTD
+account Liabilities:CardInstallments
+    primary NTD
 `;
 
 export interface LedgerOptions extends HuekeOptions {
@@ -28,8 +36,46 @@ export interface LedgerOptions extends HuekeOptions {
 export function ledger(text: string, options: LedgerOptions = {}): Hueke {
   const { prelude = SHARED, ...rest } = options;
   const hueke = new Hueke(rest);
-  hueke.load("main.hueke", parse("main.hueke", prelude ? `${prelude}\n${text}` : text));
+  const before = prelude ? withoutRedeclared(prelude, text) : "";
+  hueke.load("main.hueke", parse("main.hueke", before ? `${before}\n${text}` : text));
   hueke.init("main.hueke");
+  return hueke;
+}
+
+const DECLARATION = /^(commodity|account|account-root)\s+(\S+)/;
+
+/**
+ * The prelude without the commodities, accounts and account roots the case declares itself: the
+ * case's declaration replaces the shared one (docs/README.md, "Shared declarations"). Settings stay.
+ */
+function withoutRedeclared(prelude: string, text: string): string {
+  const declared = new Set<string>();
+  for (const line of text.split("\n")) {
+    const m = DECLARATION.exec(line.trimStart());
+    if (m) declared.add(`${m[1] ?? ""} ${m[2] ?? ""}`);
+  }
+  const out: string[] = [];
+  let dropping = false;
+  for (const line of prelude.split("\n")) {
+    // A top-level line starts a block; its child lines follow it.
+    if (line !== "" && !/^\s/.test(line)) {
+      const m = DECLARATION.exec(line);
+      dropping = m !== null && declared.has(`${m[1] ?? ""} ${m[2] ?? ""}`);
+    }
+    if (!dropping) out.push(line);
+  }
+  return out.join("\n");
+}
+
+/** A ledger of several modules, initialized from `root`; the shared declarations are not added. */
+export function modules(
+  files: Readonly<Record<string, string>>,
+  root = "main.hueke",
+  options: HuekeOptions = {},
+): Hueke {
+  const hueke = new Hueke(options);
+  for (const [path, text] of Object.entries(files)) hueke.load(path, parse(path, text));
+  hueke.init(root);
   return hueke;
 }
 
@@ -53,3 +99,6 @@ export function rows(tree: readonly AccountTreeRow[]): string[] {
     .filter((r) => !r.subtotal)
     .flatMap((r) => r.amounts.map((a) => `${r.account} ${a.value} ${a.commodity}`));
 }
+
+export const descriptions = (ts: Iterable<Transaction>): (string | undefined)[] =>
+  [...ts].map((t) => t.description);

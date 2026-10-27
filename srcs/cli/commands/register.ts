@@ -4,15 +4,19 @@ import { register, type Hueke } from "../../index.js";
 import { UsageError, type CliIO } from "../io.js";
 import { table } from "../output.js";
 import { treeLines } from "./balance.js";
-import { FILTERS, filtered, type Command, type Options } from "./command.js";
+import { axisOf, FILTERS, filtered, OCCURRENCE, type Command, type Options } from "./command.js";
 import { postingRows, postingTable } from "./postings.js";
 
 export const registerCommand: Command = {
-  usage: "register [account...] --file <path> [--at <time>] [--period <time>]",
-  options: FILTERS,
+  usage:
+    "register [account...] --file <path> [--at <time>] [--period <time>] [--overlaps <time>]\n" +
+    "  [--covers <time>] [--axis <axis>] [--status <status,...>] [--involves <commodity,...>]\n" +
+    "  [--planned] [--cancelled] [--strict]",
+  options: [...FILTERS, ...OCCURRENCE],
   run(hueke: Hueke, args: readonly string[], options: Options, io: CliIO): number {
     if (options.format !== "table")
       throw new UsageError(`register has no ${options.format} output`);
+    const axis = options.axis === undefined ? "effective" : axisOf(options.axis);
     const rows = register(hueke, filtered(hueke, args, options));
     // The account lines of every row share one alignment; the postings follow their row.
     const lines = table(treeLines(hueke, rows).flat(), [0]).split("\n");
@@ -25,7 +29,7 @@ export const registerCommand: Command = {
       at += r.amounts.length;
       return r.postings.length === 0
         ? own
-        : own + postingTable(hueke, postingRows(hueke, r.postings));
+        : own + postingTable(hueke, postingRows(hueke, r.postings, axis));
     });
     io.stdout(out.join(""));
     return 0;

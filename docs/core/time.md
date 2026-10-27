@@ -9,11 +9,11 @@ Every time written in a ledger is a **time value**: a point or an interval at so
 | Time values | `implemented` |
 | Daylight saving time | `implemented` |
 | Default time zone | `implemented` |
-| Weeks | `specified` |
-| Time axes | `specified` |
+| Weeks | `implemented` |
+| Time axes | `implemented` |
 | Comparing times | `implemented` |
-| Points and periods | `specified` |
-| Time predicates | `specified` |
+| Points and periods | `implemented` |
+| Time predicates | `implemented` |
 | Times given to the API | `implemented` |
 
 ## Concepts
@@ -78,7 +78,7 @@ Status: `implemented`
 
 ### Weeks
 
-Status: `specified`
+Status: `implemented`
 
 - The first day of the week is the ledger setting `week-start`, any weekday, default `monday`.
 - Week 1 is the week that contains January 1, counted from `week-start`. The week that contains the next January 1 is week 1 of the next year, so a year has 52 or 53 weeks and the last days of December may belong to the next year's week 1 (2026-12-29 can be 2027-W01).
@@ -87,16 +87,16 @@ Status: `specified`
 
 ### Time axes
 
-Status: `specified`
+Status: `implemented`
 
 | Axis | On | Meaning |
 | --- | --- | --- |
-| `accounting` | Transaction and Balance | The period the transaction belongs to. May be a month, a year or an interval. On a Balance, it is only the accounting time of the transaction its `pad` generates (see [balance.md](balance.md), "`pad` assertions"). [specified] |
+| `accounting` | Transaction and Balance | The period the transaction belongs to. May be a month, a year or an interval. On a Balance, it is only the accounting time of the transaction its `pad` generates (see [balance.md](balance.md), "`pad` assertions"). |
 | `effective` | Transaction, posting and Balance | On a transaction: when it happened. On a posting: when the amount actually hit that account (bank value date, card posting date). |
 | `txn-effective` | Transaction | The transaction's own effective time, ignoring the postings' own times. Used for calendar views. |
 
 - **Inheritance.** A transaction without an accounting time uses its effective time. A posting without an effective time uses its transaction's.
-- **A posting's effective time is one day or one moment**: precision `day` or `time`. It is never a week, a month, a year or an interval (`a..b`), not even an interval within one day. The rule applies to the time the posting uses, whether written on it or inherited from its transaction. A violation is `posting.invalid-effective`, and the transaction is not loaded. [specified]
+- **A posting's effective time is one day or one moment**: precision `day` or `time`. It is never a week, a month, a year or an interval (`a..b`), not even an interval within one day. The rule applies to the time the posting uses, whether written on it or inherited from its transaction. A violation is `posting.invalid-effective`, and the transaction is not loaded.
   - A transaction whose effective time is a period may have postings only when each of them writes its own time. Income and expense postings cannot, so such a transaction writes the period as its accounting time instead: `2026-10-01=2026-10`.
   - A transaction with no postings may have any effective time. The accounting time is not restricted.
 - Postings have no accounting time of their own: all postings of a transaction share one accounting period, so income, expenses and equity agree.
@@ -124,15 +124,15 @@ Status: `implemented`
 
 ### Points and periods
 
-Status: `specified`
+Status: `implemented`
 
 - **A point** used by a balance or a Balance assertion is the **end** of its time value. A date D means the end of day D.
-- `until(D)` counts a record when it has ended by the end of D: its last local date (`localEnd`) is D or earlier. On the effective axis that is every posting whose local date is D or earlier, since a posting's effective time is one day or one moment. On the accounting axis, an interval or a month counts only once it has ended. [specified]
+- `until(D)` counts a record when it has ended by the end of D: its last local date (`localEnd`) is D or earlier. On the effective axis that is every posting whose local date is D or earlier, since a posting's effective time is one day or one moment. On the accounting axis, an interval or a month counts only once it has ended.
 - **Period reports do not spread amounts.** A record whose time is an interval (a yearly premium with accounting time `2026-07..2027-06`) shows in full in every period it overlaps. Such amounts cannot be added across periods.
 
 ### Time predicates
 
-Status: `specified`
+Status: `implemented`
 
 A time filter compares the record's interval R on the query's axis with the query time Q.
 

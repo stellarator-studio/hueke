@@ -1,13 +1,15 @@
 // The account tree (docs/core/query.md, "Account tree"): matched postings by account, with
-// subtotals for parent accounts.
+// subtotals for parent accounts. With `income-expense` on, income and expense accounts are shown
+// under the merged root (docs/core/accounts.md, "Combined income and expense").
 
+import type { Hueke } from "../hueke.js";
 import { within } from "../../data/model/account.js";
 import { compareText } from "../../data/model/order.js";
 import type { Amount, Id, Posting } from "../../data/model/types.js";
 import { add, decimal, rational, ZERO, type Rational } from "../../data/values/decimal.js";
 
 export interface AccountTreeRow {
-  readonly account: Id;
+  readonly account: Id; // as shown: under the merged root for income and expense accounts
   readonly depth: number; // 1 for a root
   readonly subtotal: boolean;
   readonly amounts: Amount[];
@@ -17,11 +19,27 @@ export interface RegisterRow extends AccountTreeRow {
   readonly postings: Posting[]; // empty on a subtotal row
 }
 
+/** The name each account is shown under; unchanged unless `income-expense` is on. */
+export function shownAccount(hueke: Hueke): (account: Id) => Id {
+  const merged = hueke.settings.incomeExpenseRoot;
+  if (merged === undefined) return (account) => account;
+  const types = new Map(hueke.roots.map((r) => [r.name, r.type]));
+  return (account) => {
+    const colon = account.indexOf(":");
+    const root = colon < 0 ? account : account.slice(0, colon);
+    const type = types.get(root);
+    return type === "income" || type === "expense"
+      ? merged + (colon < 0 ? "" : account.slice(colon))
+      : account;
+  };
+}
+
 /** Rows in account order, a subtotal before the account's own row; postings keep their order. */
-export function accountTree(postings: readonly Posting[]): RegisterRow[] {
+export function accountTree(hueke: Hueke, postings: readonly Posting[]): RegisterRow[] {
+  const show = shownAccount(hueke);
   const own = new Map<Id, Posting[]>();
   for (const p of postings) {
-    const account = p.account;
+    const account = show(p.account);
     const list = own.get(account);
     if (list) list.push(p);
     else own.set(account, [p]);

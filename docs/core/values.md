@@ -7,7 +7,7 @@ An **amount** is an exact decimal value in one commodity (see [commodities.md](c
 | Feature | Status |
 | --- | --- |
 | Amounts | `implemented` |
-| Numbers as written | `specified` |
+| Numbers as written | `implemented` |
 | Arithmetic | `implemented` |
 | Prices and costs | `implemented` |
 
@@ -32,7 +32,7 @@ Status: `implemented`
 
 ### Numbers as written
 
-Status: `specified`
+Status: `implemented`
 
 - The decimal mark and the group mark are ledger settings (see [settings.md](settings.md), "Settings"). They affect only how numbers are read and written, never computation.
 - The group mark groups the digits before the decimal mark in threes, the first group having one to three digits: `1,500.25`, or `1.500,25` with decimal mark `,` and group mark `.`. Group marks may be left out. Groups of any other size are `parse.invalid-number`.
@@ -56,7 +56,7 @@ Status: `implemented`
 A posting's `price` is the trade price; its `cost` is the cost of the lot held. How they weigh in balancing is described in [transactions.md](transactions.md), "Balancing".
 
 - A price is written as a unit price (`@`) or a total (`@@`), a cost as a unit cost (`{…}`) or a total (`{{…}}`). Both are stored as totals: a unit price or cost is multiplied by the posting's quantity during normalization.
-- Prices and costs are written without a sign (see [../dsl/records.md](../dsl/records.md), "Amounts") and are always positive, even when the quantity is negative. One whose written value is negative, such as `@ -170 USD` or `@ (10 - 20) USD`, is `posting.signed-price` (warning) and is used without the sign. The same holds for the price of a pad (see [balance.md](balance.md)). [specified]
+- Prices and costs are written without a sign (see [../dsl/records.md](../dsl/records.md), "Amounts") and are always positive, even when the quantity is negative. One whose written value is negative, such as `@ -170 USD` or `@ (10 - 20) USD`, is `posting.signed-price` (warning) and is used without the sign. The same holds for the price of a pad (see [balance.md](balance.md)).
 - A price or cost on a posting whose amount is omitted is ignored.
 
 ## Examples

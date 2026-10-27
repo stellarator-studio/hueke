@@ -152,7 +152,8 @@ export interface TransactionData extends HeaderTailData, Line {
 
 export interface BalanceData extends Line {
   readonly kind: "balance";
-  readonly time: string;
+  readonly time: string; // the effective time
+  readonly accounting?: string;
   readonly account: string;
   readonly entity?: string;
   readonly amount: string;

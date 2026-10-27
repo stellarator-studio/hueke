@@ -1,13 +1,14 @@
-// The `hueke` command line (docs/cli.md): reads the root file of a ledger, calls the API and prints
-// the result. All file access goes through CliIO, so tests can run it in memory.
+// The `hueke` command line (docs/cli.md): reads a ledger's files, calls the API and prints the
+// result. All file access goes through CliIO, so tests can run it in memory.
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
-import { Hueke, parse } from "../index.js";
+import { Hueke, parse, referencedSources } from "../index.js";
 import { balanceCommand } from "./commands/balance.js";
 import { checkCommand, problems } from "./commands/check.js";
 import type { Command, Options } from "./commands/command.js";
 import { queryCommand } from "./commands/query.js";
+import { reconcileCommand } from "./commands/reconcile.js";
 import { registerCommand } from "./commands/register.js";
 import { UsageError, type CliIO } from "./io.js";
 import type { Format } from "./output.js";
@@ -17,10 +18,19 @@ export type { CliIO } from "./io.js";
 const OPTIONS = {
   root: { type: "string" },
   file: { type: "string" },
+  strict: { type: "boolean" },
   format: { type: "string" },
   at: { type: "string" },
   period: { type: "string" },
+  overlaps: { type: "string" },
+  covers: { type: "string" },
+  axis: { type: "string" },
+  status: { type: "string" },
+  involves: { type: "string" },
+  planned: { type: "boolean" },
+  cancelled: { type: "boolean" },
   depth: { type: "string" },
+  balance: { type: "boolean" },
   help: { type: "boolean", short: "h" },
 } as const;
 
@@ -29,9 +39,10 @@ const COMMANDS: Readonly<Record<string, Command>> = {
   balance: balanceCommand,
   query: queryCommand,
   register: registerCommand,
+  reconcile: reconcileCommand,
 };
 
-const COMMON = ["root", "file", "format", "help"];
+const COMMON = ["root", "file", "strict", "format", "help"];
 const FORMATS: readonly Format[] = ["table", "csv"];
 
 const USAGE = `Usage: hueke <command> [arguments] --file <path> [options]
@@ -41,6 +52,8 @@ Commands:
   balance [account...]        account balances
   query [account...]          matching postings
   register [account...]       matching postings by account, with balances
+  reconcile <account> --at <time>
+                              the reconciliation view of one account
 
 Run "hueke <command> --help" for its options. See docs/cli.md.
 `;
@@ -97,24 +110,37 @@ export function run(args: readonly string[], io: CliIO): number {
 }
 
 /**
- * Reads the root file and initializes the ledger, keyed by its path relative to --root. A relative
- * --file starts from the current directory, and must be inside --root.
+ * Reads the root file and every file it includes, each keyed by its path relative to --root, and
+ * initializes the ledger. A file that cannot be read is left out; Core reports module.missing.
+ * A relative --file starts from the current directory, and must be inside --root.
  */
-function load(values: { root?: string; file?: string }, io: CliIO): Hueke {
+function load(values: { root?: string; file?: string; strict?: boolean }, io: CliIO): Hueke {
   if (values.file === undefined) throw new UsageError("--file is required");
   const root = resolve(io.cwd, values.root ?? ".");
   const file = resolve(io.cwd, values.file);
   const key = relative(root, file).split(sep).join("/");
   if (key === "" || key === ".." || key.startsWith("../") || isAbsolute(key))
     throw new UsageError(`${values.file} is outside --root ${root}`);
-  let text: string;
-  try {
-    text = io.readFile(file);
-  } catch {
-    throw new UsageError(`cannot read ${file}`);
+  const hueke = new Hueke(values.strict ? { strict: true } : {});
+  const queue = [key];
+  const seen = new Set(queue);
+  for (let path = queue.shift(); path !== undefined; path = queue.shift()) {
+    const name = resolve(root, ...path.split("/"));
+    let text: string;
+    try {
+      text = io.readFile(name);
+    } catch {
+      if (path === key) throw new UsageError(`cannot read ${name}`);
+      continue;
+    }
+    const module = parse(path, text);
+    hueke.load(path, module);
+    for (const next of referencedSources(path, module).paths)
+      if (!seen.has(next)) {
+        seen.add(next);
+        queue.push(next);
+      }
   }
-  const hueke = new Hueke();
-  hueke.load(key, parse(key, text));
   hueke.init(key);
   return hueke;
 }

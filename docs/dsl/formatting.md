@@ -6,9 +6,9 @@ Core writes ledger text in one **canonical form**. Serialization writes one reco
 
 | Feature | Status |
 | --- | --- |
-| Canonical form | `specified` |
-| Comments and metadata in place | `specified` |
-| Serialization | `specified` |
+| Canonical form | `implemented` |
+| Comments and metadata in place | `implemented` |
+| Serialization | `implemented` |
 | Formatting a module | `draft` |
 
 ## Concepts
@@ -19,12 +19,12 @@ The **canonical form** is the one way Core writes ledger text. **Serialization**
 
 ### Canonical form
 
-Status: `specified`
+Status: `implemented`
 
 | Item | Canonical form |
 | --- | --- |
 | Indentation | 4 spaces for a record's child lines (postings, properties, a record's metadata); 8 spaces for a posting's child lines (breakdowns, a posting's metadata) |
-| Postings | A lead (optional `* `, then the account), then the amount. Among a transaction's postings that have an amount, the numbers end in one column: the leftmost column at which every such line has at least two spaces between its lead and its number, so the tightest line has exactly two. The rest of the line follows with single spaces. A posting without an amount does not count toward the column [specified] |
+| Postings | A lead (optional `* `, then the account), then the amount. Among a transaction's postings that have an amount, the numbers end in one column: the leftmost column at which every such line has at least two spaces between its lead and its number, so the tightest line has exactly two. The rest of the line follows with single spaces. A posting without an amount does not count toward the column |
 | Other separators | One space between tokens, also in properties such as `alias NT$ prefix` |
 | Token order | As in [records.md](records.md) |
 | Properties | Under a declaration, in a fixed order: `commodity`: `item`, `precision`, `alias`; `account`: `primary`. A property that may repeat (`alias`) keeps its written order. Metadata comes after the properties, in written order |
@@ -43,7 +43,7 @@ Status: `specified`
 
 ### Comments and metadata in place
 
-Status: `specified`
+Status: `implemented`
 
 - Comments and metadata stay where they were written: one at the end of a line stays at the end of that line; one on its own line stays between the same lines, indented as the record it belongs to.
 - When properties are put in order, a comment at the end of a property line moves with that line, and a comment on its own line moves with the line above it, as it belongs to that line (see [lexical.md](lexical.md), "Comments and metadata"). Comments on their own lines before the first property stay first. Metadata on its own line moves after the properties.
@@ -51,7 +51,7 @@ Status: `specified`
 
 ### Serialization
 
-Status: `specified`
+Status: `implemented`
 
 - Serialization needs the ledger's settings (decimal and group marks) and its commodities (to turn aliases back into codes). They take effect only from the root module (see [../core/modules.md](../core/modules.md), "Declarations in included modules"), which may not be the module being serialized, so serialization takes them from the initialized ledger, as resolved there, and does not read the directives itself.
 - A record holding syntax reported as `syntax.unsupported` has no canonical form; serializing it throws.

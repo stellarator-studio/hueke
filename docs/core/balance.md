@@ -6,11 +6,11 @@ A **Balance assertion** states the balance an account should have at a point. A 
 
 | Feature | Status |
 | --- | --- |
-| Balance assertions | `specified` |
-| `hard` assertions | `specified` |
-| `pad` assertions | `specified` |
-| Point-by-point expansion | `specified` |
-| Reconciliation view | `specified` |
+| Balance assertions | `implemented` |
+| `hard` assertions | `implemented` |
+| `pad` assertions | `implemented` |
+| Point-by-point expansion | `implemented` |
+| Reconciliation view | `implemented` |
 
 ## Concepts
 
@@ -53,11 +53,11 @@ Reconciliation has no record of its own. It is made of three things:
 
 ### Balance assertions
 
-Status: `specified`
+Status: `implemented`
 
 - The point is `effective` (see [time.md](time.md), "Points and periods"). Only postings on the effective axis count.
-- `effective` is one day: precision `day`. A week, month, year, interval or time of day is `balance.invalid-effective`, and the Balance is not loaded. [specified]
-- A Balance may also carry an accounting time, written as on a transaction header (`2026-10-31=2026-10`). It never changes what is asserted; it only becomes the accounting time of the transaction a `pad` generates. [specified]
+- `effective` is one day: precision `day`. A week, month, year, interval or time of day is `balance.invalid-effective`, and the Balance is not loaded.
+- A Balance may also carry an accounting time, written as on a transaction header (`2026-10-31=2026-10`). It never changes what is asserted; it only becomes the accounting time of the transaction a `pad` generates.
 - The account includes its sub-accounts.
 - All `occurred` postings count, cleared or not.
 - Only the asserted commodity is checked. An account holding NTD and USD, with a Balance in NTD, has only its NTD balance checked; its USD is not looked at.
@@ -65,7 +65,7 @@ Status: `specified`
 
 ### `hard` assertions
 
-Status: `specified`
+Status: `implemented`
 
 The default. The computed balance must equal `amount`, within the tolerance.
 
@@ -75,7 +75,7 @@ The default. The computed balance must equal `amount`, within the tolerance.
 
 ### `pad` assertions
 
-Status: `specified`
+Status: `implemented`
 
 - The generated transaction has the Balance's effective time as its effective time, the Balance's accounting time as its accounting time when one is written, otherwise the effective time, and the tag `system:balance`. Its postings inherit the effective time, which is one day, so they always satisfy the rule for a posting's effective time (see [time.md](time.md), "Time axes"). The asserted account gets the padding, priced at `padPrice` when one is written; the counter-account gets the negated padding, or the negated `padPrice`.
 - **Padding not written**: padding = `amount` − recorded balance. A difference within the tolerance generates nothing.
@@ -86,7 +86,7 @@ Status: `specified`
 
 ### Point-by-point expansion
 
-Status: `specified`
+Status: `implemented`
 
 1. Sort every `pad` Balance by its point, then by source position.
 2. Process them in order. Each sees every posting up to its point, plus the transactions generated so far.
@@ -96,7 +96,7 @@ Status: `specified`
 
 ### Reconciliation view
 
-Status: `specified`
+Status: `implemented`
 
 The view is a statement for one commodity: opening balance, plus the period's postings, gives the closing balance, which is compared with the assertion.
 

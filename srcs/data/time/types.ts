@@ -1,4 +1,4 @@
-// Time values (docs/core/time.md).
+// Time values and axes (docs/core/time.md).
 
 /** `time` is a time of day, written to the minute. */
 export type Precision = "year" | "month" | "week" | "day" | "time";
@@ -12,3 +12,7 @@ export interface TimeValue {
   readonly start: string; // UTC half-open interval [start, end), e.g. "2026-10-11T16:00Z"
   readonly end: string;
 }
+
+export type Axis = "accounting" | "effective" | "txn-effective";
+export type Weekday =
+  "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";

@@ -6,14 +6,14 @@ Each record and declaration is written as a fixed sequence of parts. This docume
 
 | Feature | Status |
 | --- | --- |
-| Time values | `specified` |
-| Amounts | `specified` |
-| Transaction headers | `specified` |
-| Postings | `specified` |
-| Breakdowns | `specified` |
-| Balance assertions | `specified` |
-| Declarations | `specified` |
-| `include` | `specified` |
+| Time values | `implemented` |
+| Amounts | `implemented` |
+| Transaction headers | `implemented` |
+| Postings | `implemented` |
+| Breakdowns | `implemented` |
+| Balance assertions | `implemented` |
+| Declarations | `implemented` |
+| `include` | `implemented` |
 
 ## Concepts
 
@@ -25,16 +25,16 @@ What each part means is described in the core documents (see [../README.md](../R
 
 ### Time values
 
-Status: `specified`
+Status: `implemented`
 
 | Written | Form |
 | --- | --- |
 | `2026`, `2026-10`, `2026-W45`, `2026-10-11` | A date: a year, a month, a week or a day |
-| `2026-10-11T14:30` | A date with a time of day, to the minute; seconds are not written [specified] |
+| `2026-10-11T14:30` | A date with a time of day, to the minute; seconds are not written |
 | `2026-11-01T01:30-04:00` | A time of day followed by its UTC offset |
 | `<point>[Asia/Tokyo]` | A point followed by a time zone in brackets |
 | `<point>..<point>` | An interval; each point may have its own zone |
-| `<time>=<time>` | Only in a transaction header or a Balance assertion: effective time, then accounting time [specified for a Balance] |
+| `<time>=<time>` | Only in a transaction header or a Balance assertion: effective time, then accounting time |
 
 - A time value contains no whitespace.
 - A UTC offset comes after the time of day and before the zone, and only with a time of day.
@@ -42,7 +42,7 @@ Status: `specified`
 
 ### Amounts
 
-Status: `specified`
+Status: `implemented`
 
 | Written | Meaning |
 | --- | --- |
@@ -68,7 +68,7 @@ Status: `specified`
 
 ### Transaction headers
 
-Status: `specified`
+Status: `implemented`
 
 ```text
 <time>[=<time>] [*|!|#] [%anchor] ["description"] [@entity …] [^anchor] [#tag …]
@@ -82,7 +82,7 @@ Status: `specified`
 
 ### Postings
 
-Status: `specified`
+Status: `implemented`
 
 ```text
 [*] <account> [<amount> [{cost} | {{cost}}] [@ price | @@ price]] [[<time>]] [%anchor] [@entity …] [#tag …]
@@ -95,7 +95,7 @@ Status: `specified`
 
 ### Breakdowns
 
-Status: `specified`
+Status: `implemented`
 
 ```text
 - <name>  [<quantity>[unit]] [* <unit price>] [= <total>]
@@ -118,13 +118,13 @@ Status: `specified`
 
 ### Balance assertions
 
-Status: `specified`
+Status: `implemented`
 
 ```text
 <time>[=<time>] balance <account> <amount> [pad [<padding> [@ price | @@ price]] [-> <counter-account>]]
 ```
 
-- The effective time is one day; an accounting time may follow after `=` (see [../core/balance.md](../core/balance.md), "Balance assertions"). [specified]
+- The effective time is one day; an accounting time may follow after `=` (see [../core/balance.md](../core/balance.md), "Balance assertions").
 - The amount is signed; with `pad`, it is the balance after padding.
 - After `pad`, a number or alias is the padding (signed, on the asserted account); `->` names the counter-account. Both are optional.
 - A Balance takes metadata but no tags; a tag is `parse.syntax`. An `@entity` after the account is reserved (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax").
@@ -139,14 +139,14 @@ Status: `specified`
 
 ### Declarations
 
-Status: `specified`
+Status: `implemented`
 
 | Declaration | Written | Child lines |
 | --- | --- | --- |
 | Setting | `option <name> <value>`; the value runs to the end of the line | None |
 | Account root | `account-root <name> <type>` | None |
 | Commodity | `commodity <code>` | `item` (no value), `precision <whole number>`, `alias <text> prefix` or `alias <text> suffix` (may repeat), metadata |
-| Account | `account <name>`; a `%anchor` after the name is reserved (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax") [specified] | `primary <commodity>`, metadata |
+| Account | `account <name>`; a `%anchor` after the name is reserved (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax") | `primary <commodity>`, metadata |
 | Include | `include <path>`; the path is one token | None |
 
 - Declarations have no time; their order does not matter. Only the root module's declarations take effect (see [../core/modules.md](../core/modules.md), "Declarations in included modules").
@@ -174,12 +174,12 @@ account Bank:Checking
 
 ### `include`
 
-Status: `specified`
+Status: `implemented`
 
 ```hueke
 include accounts.hueke
 include 2026/10.hueke
 ```
 
-- `include <path>` is a top-level line with no child lines. The path is one token; quote it when it contains whitespace or any of `;` `"` `(` `)` `[` `]` `{` `}`. A missing path or an extra token is `parse.syntax`, and the line is not loaded. [specified]
+- `include <path>` is a top-level line with no child lines. The path is one token; quote it when it contains whitespace or any of `;` `"` `(` `)` `[` `]` `{` `}`. A missing path or an extra token is `parse.syntax`, and the line is not loaded.
 - How paths resolve and how included modules join the ledger is described in [../core/modules.md](../core/modules.md).

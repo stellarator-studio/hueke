@@ -8,7 +8,7 @@ A ledger file is plain UTF-8 text with the extension `.hueke`, holding records, 
 | --- | --- |
 | Principles | `implemented` |
 | Symbols | `implemented` |
-| What syntax becomes | `specified` |
+| What syntax becomes | `implemented` |
 | Reserved syntax | `implemented` |
 
 ## Concepts
@@ -54,7 +54,7 @@ An index of the symbols; where each may stand, and how symbols that look alike a
 
 ### What syntax becomes
 
-Status: `specified`
+Status: `implemented`
 
 | Syntax | Becomes | Described in |
 | --- | --- | --- |

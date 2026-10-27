@@ -1,28 +1,33 @@
-// Normalization of records: Raw transactions become derived ones. Names are resolved, prices and
-// costs become totals, and an omitted amount is filled in (docs/core/transactions.md).
+// Normalization of records: Raw transactions and balances become derived ones. Times and status
+// are inherited, prices and costs become totals, and an omitted amount is filled in.
 
 import type {
+  Account,
+  AccountRoot,
   Amount,
+  Balance,
   Breakdown,
   Figure,
   Id,
-  Metadata,
+  LedgerSettings,
   Posting,
   Reference,
+  Status,
   Tag,
+  TimeValue,
   Transaction,
 } from "../../data/model/types.js";
 import { anchorKey } from "../../data/raw/anchor.js";
 import type {
+  BalanceData,
   BreakdownLine,
-  Note,
   PostingData,
   PriceData,
   TagData,
   TransactionData,
 } from "../../data/raw/model.js";
-import type { Diagnostic, SourcePath } from "../../data/source/source.js";
-import { parseTime, TimeError, type TimeContext } from "../../data/time/time.js";
+import type { Diagnostic, SourcePath, SourceSpan } from "../../data/source/source.js";
+import { isOneDayOrMoment, parseTime, TimeError, type TimeContext } from "../../data/time/time.js";
 import {
   abs,
   add,
@@ -34,25 +39,41 @@ import {
   type Rational,
 } from "../../data/values/decimal.js";
 import {
+  ConflictedAlias,
   NumberError,
   parseAmount,
   parseFigureValue,
   parseNumber,
   splitFigure,
+  type AliasTable,
+  type NumberFormat,
 } from "../../data/values/number.js";
 import { diagnostic, type Code } from "../../data/source/diagnostics.js";
-import { weightOf } from "./shared.js";
+import { metaFrom, weightOf } from "./shared.js";
 
 export interface RecordContext {
+  /** The module of the record being read. */
   readonly source: SourcePath;
+  readonly settings: LedgerSettings;
+  readonly format: NumberFormat;
+  readonly aliases: AliasTable;
   readonly time: TimeContext;
+  readonly roots: ReadonlyMap<string, AccountRoot>;
+  readonly accounts: ReadonlyMap<Id, Account>;
   readonly out: Diagnostic[];
   /** Digits after the decimal mark of each written posting amount, for precision checks. */
   readonly decimals: Map<Posting, number>;
+  /** Largest number of digits written per commodity, for commodities without `precision`. */
+  readonly usedDecimals: Map<Id, number>;
 }
 
-/** The record is not loaded; the diagnostic has been reported. */
+/** The digits written in one record, counted only once the record loads. */
+type Written = [Id, number][];
+
+/** The record is not loaded; the diagnostic has been reported (or none is due). */
 class Dropped extends Error {}
+
+const PNL = new Set(["income", "expense"]);
 
 function fail(
   ctx: RecordContext,
@@ -68,21 +89,11 @@ function guard<T>(ctx: RecordContext, data: { span?: TransactionData["span"] }, 
   try {
     return read();
   } catch (e) {
+    if (e instanceof ConflictedAlias) throw new Dropped(e.message);
     if (e instanceof NumberError) fail(ctx, "parse.invalid-number", e.message, data);
     if (e instanceof TimeError) fail(ctx, e.code, e.message, data);
     throw e;
   }
-}
-
-/** Metadata in written order, the later value winning: whole lines and the ends of child lines. */
-export function metaFrom(
-  lines: readonly { kind: string; note?: Note; trailer?: Note }[],
-  trailer?: Note,
-): Metadata {
-  const meta: Record<string, string> = {};
-  for (const note of [trailer, ...lines.map((l) => (l.kind === "note" ? l.note : l.trailer))])
-    if (note?.kind === "meta") meta[note.key] = note.value;
-  return meta;
 }
 
 const tagOf = (t: TagData): Tag => ({ scope: t.scope ?? "tag", ref: t.ref });
@@ -94,14 +105,44 @@ function referenceOf(text: string): Reference {
     : { role: text.slice(0, colon), entity: text.slice(colon + 1) };
 }
 
-/** A price or cost as a total (always positive). */
-function totalOf(price: PriceData, quantity: Amount): Amount {
-  const p = parseAmount(price.amount);
+function amountOf(ctx: RecordContext, text: string, written?: (decimals: number) => void): Amount {
+  const a = parseAmount(text, ctx.format, ctx.aliases);
+  written?.(a.decimals);
+  return { value: a.value, commodity: a.commodity };
+}
+
+function noteUse(ctx: RecordContext, written: Written): void {
+  for (const [commodity, decimals] of written)
+    ctx.usedDecimals.set(commodity, Math.max(ctx.usedDecimals.get(commodity) ?? 0, decimals));
+}
+
+/** A price or cost as a total (always positive); a written sign is reported and dropped. */
+function totalOf(
+  ctx: RecordContext,
+  price: PriceData,
+  quantity: Amount,
+  span: SourceSpan | undefined,
+): Amount {
+  const p = amountOf(ctx, price.amount);
+  if (rational(p.value).n < 0n)
+    ctx.out.push(
+      diagnostic(
+        "posting.signed-price",
+        `"${price.amount}" is written with a sign; prices and costs are used without one`,
+        ctx.source,
+        span,
+      ),
+    );
   const value =
     price.kind === "total"
       ? abs(rational(p.value))
       : abs(mul(rational(p.value), rational(quantity.value)));
   return { value: decimal(value), commodity: p.commodity };
+}
+
+function isPnl(ctx: RecordContext, account: Id): boolean {
+  const type = ctx.roots.get(account.split(":")[0] ?? "")?.type;
+  return type !== undefined && PNL.has(type);
 }
 
 interface Draft {
@@ -111,6 +152,8 @@ interface Draft {
   decimals?: number;
   price?: Amount;
   cost?: Amount;
+  effective: TimeValue;
+  status: Status;
   breakdown: Breakdown[];
 }
 
@@ -120,30 +163,73 @@ export function buildTransaction(
   ctx: RecordContext,
 ): Transaction | undefined {
   try {
-    return guard(ctx, data, () => transaction(data, id, ctx));
+    const written: Written = [];
+    const t = guard(ctx, data, () => transaction(data, id, ctx, written));
+    noteUse(ctx, written);
+    return t;
   } catch (e) {
     if (e instanceof Dropped) return undefined;
     throw e;
   }
 }
 
-function transaction(data: TransactionData, id: Id, ctx: RecordContext): Transaction {
-  const time = parseTime(data.effective, ctx.time);
+function transaction(
+  data: TransactionData,
+  id: Id,
+  ctx: RecordContext,
+  written: Written,
+): Transaction {
+  const effective = parseTime(data.effective, ctx.time);
+  const accounting =
+    data.accounting === undefined ? effective : parseTime(data.accounting, ctx.time);
+  const occurrence = data.mark === "!" ? "planned" : data.mark === "#" ? "cancelled" : "occurred";
+  const status: Status = data.mark === "*" ? "cleared" : "none";
   const tags = data.tags.map(tagOf);
 
   const drafts: Draft[] = data.postings.map((p, i) => {
-    const parsed = p.amount === undefined ? undefined : parseAmount(p.amount);
-    const amount = parsed && { value: parsed.value, commodity: parsed.commodity };
+    let decimals: number | undefined;
+    const amount =
+      p.amount === undefined ? undefined : amountOf(ctx, p.amount, (d) => (decimals = d));
+    let own = p.effective === undefined ? undefined : parseTime(p.effective, ctx.time);
+    if (own && isPnl(ctx, p.account)) {
+      ctx.out.push(
+        diagnostic(
+          "posting.pnl-effective",
+          `${p.account} is an income or expense account and cannot have its own time`,
+          ctx.source,
+          p.span,
+        ),
+      );
+      own = undefined;
+    }
+    // A posting's effective time, its own or its transaction's, is one day or one moment.
+    if (own && !isOneDayOrMoment(own))
+      fail(
+        ctx,
+        "posting.invalid-effective",
+        `${p.account}: [${own.literal}] is not one day or one moment`,
+        p,
+      );
+    if (!own && !isOneDayOrMoment(effective))
+      fail(
+        ctx,
+        "posting.invalid-effective",
+        `${p.account} takes the transaction's time ${effective.literal}, which is not one day or one moment; write the period as the accounting time`,
+        data,
+      );
     const draft: Draft = {
       data: p,
       id: p.anchor ? anchorKey(p.anchor) : `${id}.${String(i + 1)}`,
+      effective: own ?? effective,
+      status: p.cleared ? "cleared" : status,
       breakdown: [],
       ...(amount && { amount }),
-      ...(parsed && { decimals: parsed.decimals }),
+      ...(decimals !== undefined && { decimals }),
     };
     if (amount) {
-      if (p.cost) draft.cost = totalOf(p.cost, amount);
-      if (p.price) draft.price = totalOf(p.price, amount);
+      if (p.cost) draft.cost = totalOf(ctx, p.cost, amount, p.span);
+      if (p.price) draft.price = totalOf(ctx, p.price, amount, p.span);
+      written.push([amount.commodity, decimals ?? 0]);
     }
     draft.breakdown = breakdownOf(ctx, p, amount);
     return draft;
@@ -172,6 +258,18 @@ function transaction(data: TransactionData, id: Id, ctx: RecordContext): Transac
     missing.amount = { value: decimal(neg(total)), commodity };
   }
 
+  if (occurrence !== "occurred" && drafts.some((d) => d.status === "cleared")) {
+    ctx.out.push(
+      diagnostic(
+        "txn.cleared-not-occurred",
+        `a ${occurrence} transaction cannot have cleared postings`,
+        ctx.source,
+        data.span,
+      ),
+    );
+    for (const d of drafts) d.status = "none";
+  }
+
   const postings = drafts.map((d): Posting => {
     const posting: Posting = {
       id: d.id,
@@ -182,6 +280,8 @@ function transaction(data: TransactionData, id: Id, ctx: RecordContext): Transac
       amount: d.amount ?? { value: "0", commodity: "" },
       ...(d.price && { price: d.price }),
       ...(d.cost && { cost: d.cost }),
+      status: d.status,
+      effective: d.effective,
       tags: [...d.data.tags.map(tagOf), ...tags],
       refs: d.data.refs.map(referenceOf),
       meta: metaFrom(d.data.lines, d.data.trailer),
@@ -196,9 +296,11 @@ function transaction(data: TransactionData, id: Id, ctx: RecordContext): Transac
     source: ctx.source,
     ...(data.span && { span: data.span }),
     origin: data,
-    time,
+    effective,
+    accounting,
     ...(data.description !== undefined && { description: data.description }),
-    occurrence: data.mark === "!" ? "planned" : data.mark === "#" ? "cancelled" : "occurred",
+    occurrence,
+    status,
     ...(data.primaryTag && { primaryTag: data.primaryTag.ref.name }),
     tags,
     refs: data.refs.map(referenceOf),
@@ -234,7 +336,7 @@ function breakdownOf(ctx: RecordContext, p: PostingData, amount: Amount | undefi
 function breakdownLine(ctx: RecordContext, line: BreakdownLine): Breakdown {
   if (line.figure === undefined) return { name: line.name };
   const figure = (text: string): Figure => {
-    const v = parseFigureValue(text);
+    const v = parseFigureValue(text, ctx.format, ctx.aliases);
     return { value: v.value, ...(v.commodity !== undefined && { commodity: v.commodity }) };
   };
   try {
@@ -243,13 +345,16 @@ function breakdownLine(ctx: RecordContext, line: BreakdownLine): Breakdown {
     return {
       name: line.name,
       ...(q && {
-        quantity: { value: parseNumber(q.number).value, ...(q.unit && { unit: q.unit }) },
+        quantity: {
+          value: parseNumber(q.number, ctx.format).value,
+          ...(q.unit && { unit: q.unit }),
+        },
       }),
       ...(parts.unitPrice !== undefined && { unitPrice: figure(parts.unitPrice) }),
       ...(parts.total !== undefined && { total: figure(parts.total) }),
     };
   } catch (e) {
-    if (!(e instanceof NumberError)) throw e;
+    if (!(e instanceof NumberError || e instanceof ConflictedAlias)) throw e;
     ctx.out.push(
       diagnostic(
         "breakdown.invalid-figure",
@@ -259,5 +364,41 @@ function breakdownLine(ctx: RecordContext, line: BreakdownLine): Breakdown {
       ),
     );
     return { name: line.name };
+  }
+}
+
+export function buildBalance(data: BalanceData, ctx: RecordContext): Balance | undefined {
+  try {
+    return guard(ctx, data, () => {
+      const effective = parseTime(data.time, ctx.time);
+      if (effective.precision !== "day" || data.time.includes(".."))
+        fail(ctx, "balance.invalid-effective", `a Balance is on one day, not ${data.time}`, data);
+      const accounting =
+        data.accounting === undefined ? undefined : parseTime(data.accounting, ctx.time);
+      let decimals = 0;
+      const amount = amountOf(ctx, data.amount, (d) => (decimals = d));
+      const pad = data.pad?.amount === undefined ? undefined : amountOf(ctx, data.pad.amount);
+      const padPrice =
+        data.pad?.price && pad ? totalOf(ctx, data.pad.price, pad, data.span) : undefined;
+      const balance: Balance = {
+        source: ctx.source,
+        ...(data.span && { span: data.span }),
+        origin: data,
+        account: data.account,
+        effective,
+        ...(accounting && { accounting }),
+        amount,
+        mode: data.pad ? "pad" : "hard",
+        ...(pad && { pad }),
+        ...(padPrice && { padPrice }),
+        ...(data.pad?.account !== undefined && { padAccount: data.pad.account }),
+        meta: metaFrom(data.lines, data.trailer),
+      };
+      noteUse(ctx, [[amount.commodity, decimals]]);
+      return balance;
+    });
+  } catch (e) {
+    if (e instanceof Dropped) return undefined;
+    throw e;
   }
 }

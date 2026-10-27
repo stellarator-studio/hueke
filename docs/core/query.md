@@ -6,15 +6,15 @@ A **query** selects transactions and postings, then optionally groups and aggreg
 
 | Feature | Status |
 | --- | --- |
-| Filtering | `specified` |
-| Matched postings | `specified` |
-| Axis of a query | `specified` |
-| Ordering | `specified` |
-| Grouping | `specified` |
+| Filtering | `implemented` |
+| Matched postings | `implemented` |
+| Axis of a query | `implemented` |
+| Ordering | `implemented` |
+| Grouping | `implemented` |
 | Account tree | `implemented` |
-| Aggregation | `specified` |
-| `balance` | `specified` |
-| `register` | `specified` |
+| Aggregation | `implemented` |
+| `balance` | `implemented` |
+| `register` | `implemented` |
 
 ## Concepts
 
@@ -39,7 +39,7 @@ A **query** selects transactions and postings, then optionally groups and aggreg
 
 ### Filtering
 
-Status: `specified`
+Status: `implemented`
 
 | Clause | Level | Meaning |
 | --- | --- | --- |
@@ -62,7 +62,7 @@ Status: `specified`
 
 ### Matched postings
 
-Status: `specified`
+Status: `implemented`
 
 **A transaction matches when one of its postings, or its empty posting, meets every clause.** The postings that meet every clause are its matched postings.
 
@@ -81,13 +81,13 @@ Status: `specified`
 
 ### Axis of a query
 
-Status: `specified`
+Status: `implemented`
 
 - Without an axis, every use of a query (listing transactions, listing postings, grouping, `balance` and `register`) uses `effective`. The `accounting` and `txn-effective` axes are used only when the query sets them.
 
 ### Ordering
 
-Status: `specified`
+Status: `implemented`
 
 | Output | Ordered by |
 | --- | --- |
@@ -99,7 +99,7 @@ Status: `specified`
 
 ### Grouping
 
-Status: `specified`
+Status: `implemented`
 
 Only matched postings are grouped.
 
@@ -129,11 +129,11 @@ The account tree lays matched postings out by account, with subtotals for parent
 - A parent account gets a row with `subtotal` true that includes all its sub-accounts, but only when some sub-account has postings of its own.
 - So an account with postings of its own and sub-accounts with postings has two rows: its subtotal, then its own.
 - Rows are sorted by account name segment by segment, comparing each segment's code points, so that `Assets:Cash` follows `Assets` before `Assets-X`; for the same account, the subtotal comes first.
-- With `income-expense` on, income and expense accounts appear under the merged root, by their merged names (see [accounts.md](accounts.md), "Combined income and expense"). [specified]
+- With `income-expense` on, income and expense accounts appear under the merged root, by their merged names (see [accounts.md](accounts.md), "Combined income and expense").
 
 ### Aggregation
 
-Status: `specified`
+Status: `implemented`
 
 | Function | Result per group |
 | --- | --- |
@@ -142,7 +142,7 @@ Status: `specified`
 
 ### `balance`
 
-Status: `specified`
+Status: `implemented`
 
 `balance` sums the matched postings on the account tree.
 
@@ -151,7 +151,7 @@ Status: `specified`
 
 ### `register`
 
-Status: `specified`
+Status: `implemented`
 
 `register` gives the same rows as `balance` for the same query, and each row that is not a subtotal also lists the postings it counts. It reads `within` as `balance` does.
 

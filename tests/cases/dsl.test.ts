@@ -49,7 +49,7 @@ describe("token order", () => {
 
 2026-10-21 * "Ramen in Tokyo"
     Expenses:Food             1200 JPY @@ 260 NTD
-    Liabilities:CreditCard    -260 NTD #foreign @NAT
+    Liabilities:CreditCard    -260 NTD #foreign [2026-10-23]
 `,
     );
     expect(codes(h)).toEqual(["parse.token-order", "parse.token-order", "parse.token-order"]);
@@ -60,7 +60,7 @@ describe("token order", () => {
       `
 2026-10-21 * "Ramen in Tokyo"
     Expenses:Food             1200 JPY @@ 260 NTD %ramen-1021 @NAT #foreign
-    Liabilities:CreditCard    -260 NTD @NAT #foreign
+    Liabilities:CreditCard    -260 NTD [2026-10-23T09:00[Asia/Tokyo]] #foreign
 `,
     );
     expect(codes(h)).toEqual([]);
@@ -71,7 +71,10 @@ describe("token order", () => {
       refs: [{ role: "person", entity: "NAT" }],
     });
     expect(food?.tags.map((t) => `${t.scope}:${t.ref.name}`)).toEqual(["tag:foreign"]);
-    expect(card?.refs).toEqual([{ role: "person", entity: "NAT" }]);
+    expect(card?.effective).toMatchObject({
+      timezone: "Asia/Tokyo",
+      start: "2026-10-23T00:00Z",
+    });
   });
 });
 
@@ -88,9 +91,10 @@ describe("account names cannot contain spaces", () => {
 2026-10-01 * "Opening"
     Bank:Checking 12345 NTD
     Equity:Opening -12345 NTD
+
+2026-10-25 balance Bank:Checking 12345 NTD
 `);
     expect(codes(h)).toEqual([]);
-    expect(balanceOf(h, "Bank:Checking", "2026-10-01")).toBe("12345");
   });
   it("a breakdown needs two spaces after its name", () => {
     const h = ledger(`
@@ -267,10 +271,31 @@ describe("lines a declaration does not accept", () => {
     expect(data.diagnostics.map((d) => d.code)).toEqual(["parse.unexpected-property"]);
     expect(data.items).toEqual([]);
   });
+  it("skips Metadata under option and keeps the option", () => {
+    const h = ledger("option week-start sunday\n    ;; note: start on Sunday\n");
+    expect(codes(h)).toEqual(["parse.orphan-line"]);
+    expect(h.settings.weekStart).toBe("sunday");
+  });
   it("rejects a property under include", () => {
     const data = parse("main.hueke", 'include "other.hueke"\n    precision 0\n');
     expect(data.diagnostics.map((d) => d.code)).toEqual(["parse.unexpected-property"]);
     expect(data.items).toEqual([]);
+  });
+});
+
+describe("a posting mark", () => {
+  it("needs no space before the account", () => {
+    const h = ledger(`
+2026-10-12 "Lunch"
+    *Expenses:Food     180 NTD
+    Assets:Cash       -180 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    expect(
+      query(h)
+        .postings()
+        .map((p) => `${p.account} ${p.status}`),
+    ).toEqual(["Expenses:Food cleared", "Assets:Cash none"]);
   });
 });
 
@@ -334,16 +359,6 @@ describe("comments and Metadata", () => {
     });
     expect(balanceOf(h, "Assets:Cash", "2026-10-14")).toBe("-80");
   });
-  it(";; must be key: value", () => {
-    const h = ledger(`
-2026-10-15 * "Late snack"
-    ;; anything
-    Expenses:Food 120 NTD
-    Assets:Cash -120 NTD
-`);
-    expect(codes(h)).toEqual(["parse.syntax"]);
-    expect(balance(h, query(h).accounts("Assets:Cash").until("2026-10-15"))).toEqual([]);
-  });
   it("Metadata after a breakdown line still belongs to the posting, with a warning", () => {
     const h = ledger(`
 2026-10-12 * "Lunch"
@@ -369,6 +384,14 @@ describe("comments and Metadata", () => {
 `);
     expect(codes(h, true)).toEqual([]);
   });
+  it("Metadata at the end of a property line belongs to the declaration", () => {
+    const h = ledger(`
+commodity KRW
+    precision 0  ;; source: bank
+`);
+    expect(codes(h)).toEqual([]);
+    expect(h.commodities.find((c) => c.id === "KRW")?.meta).toEqual({ source: "bank" });
+  });
   it("a key written twice keeps the later value", () => {
     const h = ledger(`
 2026-10-12 * "Lunch"  ;; receipt: R-0
@@ -377,9 +400,13 @@ describe("comments and Metadata", () => {
     ;; document: b.pdf
     Expenses:Food 180 NTD
     Assets:Cash -180 NTD
+
+account Assets:Wallet  ;; owner: NAT
+    ;; owner: AMY
 `);
     expect(codes(h)).toEqual([]);
     expect(h.transactions[0]?.meta).toEqual({ receipt: "R-1", document: "b.pdf" });
+    expect(h.accounts.find((a) => a.id === "Assets:Wallet")?.meta).toEqual({ owner: "AMY" });
   });
   it("a value in quotes is read as a string, with its escapes", () => {
     const h = ledger(`
@@ -391,6 +418,16 @@ describe("comments and Metadata", () => {
 `);
     expect(codes(h)).toEqual([]);
     expect(h.transactions[0]?.meta).toEqual({ title: '"Dune"', path: "a\\b" });
+  });
+  it(";; must be key: value", () => {
+    const h = ledger(`
+2026-10-15 * "Late snack"
+    ;; anything
+    Expenses:Food 120 NTD
+    Assets:Cash -120 NTD
+`);
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(balance(h, query(h).accounts("Assets:Cash").until("2026-10-15"))).toEqual([]);
   });
 });
 
@@ -405,31 +442,151 @@ describe("identifiers", () => {
     ["a root that is not one segment", "account-root Bank:Sub asset\n"],
     ["a commodity code starting with a digit", "commodity 1X\n"],
     ["a commodity code with a symbol", "commodity N$D\n"],
+    ["a primary commodity that is not a code", "account Assets:Bank\n    primary $\n"],
     ["an entity with a dot", posting("Expenses:Food", " @a.b")],
     ["a role with a dot", posting("Expenses:Food", " @r.x:NAT")],
     ["an anchor with a dot", '2026-10-12 * %a.b "x"\n'],
     ["the anchor self", '2026-10-12 * "x"\n    Expenses:Food  1 NTD %self\n    Assets:Cash\n'],
     ["a tag scope with capitals", posting("Expenses:Food", " #Trip:x")],
+    ["an alias with a digit", "commodity TWD\n    alias NT1 prefix\n"],
+    ["an alias starting with a dot", "commodity TWD\n    alias .x suffix\n"],
   ])("rejects %s", (_, text) => {
-    expect(codes(ledger(text))).toEqual(["parse.syntax"]);
+    const h = ledger(text);
+    expect(codes(h)).toEqual(["parse.syntax"]);
   });
   it.each([
     ["accounts with letters of any script", posting("支出:餐飲")],
     ["codes with digits, dots and dashes", "commodity BRK.B\ncommodity camera-02\n"],
     [
-      "entities, roles, primary tags and scopes",
+      "entities, roles, anchors and scopes",
       posting("Expenses:Food", " @xx_breakfast @payer:NAT ^trip #system:balance #旅行"),
     ],
     ["anchors, one with a period", '2026-10-12 * %lunch-1011 "x"\n2026-10-13 * %rent/2026-11\n'],
+    ["aliases with symbols", "commodity TWD\n    alias NT$ prefix\n    alias 元 suffix\n"],
   ])("accepts %s", (_, text) => {
     expect(codes(ledger(text))).toEqual([]);
   });
 });
 
-describe("a malformed precision", () => {
-  it("drops the commodity declaration", () => {
-    const h = ledger("commodity MILE\n    precision x\n");
-    expect(codes(h)).toEqual(["parse.syntax"]);
-    expect(h.commodities.find((c) => c.id === "MILE")).toBeUndefined();
+describe("include lines", () => {
+  it("reads the path as one token, quoted when it holds whitespace or ;", () => {
+    const data = parse(
+      "main.hueke",
+      'include 2026/10.hueke\ninclude "a b.hueke"\ninclude "c;d.hueke"\n',
+    );
+    expect(data.diagnostics).toEqual([]);
+    expect(data.items.map((i) => (i.kind === "include" ? i.args : []))).toEqual([
+      ["2026/10.hueke"],
+      ["a b.hueke"],
+      ["c;d.hueke"],
+    ]);
+  });
+  it.each([["../a.hueke"], ["/years/2026.hueke"]])("reads include %s as one path", (path) => {
+    const data = parse("main.hueke", `include ${path}\n`);
+    expect(data.diagnostics).toEqual([]);
+    expect(data.items.map((i) => (i.kind === "include" ? i.args : []))).toEqual([[path]]);
+  });
+  it.each([
+    ["a missing path", "include\n"],
+    ["an unquoted path with a space", "include a b.hueke\n"],
+    ["an extra token after a quoted path", 'include "a.hueke" b.hueke\n'],
+    ["an unquoted path with a space inside a token", "include a(b c).hueke\n"],
+  ])("rejects %s and does not load the line", (_, text) => {
+    const data = parse("main.hueke", text);
+    expect(data.diagnostics.map((d) => d.code)).toEqual(["parse.syntax"]);
+    expect(data.items.filter((i) => i.kind === "include")).toEqual([]);
+  });
+  it("owns no child lines", () => {
+    const data = parse("main.hueke", "include a.hueke\n    ;; key: value\n");
+    expect(data.diagnostics.map((d) => d.code)).toEqual(["parse.orphan-line"]);
+  });
+});
+
+describe("times of day", () => {
+  it("are written to the minute", () => {
+    const h = ledger(`
+2026-10-12T14:30 * "Lunch"
+    Expenses:Food     180 NTD
+    Assets:Cash      -180 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions[0]?.effective).toMatchObject({
+      precision: "time",
+      start: "2026-10-12T06:30Z",
+      end: "2026-10-12T06:30Z",
+    });
+  });
+  it("reject seconds", () => {
+    const h = ledger(`
+2026-10-12T14:30:15 * "Lunch"
+    Expenses:Food     180 NTD
+    Assets:Cash      -180 NTD
+`);
+    expect(codes(h)).toEqual(["parse.invalid-time"]);
+    expect(h.transactions).toEqual([]);
+  });
+});
+
+describe("header marks", () => {
+  it("set the status or the occurrence", () => {
+    const h = ledger(`
+2026-10-12 "Unchecked"
+2026-10-13 * "Cleared"
+2026-10-14 ! "Planned"
+2026-10-15 # "Cancelled"
+2026-10-16 #travel
+`);
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions.map((t) => [t.status, t.occurrence])).toEqual([
+      ["none", "occurred"],
+      ["cleared", "occurred"],
+      ["none", "planned"],
+      ["none", "cancelled"],
+      ["none", "occurred"],
+    ]);
+    expect(h.transactions[4]?.tags.map((t) => t.ref.name)).toEqual(["travel"]);
+  });
+  it("two marks are out of order", () => {
+    const h = ledger(`2026-10-12 * ! "Lunch"\n`);
+    expect(codes(h)).toEqual(["parse.token-order"]);
+  });
+});
+
+describe("Balance times", () => {
+  it("takes an accounting time after =", () => {
+    const h = ledger(`
+2026-10-01 * "Opening"
+    Bank:Checking     12345 NTD
+    Equity:Opening   -12345 NTD
+
+2026-10-25=2026-10 balance Bank:Checking 12345 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    const [b] = h.balances;
+    expect(b?.effective.literal).toBe("2026-10-25");
+    expect(b?.accounting?.literal).toBe("2026-10");
+    expect(b?.origin).toMatchObject({ time: "2026-10-25", accounting: "2026-10" });
+  });
+  it("leaves the accounting time out when it is not written", () => {
+    const h = ledger(`2026-10-25 balance Bank:Checking 0 NTD\n`);
+    expect(codes(h)).toEqual([]);
+    const [b] = h.balances;
+    expect(b && "accounting" in b).toBe(false);
+    expect(b?.origin && "accounting" in b.origin).toBe(false);
+  });
+});
+
+describe("account anchors", () => {
+  it("are reserved, and the declaration is not loaded", () => {
+    const h = ledger(`
+account Bank:Checking %checking
+    primary USD
+    ;; bank_code: 808
+`);
+    expect(codes(h)).toEqual(["syntax.unsupported"]);
+    const account = h.accounts.find((a) => a.id === "Bank:Checking");
+    expect(account?.span).toBeUndefined();
+    expect(account?.primaryCommodity).toBeUndefined();
+    expect(account?.meta ?? {}).toEqual({});
   });
 });

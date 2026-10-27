@@ -6,9 +6,9 @@ A ledger may span several files. Each file is one **module**, identified by a **
 
 | Feature | Status |
 | --- | --- |
-| Modules and `include` | `specified` |
-| Declarations in included modules | `specified` |
-| Paths | `specified` |
+| Modules and `include` | `implemented` |
+| Declarations in included modules | `implemented` |
+| Paths | `implemented` |
 
 ## Concepts
 
@@ -29,7 +29,7 @@ The platform keeps to these rules. Core only applies NFC normalization to the pa
 
 ### Modules and `include`
 
-Status: `specified`
+Status: `implemented`
 
 A module includes another with `include <path>` (see [../dsl/records.md](../dsl/records.md), "`include`"); an included module may include others.
 
@@ -42,7 +42,7 @@ A module includes another with `include <path>` (see [../dsl/records.md](../dsl/
 
 ### Declarations in included modules
 
-Status: `specified`
+Status: `implemented`
 
 - Only the root module's declarations take effect: `option`, `account-root`, `commodity` and `account`. Where they stand in the root does not matter.
 - Declarations in an included module, at any depth, are kept in its Raw model but never take effect, whether or not the root declares the same thing. They are never duplicates of the root's or of each other.
@@ -50,7 +50,7 @@ Status: `specified`
 
 ### Paths
 
-Status: `specified`
+Status: `implemented`
 
 Paths are text only; Core does not know whether they are disk paths, vault paths or URLs. Logical paths are described under "Concepts".
 

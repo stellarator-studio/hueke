@@ -489,7 +489,7 @@ class Builder {
       kind: "balance",
       span,
       ...(trailer && { trailer }),
-      time: this.timeOf(ctx.timeSpec(), false),
+      ...this.balanceTime(ctx),
       account: this.text(b.WORD().symbol),
       ...(entity && { entity: this.text(entity.symbol).slice(1) }),
       amount: this.ctxText(b.amount()),
@@ -502,6 +502,15 @@ class Builder {
       }),
       lines,
     };
+  }
+
+  /** A Balance's effective time, and the accounting time after `=` if any. */
+  private balanceTime(ctx: DateLineContext): { time: string; accounting?: string } {
+    const [time, accounting] = this.timeOf(ctx.timeSpec(), true).split("=") as [
+      string,
+      string | undefined,
+    ];
+    return { time, ...(accounting !== undefined && { accounting }) };
   }
 
   private declaration(
@@ -539,9 +548,15 @@ class Builder {
       return args("account-root", values);
     }
     if (ctx instanceof IncludeDeclContext) {
-      const rest = this.propertyValue(toks);
-      if (!rest) throw new BlockError("parse.syntax", "include needs a path");
-      return args("include", [rest]);
+      // The path is one token; a path with whitespace or ";" is quoted.
+      const [, path, extra] = toks;
+      if (!path) throw new BlockError("parse.syntax", "include needs a path");
+      if (extra)
+        throw new BlockError("parse.syntax", "include takes one path; quote a path with spaces");
+      const text = this.text(path);
+      if (path.type !== P.STRING && /\s/.test(text))
+        throw new BlockError("parse.syntax", "quote an include path that contains spaces");
+      return args("include", [path.type === P.STRING ? unquote(text) : text]);
     }
     if (ctx instanceof CommodityDeclContext || ctx instanceof EntityDeclContext) {
       const values = words.map((t) => this.text(t));

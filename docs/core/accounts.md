@@ -6,11 +6,11 @@ An **account** is a named place that holds amounts, in any number of commodities
 
 | Feature | Status |
 | --- | --- |
-| Accounts and the hierarchy | `specified` |
-| Account declarations | `specified` |
+| Accounts and the hierarchy | `implemented` |
+| Account declarations | `implemented` |
 | Account roots | `implemented` |
-| Combined income and expense | `specified` |
-| Untyped accounts | `specified` |
+| Combined income and expense | `implemented` |
+| Untyped accounts | `implemented` |
 
 ## Concepts
 
@@ -39,7 +39,7 @@ An **account** is a named place that holds amounts, in any number of commodities
 
 ### Accounts and the hierarchy
 
-Status: `specified`
+Status: `implemented`
 
 - Names contain no spaces and are unique in the ledger. Records refer to an account by its full name.
 - `Bank:Checking` is a sub-account of `Bank`. Filters, balances and Balance assertions on an account include its sub-accounts.
@@ -47,9 +47,9 @@ Status: `specified`
 
 ### Account declarations
 
-Status: `specified`
+Status: `implemented`
 
-- An account is declared with `account <name>`. A `%anchor` after the name is reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax"). [specified]
+- An account is declared with `account <name>`. A `%anchor` after the name is reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
 - `primary <commodity>` sets `primaryCommodity`.
 - Metadata lines under the declaration go to the account's `meta`, apart from any posting's metadata.
 - Other account properties are reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
@@ -66,7 +66,7 @@ Status: `implemented`
 
 ### Combined income and expense
 
-Status: `specified`
+Status: `implemented`
 
 With the ledger setting `income-expense on` (see [settings.md](settings.md)), income and expenses are shown together, so that `Income:Food` and `Expenses:Food` read as one account netting both.
 
@@ -77,7 +77,7 @@ With the ledger setting `income-expense on` (see [settings.md](settings.md)), in
 
 ### Untyped accounts
 
-Status: `specified`
+Status: `implemented`
 
 Unless strict mode covers accounts (see [ledger.md](ledger.md), "Declarations and strict mode"), any account can be used without a declaration, including one whose root is unknown (`Spending:Food` when `Spending` is not a root).
 

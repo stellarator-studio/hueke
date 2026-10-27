@@ -7,28 +7,19 @@ import type { ItemData, PostingData } from "../../data/raw/model.js";
 import type { Diagnostic, SourcePath } from "../../data/source/source.js";
 import { diagnostic } from "../../data/source/diagnostics.js";
 
-const DECLARATIONS = new Set([
-  "account",
-  "entity",
-  "schedule",
-  "installment",
-  "rule",
-  "cap-group",
-  "module",
-  "include",
-]);
-const OPTIONS = new Set([
-  "pad-account",
-  "decimal-mark",
-  "group-mark",
-  "week-start",
-  "strict",
-  "income-expense",
-]);
+const DECLARATIONS = new Set(["entity", "schedule", "installment", "rule", "cap-group", "module"]);
 const ROOT_TYPES = new Set(["shared"]);
 const PROPERTIES = new Set([
-  "commodity item",
-  "commodity alias",
+  "account name",
+  "account obligation",
+  "account pad-account",
+  "account active",
+  "account allow",
+  "account deny",
+  "account statement",
+  "account source",
+  "account self",
+  "account map",
   "transaction share",
   "transaction into",
 ]);
@@ -48,9 +39,8 @@ export function supported(
 }
 
 function unsupported(item: ItemData): string | undefined {
-  if (item.kind === "balance") return "balance";
+  if (item.kind === "balance") return item.entity === undefined ? undefined : "balance @entity";
   if (item.kind === "transaction") {
-    if (item.accounting !== undefined) return "an accounting time (=)";
     for (const line of item.lines)
       if (line.kind === "property" && PROPERTIES.has(`transaction ${line.key}`)) return line.key;
     for (const p of item.postings) {
@@ -60,10 +50,9 @@ function unsupported(item: ItemData): string | undefined {
     return undefined;
   }
   if (DECLARATIONS.has(item.kind)) return item.kind;
-  const [first = "", second = ""] = item.args;
-  if (item.kind === "option" && OPTIONS.has(first)) return `option ${first}`;
-  if (item.kind === "account-root" && ROOT_TYPES.has(second))
-    return `account-root of type ${second}`;
+  if (item.kind === "account" && item.anchor !== undefined) return "an account's %anchor";
+  if (item.kind === "account-root" && ROOT_TYPES.has(item.args[1] ?? ""))
+    return `account-root of type ${item.args[1] ?? ""}`;
   for (const line of item.lines)
     if (line.kind === "property" && PROPERTIES.has(`${item.kind} ${line.key}`))
       return `${item.kind} ${line.key}`;
@@ -71,7 +60,6 @@ function unsupported(item: ItemData): string | undefined {
 }
 
 function posting(p: PostingData): string | undefined {
-  if (p.effective !== undefined) return "a posting's own time ([…])";
   for (const line of p.lines)
     if (line.kind === "split" || line.kind === "paid-by") return line.kind;
   return undefined;

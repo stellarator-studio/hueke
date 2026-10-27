@@ -6,14 +6,14 @@ A **ledger setting** is written as `option <name> <value>` in the root module an
 
 | Feature | Status |
 | --- | --- |
-| Settings | `specified` |
-| Errors in settings | `specified` |
+| Settings | `implemented` |
+| Errors in settings | `implemented` |
 
 ## Behavior
 
 ### Settings
 
-Status: `specified`
+Status: `implemented`
 
 | Setting | Field | Values | Default | Described in |
 | --- | --- | --- | --- | --- |
@@ -30,7 +30,7 @@ Status: `specified`
 
 ### Errors in settings
 
-Status: `specified`
+Status: `implemented`
 
 - An unknown setting is `option.unknown`; the line is ignored.
 - A setting written more than once in the root module is `option.duplicate`, reported on each writing after the first. **Every** writing of it is ignored in favor of the default, so the result never depends on order.

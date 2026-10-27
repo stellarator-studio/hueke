@@ -9,7 +9,7 @@ A **diagnostic** reports one problem in a ledger. Validation never throws: every
 | Diagnostics and severities | `implemented` |
 | Codes | Per code, in the table below |
 | Codes used only by the API | `implemented` |
-| Unsupported syntax | `specified` |
+| Unsupported syntax | `implemented` |
 
 ## Concepts
 
@@ -55,39 +55,39 @@ Status: `implemented`
 | `option.duplicate` | error | Setting written more than once in the root module | All writings ignored; default used (see [settings.md](settings.md), "Errors in settings") | `implemented` |
 | `option.invalid-value` | error | Setting value not allowed | Default used | `implemented` |
 | `option.missing-timezone` | warning | No time zone is set at all (see [time.md](time.md), "Default time zone") | UTC used | `implemented` |
-| `option.invalid-number-format` | error | `decimal-mark` and `group-mark` are both written, and are the same mark | Both defaults used | `specified` |
-| `option.invalid-root` | error | The name of the merged income and expense root equals an account root, built-in or declared, or the root of an account in use (see [accounts.md](accounts.md), "Combined income and expense") | The setting takes no effect | `specified` |
+| `option.invalid-number-format` | error | `decimal-mark` and `group-mark` are both written, and are the same mark | Both defaults used | `implemented` |
+| `option.invalid-root` | error | The name of the merged income and expense root equals an account root, built-in or declared, or the root of an account in use (see [accounts.md](accounts.md), "Combined income and expense") | The setting takes no effect | `implemented` |
 | `time.nonexistent-local-time` | error | Local time skipped by daylight saving time | Record not loaded; on a posting's time, the whole transaction | `implemented` |
 | `time.ambiguous-local-time` | error | Local time repeated by daylight saving time | Same | `implemented` |
 | `time.nonexistent-week` | error | The week does not exist in that year under `week-start` | Same | `implemented` |
 | `time.offset-mismatch` | error | A written UTC offset is not one the time zone has at that local time | Same | `implemented` |
-| `commodity.alias-conflict` | error | An alias equals a declared commodity's code or another alias (see [commodities.md](commodities.md), "Commodity aliases") | Alias not used; records using it not loaded | `specified` |
-| `name.unknown-root` | info | An account's root is unknown (normal mode) | Computed; the account has no type | `specified` |
-| `name.inferred-commodity` | info | An undeclared commodity is used (normal mode) | Computed; precision inferred | `specified` |
-| `strict.undeclared` | error | Strict mode: an undeclared account or commodity is used | Computed as in normal mode | `specified` |
-| `strict.unknown-root` | error | Strict mode: a declared account's root is unknown | Computed; the account has no type | `specified` |
-| `declaration.duplicate` | error | The root module declares a commodity, account or account root again, in any mode | The first declaration is used; the later one is ignored | `specified` |
-| `txn.cleared-not-occurred` | error | A planned or cancelled transaction has a cleared posting | Loaded with status `none` | `specified` |
+| `commodity.alias-conflict` | error | An alias equals a declared commodity's code or another alias (see [commodities.md](commodities.md), "Commodity aliases") | Alias not used; records using it not loaded | `implemented` |
+| `name.unknown-root` | info | An account's root is unknown (normal mode) | Computed; the account has no type | `implemented` |
+| `name.inferred-commodity` | info | An undeclared commodity is used (normal mode) | Computed; precision inferred | `implemented` |
+| `strict.undeclared` | error | Strict mode: an undeclared account or commodity is used | Computed as in normal mode | `implemented` |
+| `strict.unknown-root` | error | Strict mode: a declared account's root is unknown | Computed; the account has no type | `implemented` |
+| `declaration.duplicate` | error | The root module declares a commodity, account or account root again, in any mode | The first declaration is used; the later one is ignored | `implemented` |
+| `txn.cleared-not-occurred` | error | A planned or cancelled transaction has a cleared posting | Loaded with status `none` | `implemented` |
 | `txn.unbalanced` | error | Postings do not balance | Computed as written | `implemented` |
 | `txn.amount-not-inferable` | error | More than one omitted amount, or the other weights are in several commodities | Transaction not loaded | `implemented` |
-| `posting.pnl-effective` | error | An income or expense posting has its own effective time | Computed; the posting uses the transaction's time | `specified` |
-| `posting.invalid-effective` | error | The effective time a posting uses, its own or its transaction's, is not one day or one moment; the message says which | Transaction not loaded | `specified` |
+| `posting.pnl-effective` | error | An income or expense posting has its own effective time | Computed; the posting uses the transaction's time | `implemented` |
+| `posting.invalid-effective` | error | The effective time a posting uses, its own or its transaction's, is not one day or one moment; the message says which | Transaction not loaded | `implemented` |
 | `posting.excess-precision` | warning | More decimal places than the declared precision | Computed as written | `implemented` |
-| `posting.signed-price` | warning | A price or cost is negative as written (see [values.md](values.md), "Prices and costs") | Computed without the sign | `specified` |
+| `posting.signed-price` | warning | A price or cost is negative as written (see [values.md](values.md), "Prices and costs") | Computed without the sign | `implemented` |
 | `breakdown.invalid-figure` | warning | A breakdown figure cannot be read (see [transactions.md](transactions.md), "Breakdowns") | The line keeps its name; its figures are skipped | `implemented` |
 | `breakdown.commodity-mismatch` | error | A breakdown's unit price, total and posting amount are written in different commodities | Computed as written; the line is kept | `implemented` |
-| `item.fractional` | error | A written posting amount in an item commodity is not a whole number | Computed as written | `specified` |
-| `item.invalid-balance` | error | An account holds a negative quantity of an item at some point, counting `occurred` transactions | Computed | `specified` |
-| `balance.mismatch` | error | A `hard` Balance differs from the computed balance beyond the tolerance, or a written pad does not close the difference | No record generated | `specified` |
-| `balance.invalid-effective` | error | A Balance's effective time is not one day: a week, month, year, interval or time of day | Record not loaded | `specified` |
-| `balance.pad-conflict` | error | Pads at the same point that affect each other, reported on each; or a pad whose counter-account is inside its own account (see [balance.md](balance.md), "Point-by-point expansion") | No record generated | `specified` |
-| `balance.pad-commodity` | error | A pad's written padding is not in the asserted commodity | No record generated | `specified` |
-| `balance.missing-pad-account` | error | A pad has no counter-account and the ledger has no `pad-account` | No record generated | `specified` |
-| `module.missing` | error | The root, or a module named by `include`, was not loaded | Root: the ledger is empty. `include`: ignored | `specified` |
-| `module.ignored-declaration` | warning | A declaration (`option`, `account-root`, `commodity`, `account`) stands in an included module; only the root's take effect | The declaration is ignored | `specified` |
-| `module.duplicate` | error | A module is included when it is already in the ledger (twice, or in a cycle) | The `include` is ignored | `specified` |
-| `path.invalid` | error | An `include` path is empty, names a folder or has a scheme (see [modules.md](modules.md), "Paths") | The `include` is ignored | `specified` |
-| `path.outside-root` | error | An `include` path resolves above the root directory | The `include` is ignored | `specified` |
+| `item.fractional` | error | A written posting amount in an item commodity is not a whole number | Computed as written | `implemented` |
+| `item.invalid-balance` | error | An account holds a negative quantity of an item at some point, counting `occurred` transactions | Computed | `implemented` |
+| `balance.mismatch` | error | A `hard` Balance differs from the computed balance beyond the tolerance, or a written pad does not close the difference | No record generated | `implemented` |
+| `balance.invalid-effective` | error | A Balance's effective time is not one day: a week, month, year, interval or time of day | Record not loaded | `implemented` |
+| `balance.pad-conflict` | error | Pads at the same point that affect each other, reported on each; or a pad whose counter-account is inside its own account (see [balance.md](balance.md), "Point-by-point expansion") | No record generated | `implemented` |
+| `balance.pad-commodity` | error | A pad's written padding is not in the asserted commodity | No record generated | `implemented` |
+| `balance.missing-pad-account` | error | A pad has no counter-account and the ledger has no `pad-account` | No record generated | `implemented` |
+| `module.missing` | error | The root, or a module named by `include`, was not loaded | Root: the ledger is empty. `include`: ignored | `implemented` |
+| `module.ignored-declaration` | warning | A declaration (`option`, `account-root`, `commodity`, `account`) stands in an included module; only the root's take effect | The declaration is ignored | `implemented` |
+| `module.duplicate` | error | A module is included when it is already in the ledger (twice, or in a cycle) | The `include` is ignored | `implemented` |
+| `path.invalid` | error | An `include` path is empty, names a folder or has a scheme (see [modules.md](modules.md), "Paths") | The `include` is ignored | `implemented` |
+| `path.outside-root` | error | An `include` path resolves above the root directory | The `include` is ignored | `implemented` |
 | `syntax.unsupported` | error | Syntax that is parsed but not supported yet; see "Unsupported syntax" | Record not loaded | `implemented` |
 
 ### Codes used only by the API
@@ -105,7 +105,7 @@ Some API calls reject what they are given by throwing an error whose message nam
 
 ### Unsupported syntax
 
-Status: `specified`
+Status: `implemented`
 
 The parser reads the whole language. Syntax whose feature is not supported yet is reported as `syntax.unsupported` instead of being ignored, so a ledger is never computed as if the line were not there. The message names the syntax, such as `entity is not supported yet`.
 
@@ -114,7 +114,7 @@ The parser reads the whole language. Syntax whose feature is not supported yet i
 | `split` or `paid-by` under a posting; `share` or `into` under a transaction | The transaction |
 | `@entity` on a `balance` line | The line |
 | `account-root` of type `shared` | The declaration |
-| An `account` with a `%anchor` after its name [specified] | The whole declaration |
+| An `account` with a `%anchor` after its name | The whole declaration |
 | An `account` with `name`, `obligation`, `pad-account`, `active`, `allow`, `deny`, `statement`, `source`, `self` or `map` | The whole declaration |
 | `entity`, `schedule`, `installment`, `rule`, `cap-group`, `module` | The declaration |
 
