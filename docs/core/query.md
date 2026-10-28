@@ -11,7 +11,7 @@ A **query** selects transactions and postings, then optionally groups and aggreg
 | Axis of a query | `specified` |
 | Ordering | `specified` |
 | Grouping | `specified` |
-| Account tree | `specified` |
+| Account tree | `implemented` |
 | Aggregation | `specified` |
 | `balance` | `specified` |
 | `register` | `specified` |
@@ -121,7 +121,7 @@ Only matched postings are grouped.
 
 ### Account tree
 
-Status: `specified`
+Status: `implemented`
 
 The account tree lays matched postings out by account, with subtotals for parent accounts. `balance` and `register` use it.
 
@@ -129,7 +129,7 @@ The account tree lays matched postings out by account, with subtotals for parent
 - A parent account gets a row with `subtotal` true that includes all its sub-accounts, but only when some sub-account has postings of its own.
 - So an account with postings of its own and sub-accounts with postings has two rows: its subtotal, then its own.
 - Rows are sorted by account name segment by segment, comparing each segment's code points, so that `Assets:Cash` follows `Assets` before `Assets-X`; for the same account, the subtotal comes first.
-- With `income-expense` on, income and expense accounts appear under the merged root, by their merged names (see [accounts.md](accounts.md), "Combined income and expense").
+- With `income-expense` on, income and expense accounts appear under the merged root, by their merged names (see [accounts.md](accounts.md), "Combined income and expense"). [specified]
 
 ### Aggregation
 

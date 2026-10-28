@@ -6,14 +6,14 @@ The parser reads a file line by line, classifies each line by its first token, a
 
 | Feature | Status |
 | --- | --- |
-| Line classes | `specified` |
-| Ownership | `specified` |
-| Whitespace | `specified` |
-| Comments and metadata | `specified` |
-| Identifiers | `specified` |
-| Strings and values | `specified` |
-| Symbol disambiguation | `specified` |
-| Error recovery | `specified` |
+| Line classes | `implemented` |
+| Ownership | `implemented` |
+| Whitespace | `implemented` |
+| Comments and metadata | `implemented` |
+| Identifiers | `implemented` |
+| Strings and values | `implemented` |
+| Symbol disambiguation | `implemented` |
+| Error recovery | `implemented` |
 
 ## Concepts
 
@@ -23,7 +23,7 @@ The parser reads a file line by line, classifies each line by its first token, a
 
 ### Line classes
 
-Status: `specified`
+Status: `implemented`
 
 Each line has its leading whitespace removed and is split at the first `;` outside quotes into **content** and **trailer**. The trailer is metadata or a comment (see "Comments and metadata"). The content is classified by the first matching row:
 
@@ -50,7 +50,7 @@ Each line has its leading whitespace removed and is split at the first `;` outsi
 
 ### Ownership
 
-Status: `specified`
+Status: `implemented`
 
 Date lines and declarations are top-level: each opens a block and ends the previous one. Other lines belong to the nearest record in the current block that accepts them. Blank lines do not affect ownership.
 
@@ -72,7 +72,7 @@ Date lines and declarations are top-level: each opens a block and ends the previ
 
 ### Whitespace
 
-Status: `specified`
+Status: `implemented`
 
 | Rule | Meaning |
 | --- | --- |
@@ -86,7 +86,7 @@ Status: `specified`
 
 ### Comments and metadata
 
-Status: `specified`
+Status: `implemented`
 
 What follows the first `;` outside quotes:
 
@@ -137,7 +137,7 @@ Metadata on its own line may continue on the lines right after it:
 
 ### Identifiers
 
-Status: `specified`
+Status: `implemented`
 
 "Letter" means a Unicode letter, and "ASCII letter" one of `A`–`Z` and `a`–`z`; "digit" means `0`–`9`.
 
@@ -158,7 +158,7 @@ Status: `specified`
 
 ### Strings and values
 
-Status: `specified`
+Status: `implemented`
 
 - A string is enclosed in double quotes and does not span lines. Inside, only `\"` and `\\` are escapes. A string not closed on its line is `parse.unterminated-string`.
 - Descriptions are always quoted.
@@ -167,7 +167,7 @@ Status: `specified`
 
 ### Symbol disambiguation
 
-Status: `specified`
+Status: `implemented`
 
 | Case | Rule |
 | --- | --- |
@@ -183,7 +183,7 @@ Status: `specified`
 
 ### Error recovery
 
-Status: `specified`
+Status: `implemented`
 
 - A block is a top-level line plus every line it owns.
 - When a line cannot be parsed, the diagnostic is reported and the whole block is not loaded. Parsing continues with the next top-level line; other blocks load normally.

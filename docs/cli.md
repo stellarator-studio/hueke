@@ -10,7 +10,7 @@
 | Commands | `specified` |
 | Filters | `specified` |
 | Output | `specified` |
-| Exit status | `specified` |
+| Exit status | `implemented` |
 
 ## Concepts
 
@@ -96,7 +96,7 @@ Status: `specified`
 
 ### Exit status
 
-Status: `specified`
+Status: `implemented`
 
 | Status | When |
 | --- | --- |

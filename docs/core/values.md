@@ -6,10 +6,10 @@ An **amount** is an exact decimal value in one commodity (see [commodities.md](c
 
 | Feature | Status |
 | --- | --- |
-| Amounts | `specified` |
+| Amounts | `implemented` |
 | Numbers as written | `specified` |
-| Arithmetic | `specified` |
-| Prices and costs | `specified` |
+| Arithmetic | `implemented` |
+| Prices and costs | `implemented` |
 
 ## Concepts
 
@@ -24,7 +24,7 @@ An **amount** is an exact decimal value in one commodity (see [commodities.md](c
 
 ### Amounts
 
-Status: `specified`
+Status: `implemented`
 
 - Amounts are added only to amounts of the same commodity. Totals with several commodities are kept as one amount per commodity, sorted by code.
 - Rounding happens only for display, never in computation.
@@ -41,7 +41,7 @@ Status: `specified`
 
 ### Arithmetic
 
-Status: `specified`
+Status: `implemented`
 
 - Wherever a number is written in an amount, a price, a cost or a Balance, an expression in parentheses may stand instead; breakdown figures take no expressions: `(1000/3) NTD`, `((100 + 50) * 2) NTD`, `-(12.5 * 4)NTD`.
 - The whole number is one pair of parentheses. Inside: numbers in the ledger's marks, `+`, `-`, `*`, `/`, nested parentheses and whitespace. `*` and `/` bind tighter than `+` and `-`; a `-` before a number or a parenthesis negates it. `+` is not a sign.
@@ -51,12 +51,12 @@ Status: `specified`
 
 ### Prices and costs
 
-Status: `specified`
+Status: `implemented`
 
 A posting's `price` is the trade price; its `cost` is the cost of the lot held. How they weigh in balancing is described in [transactions.md](transactions.md), "Balancing".
 
 - A price is written as a unit price (`@`) or a total (`@@`), a cost as a unit cost (`{…}`) or a total (`{{…}}`). Both are stored as totals: a unit price or cost is multiplied by the posting's quantity during normalization.
-- Prices and costs are written without a sign (see [../dsl/records.md](../dsl/records.md), "Amounts") and are always positive, even when the quantity is negative. One whose written value is negative, such as `@ -170 USD` or `@ (10 - 20) USD`, is `posting.signed-price` (warning) and is used without the sign. The same holds for the price of a pad (see [balance.md](balance.md)).
+- Prices and costs are written without a sign (see [../dsl/records.md](../dsl/records.md), "Amounts") and are always positive, even when the quantity is negative. One whose written value is negative, such as `@ -170 USD` or `@ (10 - 20) USD`, is `posting.signed-price` (warning) and is used without the sign. The same holds for the price of a pad (see [balance.md](balance.md)). [specified]
 - A price or cost on a posting whose amount is omitted is ignored.
 
 ## Examples

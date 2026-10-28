@@ -6,15 +6,15 @@ Every time written in a ledger is a **time value**: a point or an interval at so
 
 | Feature | Status |
 | --- | --- |
-| Time values | `specified` |
-| Daylight saving time | `specified` |
-| Default time zone | `specified` |
+| Time values | `implemented` |
+| Daylight saving time | `implemented` |
+| Default time zone | `implemented` |
 | Weeks | `specified` |
 | Time axes | `specified` |
-| Comparing times | `specified` |
+| Comparing times | `implemented` |
 | Points and periods | `specified` |
 | Time predicates | `specified` |
-| Times given to the API | `specified` |
+| Times given to the API | `implemented` |
 
 ## Concepts
 
@@ -25,11 +25,11 @@ A time value becomes a UTC half-open interval `[start, end)`, while the local da
 | Field | Meaning |
 | --- | --- |
 | `literal` | The text as written, such as `2026-12` or `2026-10-10..2026-10-13`. |
-| `precision` | `year`, `month`, `week`, `day` or `time` (a time of day, to the minute): that of the first point of an interval. [specified] |
+| `precision` | `year`, `month`, `week`, `day` or `time` (a time of day, to the minute): that of the first point of an interval. |
 | `timezone` | The IANA zone name the value was read in. |
 | `localDate` | The first local date covered. |
 | `localEnd` | The last local date covered, inclusive. |
-| `start`, `end` | The UTC interval `[start, end)`, to the minute, such as `2026-10-11T16:00Z`. [specified] |
+| `start`, `end` | The UTC interval `[start, end)`, to the minute, such as `2026-10-11T16:00Z`. |
 
 Which axis a report uses decides which records fall in a period.
 
@@ -37,7 +37,7 @@ Which axis a report uses decides which records fall in a period.
 
 ### Time values
 
-Status: `specified`
+Status: `implemented`
 
 | Written | Precision | Interval |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ Status: `specified`
 | `2026-10-12T09:30` | time | A point: an interval of length 0 |
 | `a..b` | that of `a` | From the start of `a` to the end of `b` |
 
-- A time of day is written to the minute and has precision `time`. Seconds are not written: `2026-10-12T09:30:15` is `parse.invalid-time`. [specified]
+- A time of day is written to the minute and has precision `time`. Seconds are not written: `2026-10-12T09:30:15` is `parse.invalid-time`.
 - A value may carry a zone (see [../dsl/records.md](../dsl/records.md), "Time values"), such as `2026-10-21T00:30[Asia/Tokyo]`. Zones are IANA names, never offsets. A value without a zone uses the ledger's default time zone. Each point of an interval may carry its own zone.
 - `a..b` where `b` ends before `a` starts is `parse.invalid-time`.
 - Values wrong from their text alone (`2026-13`, `2026-02-30`, `W00`, `W54`, `T25:00`) and unknown zones are `parse.invalid-time`.
@@ -56,7 +56,7 @@ Status: `specified`
 
 ### Daylight saving time
 
-Status: `specified`
+Status: `implemented`
 
 - A local time that does not exist in its zone (America/New_York 2026-03-08T02:30) is `time.nonexistent-local-time`.
 - A local time that occurs twice (America/New_York 2026-11-01T01:30) is `time.ambiguous-local-time`. Write its UTC offset to pick one: `2026-11-01T01:30-04:00[America/New_York]` is the first, `-05:00` the second.
@@ -65,7 +65,7 @@ Status: `specified`
 
 ### Default time zone
 
-Status: `specified`
+Status: `implemented`
 
 | Source | Used when |
 | --- | --- |
@@ -116,7 +116,7 @@ The API defaults to `effective` (see [query.md](query.md), "Axis of a query"). U
 
 ### Comparing times
 
-Status: `specified`
+Status: `implemented`
 
 - A query time is compared with a record by local dates: the record's local dates in its own time zone, whatever the record's precision. Query times never have a time of day (see "Times given to the API").
 - **Calendar comparison.** A record is compared by the date written in the ledger. Example: a purchase in Tokyo at 2026-10-21T00:30 (UTC 2026-10-20T15:30) has local date 2026-10-21. A query for 2026-10-21 finds it; the balance at the end of 2026-10-20 does not include it.
@@ -149,12 +149,12 @@ A time filter compares the record's interval R on the query's axis with the quer
 
 ### Times given to the API
 
-Status: `specified`
+Status: `implemented`
 
 - Wherever the API takes a time, it accepts a time value or its text.
 - Text is read with the ledger's default time zone and week start, and checked by exactly the rules for ledger text: `2026-13`, `2026-02-30` and `T25:00` are rejected, never adjusted.
 - Text that cannot be read is a misuse of the API: the call throws an error whose message names the diagnostic code the same text would get in a ledger (`parse.invalid-time`, `time.nonexistent-local-time`, `time.ambiguous-local-time`, `time.nonexistent-week`, `time.offset-mismatch`).
-- A query time (`within`, `overlaps`, `covers`, `until`, and `reconcile`'s `at`) is a day, a week, a month or a year, or an interval of those. A query time with a time of day is a misuse of the API: the call throws an error whose message names `query.time-of-day`. This code belongs to the API alone: a time of day is valid in a ledger, so `check` never reports it. Records keep their own times of day. [specified]
+- A query time (`within`, `overlaps`, `covers`, `until`, and `reconcile`'s `at`) is a day, a week, a month or a year, or an interval of those. A query time with a time of day is a misuse of the API: the call throws an error whose message names `query.time-of-day`. This code belongs to the API alone: a time of day is valid in a ledger, so `check` never reports it. Records keep their own times of day.
 - Text is read before its time of day is checked, so text that cannot be read throws with its ledger code even when it has a time of day: `2026-03-08T02:30[America/New_York]` given to `within` names `time.nonexistent-local-time`. A time value given instead of text is checked only for a time of day.
 
 ## API

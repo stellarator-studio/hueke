@@ -8,7 +8,7 @@ An **account** is a named place that holds amounts, in any number of commodities
 | --- | --- |
 | Accounts and the hierarchy | `specified` |
 | Account declarations | `specified` |
-| Account roots | `specified` |
+| Account roots | `implemented` |
 | Combined income and expense | `specified` |
 | Untyped accounts | `specified` |
 
@@ -56,7 +56,7 @@ Status: `specified`
 
 ### Account roots
 
-Status: `specified`
+Status: `implemented`
 
 - **Built-in roots**: `Assets` (asset), `Liabilities` (liability), `Equity` (equity), `Income` (income), `Expenses` (expense).
 - Other roots, such as `Bank`, are declared with `account-root <name> <type>`, where type is `asset`, `liability`, `equity`, `income` or `expense`. Several roots may share a type.

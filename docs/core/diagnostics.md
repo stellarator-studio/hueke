@@ -6,9 +6,9 @@ A **diagnostic** reports one problem in a ledger. Validation never throws: every
 
 | Feature | Status |
 | --- | --- |
-| Diagnostics and severities | `specified` |
+| Diagnostics and severities | `implemented` |
 | Codes | Per code, in the table below |
-| Codes used only by the API | `specified` |
+| Codes used only by the API | `implemented` |
 | Unsupported syntax | `specified` |
 
 ## Concepts
@@ -26,7 +26,7 @@ A **diagnostic** reports one problem in a ledger. Validation never throws: every
 
 ### Diagnostics and severities
 
-Status: `specified`
+Status: `implemented`
 
 - A code is `<area>.<name>`, both parts lowercase kebab-case. A code is never renamed once released.
 - Each code has a fixed severity. `error`: a record does not hold, or the result cannot be trusted. `warning`: the result is computable but probably mistyped. `info`: a hint.
@@ -42,25 +42,25 @@ Status: `specified`
 
 | Code | Severity | When | On error | Status |
 | --- | --- | --- | --- | --- |
-| `parse.syntax` | error | Anything else that cannot be parsed, including an invalid `account-root`, `precision` or `alias` | Block not loaded | `specified` |
-| `parse.orphan-line` | error | A child line with nothing to belong to: any line before the first block, metadata in a block that accepts none, or a breakdown line before its block's first posting (see [../dsl/lexical.md](../dsl/lexical.md), "Ownership") | Line skipped; for a breakdown line, block not loaded | `specified` |
-| `parse.unexpected-property` | error | A property keyword that does not belong to the record, such as `precision` on an account or an item commodity, or a posting line under a Balance or a declaration that takes none (see [../dsl/lexical.md](../dsl/lexical.md), "Ownership") | Block not loaded | `specified` |
-| `parse.duplicate-property` | error | A single-valued property written twice | Block not loaded | `specified` |
-| `parse.token-order` | error | Tokens out of their fixed order, or a once-only part written twice (two `^`) | Block not loaded | `specified` |
-| `parse.unterminated-string` | error | A string that is not closed | Block not loaded | `specified` |
-| `parse.invalid-time` | error | A time wrong from its text alone (`2026-13`, `W54`, `T25:00`, a time with seconds), an unknown time zone, or an interval that ends before it starts | Block not loaded | `specified` |
-| `parse.invalid-number` | error | A number or amount that does not fit the ledger's marks, an alias on the wrong side, or an expression that cannot be read or divides by zero (see [values.md](values.md)); in a breakdown, `breakdown.invalid-figure` instead | Record not loaded | `specified` |
-| `parse.metadata-after-breakdown` | warning | Metadata after a breakdown line, at its end or on its own line (see [../dsl/lexical.md](../dsl/lexical.md), "Ownership") | Computed as written: it belongs to the posting | `specified` |
-| `option.unknown` | error | Unknown setting name | Line ignored | `specified` |
-| `option.duplicate` | error | Setting written more than once in the root module | All writings ignored; default used (see [settings.md](settings.md), "Errors in settings") | `specified` |
-| `option.invalid-value` | error | Setting value not allowed | Default used | `specified` |
-| `option.missing-timezone` | warning | No time zone is set at all (see [time.md](time.md), "Default time zone") | UTC used | `specified` |
+| `parse.syntax` | error | Anything else that cannot be parsed, including an invalid `account-root`, `precision` or `alias` | Block not loaded | `implemented` |
+| `parse.orphan-line` | error | A child line with nothing to belong to: any line before the first block, metadata in a block that accepts none, or a breakdown line before its block's first posting (see [../dsl/lexical.md](../dsl/lexical.md), "Ownership") | Line skipped; for a breakdown line, block not loaded | `implemented` |
+| `parse.unexpected-property` | error | A property keyword that does not belong to the record, such as `precision` on an account or an item commodity, or a posting line under a Balance or a declaration that takes none (see [../dsl/lexical.md](../dsl/lexical.md), "Ownership") | Block not loaded | `implemented` |
+| `parse.duplicate-property` | error | A single-valued property written twice | Block not loaded | `implemented` |
+| `parse.token-order` | error | Tokens out of their fixed order, or a once-only part written twice (two `^`) | Block not loaded | `implemented` |
+| `parse.unterminated-string` | error | A string that is not closed | Block not loaded | `implemented` |
+| `parse.invalid-time` | error | A time wrong from its text alone (`2026-13`, `W54`, `T25:00`, a time with seconds), an unknown time zone, or an interval that ends before it starts | Block not loaded | `implemented` |
+| `parse.invalid-number` | error | A number or amount that does not fit the ledger's marks, an alias on the wrong side, or an expression that cannot be read or divides by zero (see [values.md](values.md)); in a breakdown, `breakdown.invalid-figure` instead | Record not loaded | `implemented` |
+| `parse.metadata-after-breakdown` | warning | Metadata after a breakdown line, at its end or on its own line (see [../dsl/lexical.md](../dsl/lexical.md), "Ownership") | Computed as written: it belongs to the posting | `implemented` |
+| `option.unknown` | error | Unknown setting name | Line ignored | `implemented` |
+| `option.duplicate` | error | Setting written more than once in the root module | All writings ignored; default used (see [settings.md](settings.md), "Errors in settings") | `implemented` |
+| `option.invalid-value` | error | Setting value not allowed | Default used | `implemented` |
+| `option.missing-timezone` | warning | No time zone is set at all (see [time.md](time.md), "Default time zone") | UTC used | `implemented` |
 | `option.invalid-number-format` | error | `decimal-mark` and `group-mark` are both written, and are the same mark | Both defaults used | `specified` |
 | `option.invalid-root` | error | The name of the merged income and expense root equals an account root, built-in or declared, or the root of an account in use (see [accounts.md](accounts.md), "Combined income and expense") | The setting takes no effect | `specified` |
-| `time.nonexistent-local-time` | error | Local time skipped by daylight saving time | Record not loaded; on a posting's time, the whole transaction | `specified` |
-| `time.ambiguous-local-time` | error | Local time repeated by daylight saving time | Same | `specified` |
-| `time.nonexistent-week` | error | The week does not exist in that year under `week-start` | Same | `specified` |
-| `time.offset-mismatch` | error | A written UTC offset is not one the time zone has at that local time | Same | `specified` |
+| `time.nonexistent-local-time` | error | Local time skipped by daylight saving time | Record not loaded; on a posting's time, the whole transaction | `implemented` |
+| `time.ambiguous-local-time` | error | Local time repeated by daylight saving time | Same | `implemented` |
+| `time.nonexistent-week` | error | The week does not exist in that year under `week-start` | Same | `implemented` |
+| `time.offset-mismatch` | error | A written UTC offset is not one the time zone has at that local time | Same | `implemented` |
 | `commodity.alias-conflict` | error | An alias equals a declared commodity's code or another alias (see [commodities.md](commodities.md), "Commodity aliases") | Alias not used; records using it not loaded | `specified` |
 | `name.unknown-root` | info | An account's root is unknown (normal mode) | Computed; the account has no type | `specified` |
 | `name.inferred-commodity` | info | An undeclared commodity is used (normal mode) | Computed; precision inferred | `specified` |
@@ -68,14 +68,14 @@ Status: `specified`
 | `strict.unknown-root` | error | Strict mode: a declared account's root is unknown | Computed; the account has no type | `specified` |
 | `declaration.duplicate` | error | The root module declares a commodity, account or account root again, in any mode | The first declaration is used; the later one is ignored | `specified` |
 | `txn.cleared-not-occurred` | error | A planned or cancelled transaction has a cleared posting | Loaded with status `none` | `specified` |
-| `txn.unbalanced` | error | Postings do not balance | Computed as written | `specified` |
-| `txn.amount-not-inferable` | error | More than one omitted amount, or the other weights are in several commodities | Transaction not loaded | `specified` |
+| `txn.unbalanced` | error | Postings do not balance | Computed as written | `implemented` |
+| `txn.amount-not-inferable` | error | More than one omitted amount, or the other weights are in several commodities | Transaction not loaded | `implemented` |
 | `posting.pnl-effective` | error | An income or expense posting has its own effective time | Computed; the posting uses the transaction's time | `specified` |
 | `posting.invalid-effective` | error | The effective time a posting uses, its own or its transaction's, is not one day or one moment; the message says which | Transaction not loaded | `specified` |
-| `posting.excess-precision` | warning | More decimal places than the declared precision | Computed as written | `specified` |
+| `posting.excess-precision` | warning | More decimal places than the declared precision | Computed as written | `implemented` |
 | `posting.signed-price` | warning | A price or cost is negative as written (see [values.md](values.md), "Prices and costs") | Computed without the sign | `specified` |
-| `breakdown.invalid-figure` | warning | A breakdown figure cannot be read (see [transactions.md](transactions.md), "Breakdowns") | The line keeps its name; its figures are skipped | `specified` |
-| `breakdown.commodity-mismatch` | error | A breakdown's unit price, total and posting amount are written in different commodities | Computed as written; the line is kept | `specified` |
+| `breakdown.invalid-figure` | warning | A breakdown figure cannot be read (see [transactions.md](transactions.md), "Breakdowns") | The line keeps its name; its figures are skipped | `implemented` |
+| `breakdown.commodity-mismatch` | error | A breakdown's unit price, total and posting amount are written in different commodities | Computed as written; the line is kept | `implemented` |
 | `item.fractional` | error | A written posting amount in an item commodity is not a whole number | Computed as written | `specified` |
 | `item.invalid-balance` | error | An account holds a negative quantity of an item at some point, counting `occurred` transactions | Computed | `specified` |
 | `balance.mismatch` | error | A `hard` Balance differs from the computed balance beyond the tolerance, or a written pad does not close the difference | No record generated | `specified` |
@@ -88,11 +88,11 @@ Status: `specified`
 | `module.duplicate` | error | A module is included when it is already in the ledger (twice, or in a cycle) | The `include` is ignored | `specified` |
 | `path.invalid` | error | An `include` path is empty, names a folder or has a scheme (see [modules.md](modules.md), "Paths") | The `include` is ignored | `specified` |
 | `path.outside-root` | error | An `include` path resolves above the root directory | The `include` is ignored | `specified` |
-| `syntax.unsupported` | error | Syntax that is parsed but not supported yet; see "Unsupported syntax" | Record not loaded | `specified` |
+| `syntax.unsupported` | error | Syntax that is parsed but not supported yet; see "Unsupported syntax" | Record not loaded | `implemented` |
 
 ### Codes used only by the API
 
-Status: `specified`
+Status: `implemented`
 
 Some API calls reject what they are given by throwing an error whose message names a code. These are misuses of the API, never problems of the ledger.
 

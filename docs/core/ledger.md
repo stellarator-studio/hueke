@@ -6,12 +6,12 @@ Core never sees files. The platform parses each file into a **module** and loads
 
 | Feature | Status |
 | --- | --- |
-| Loading and initialization | `specified` |
+| Loading and initialization | `implemented` |
 | Declarations and strict mode | `specified` |
 | Duplicate declarations | `specified` |
 | Normalization | `specified` |
 | IDs | `specified` |
-| Source positions | `specified` |
+| Source positions | `implemented` |
 
 ## Concepts
 
@@ -45,7 +45,7 @@ A **module** is the parsed text of one file, identified by a **logical path** (s
 
 ### Loading and initialization
 
-Status: `specified`
+Status: `implemented`
 
 The platform reads each file, parses its text into a module, and loads it under its logical path. Then it initializes the ledger from one root.
 
@@ -127,7 +127,7 @@ Status: `specified`
 
 ### Source positions
 
-Status: `specified`
+Status: `implemented`
 
 - Every record parsed from text carries its span: start and end offsets in its module's text, end exclusive. A record's span covers its whole block, from its first line to the last line it owns.
 - Offsets and columns count UTF-16 code units, as JS string indexes do. Lines and columns start at 1.

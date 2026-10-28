@@ -6,10 +6,10 @@ A ledger file is plain UTF-8 text with the extension `.hueke`, holding records, 
 
 | Feature | Status |
 | --- | --- |
-| Principles | `specified` |
-| Symbols | `specified` |
+| Principles | `implemented` |
+| Symbols | `implemented` |
 | What syntax becomes | `specified` |
-| Reserved syntax | `specified` |
+| Reserved syntax | `implemented` |
 
 ## Concepts
 
@@ -19,7 +19,7 @@ A ledger file is plain UTF-8 text with the extension `.hueke`, holding records, 
 
 ### Principles
 
-Status: `specified`
+Status: `implemented`
 
 - One line holds one record header, posting, breakdown or property. After `;` comes metadata or a comment.
 - **Structure does not depend on indentation.** Each line is classified by its first token and belongs to the nearest record that accepts it. Indentation is only for people; formatting rewrites it.
@@ -32,7 +32,7 @@ Status: `specified`
 
 ### Symbols
 
-Status: `specified`
+Status: `implemented`
 
 An index of the symbols; where each may stand, and how symbols that look alike are told apart, is in [lexical.md](lexical.md), "Symbol disambiguation".
 
@@ -75,6 +75,6 @@ Status: `specified`
 
 ### Reserved syntax
 
-Status: `specified`
+Status: `implemented`
 
 Syntax whose features are not supported yet is parsed and reported as `syntax.unsupported`; what it is, and what is not loaded, is listed in [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax". Its keywords are reserved (see [lexical.md](lexical.md), "Line classes"), so they cannot be account roots. A period may follow the anchor of a transaction header's `%anchor` or of a `#` tag, after `/`, as in `%rent/2026-11` or `#statement:card/2026-10`; on a posting's `%anchor` or a `^` primary tag it is `parse.syntax`. The period is a separate part, not part of the anchor's name, and it is kept as written. It is either a label, a year, month, day, week or quarter (`2026`, `2026-11`, `2026-11-05`, `2026-W45`, `2026-Q4`), or `n` and a period number from 1, without leading zeros (`n3`). A label shaped like a year, month, day or week that names no such time, such as `2026-13` or `2026-W54`, is `parse.invalid-time`, as for any time; anything else, such as `2026-Q5`, `n0`, `n01` or `t1`, is `parse.syntax`. Whether a week exists under the ledger's week start is not checked here.

@@ -6,14 +6,14 @@ A **transaction** records one event; its **postings** change the balances of acc
 
 | Feature | Status |
 | --- | --- |
-| Transactions | `specified` |
+| Transactions | `implemented` |
 | Order of transactions | `specified` |
 | Parts kept as written | `specified` |
 | Status and occurrence | `specified` |
-| Balancing | `specified` |
-| Filling in an omitted amount | `specified` |
-| Postings | `specified` |
-| Breakdowns | `specified` |
+| Balancing | `implemented` |
+| Filling in an omitted amount | `implemented` |
+| Postings | `implemented` |
+| Breakdowns | `implemented` |
 | System-generated transactions | `specified` |
 
 ## Concepts
@@ -71,7 +71,7 @@ Each transaction has an **occurrence** (did it happen?) and each posting a **sta
 
 ### Transactions
 
-Status: `specified`
+Status: `implemented`
 
 - A transaction may have zero postings. It never changes a balance by itself; only its postings do.
 - Times, and how a posting's time is inherited, are described in [time.md](time.md), "Time axes".
@@ -119,7 +119,7 @@ Status: `specified`
 
 ### Balancing
 
-Status: `specified`
+Status: `implemented`
 
 A transaction with postings must balance.
 
@@ -133,7 +133,7 @@ A transaction with postings must balance.
 
 ### Filling in an omitted amount
 
-Status: `specified`
+Status: `implemented`
 
 - At most one posting in a transaction may omit its amount.
 - The other postings' weights must all be in one commodity, and there must be at least one. The omitted amount is the negated sum of those weights, in that commodity. Example: beside `100 USD @ 32 NTD`, the omitted line becomes −3200 NTD.
@@ -142,21 +142,21 @@ Status: `specified`
 
 ### Postings
 
-Status: `specified`
+Status: `implemented`
 
 - A posting line holds only a total. Quantity times unit price is written as a breakdown.
 - An amount with more decimal places than its commodity's **declared** precision is `posting.excess-precision` (warning) and is used as written. Inferred precision never triggers it; item commodities, prices, costs and filled-in amounts are never checked.
 
 ### Breakdowns
 
-Status: `specified`
+Status: `implemented`
 
 A breakdown line is a note for display, such as one item on a receipt. It need not be complete.
 
 - Core never computes with breakdowns. They never affect balances, income or balancing. No total is computed from quantity and unit price, and nothing checks that the two agree or that the lines add up to the posting's amount.
 - Every part except the name is optional, and only what is written is kept. A commodity is never taken from the posting: a figure written without one has none.
 - Numbers are read with the ledger's marks (see [values.md](values.md), "Numbers as written"). Expressions are not allowed. Decimal places are not checked against precision.
-- A commodity written in a breakdown is not a use of it: it creates no commodity, is never `strict.undeclared` or `name.inferred-commodity`, and does not affect inferred precision. An alias is read as its commodity's code; any other code is kept as written.
+- A commodity written in a breakdown is not a use of it: it creates no commodity, is never `strict.undeclared` or `name.inferred-commodity`, and does not affect inferred precision. An alias is read as its commodity's code; any other code is kept as written. [specified]
 - A figure that cannot be read, such as a number that does not fit the marks, an expression, parts out of order, or an alias that is in conflict or on the wrong side, is `breakdown.invalid-figure` (warning). The line keeps its name and drops all its figures; the transaction loads.
 - The commodities written on the unit price, on the total and on the posting's amount must all be the same; only those written are compared, so an omitted posting amount does not take part. The posting's amount counts, not its price or cost: under `1200 JPY @@ 260 NTD`, a breakdown in JPY agrees. A difference is `breakdown.commodity-mismatch` (error); the line is kept as written and the transaction loads.
 
