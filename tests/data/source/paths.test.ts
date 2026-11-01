@@ -27,7 +27,9 @@ describe("resolvePath", () => {
     ["../x.hueke", "path.outside-root"],
     ["/../x.hueke", "path.outside-root"],
   ])("%s is %s", (written, error) => {
-    expect(resolvePath("main.hueke", written)).toMatchObject({ error });
+    const resolved = resolvePath("main.hueke", written);
+    expect(resolved).toMatchObject({ error });
+    expect(resolved).toHaveProperty("message", expect.any(String));
   });
   it("compares paths after NFC normalization", () => {
     expect(resolvePath("main.hueke", "café.hueke")).toEqual({ path: "café.hueke" });

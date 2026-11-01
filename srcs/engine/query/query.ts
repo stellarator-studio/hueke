@@ -1,9 +1,11 @@
 // Queries (docs/core/query.md): filter → group → aggregate. Each clause returns a new query.
 
-import { sourceOrder, type Hueke } from "../hueke.js";
+import { obligationEntitiesOf, sourceOrder, type Hueke } from "../hueke.js";
+import { entitiesOf } from "../normalize/shared.js";
 import { within } from "../../data/model/account.js";
 import { timeOnAxis, transactionTime } from "../../data/model/axis.js";
 import type {
+  Account,
   Axis,
   Id,
   Occurrence,
@@ -21,7 +23,7 @@ import { shownAccount } from "./tree.js";
 
 /** A time value, or its DSL text read with the ledger's time zone and week start. */
 export type TimeInput = TimeValue | string;
-/** A tag, or its DSL text without `#`: "travel", "system:balance", "statement:card/2026-10". */
+/** A tag, or its DSL text written in full, with or without `#`: "tag:travel", "system:balance". */
 export type TagInput = Tag | { readonly scope?: string; readonly ref: AnchorRef } | string;
 
 export interface TimeClause {
@@ -32,6 +34,7 @@ export interface TimeClause {
 interface State {
   readonly axis?: Axis;
   readonly times: readonly TimeClause[];
+  readonly ids?: readonly Id[];
   readonly accounts?: readonly Id[];
   readonly entities?: readonly Id[];
   readonly tags?: readonly { scope: string; key: string }[];
@@ -70,11 +73,15 @@ export class Query implements Iterable<Transaction> {
   covers(t: TimeInput): Query {
     return this.#time("covers", t);
   }
+  /** A transaction's ID at transaction level, a posting's ID at posting level. */
+  ids(...ids: Id[]): Query {
+    return this.#with({ ids });
+  }
   /** Posting level; sub-accounts included; a merged income and expense name also matches. */
   accounts(...ids: Id[]): Query {
     return this.#with({ accounts: ids });
   }
-  /** Posting level, on the posting's references, else its transaction's. */
+  /** Posting level, on the posting's references, else its transaction's; see `entitiesOf`. */
   entities(...ids: Id[]): Query {
     return this.#with({ entities: ids });
   }
@@ -117,8 +124,12 @@ export class Query implements Iterable<Transaction> {
   }
 
   groupBy(...keys: GroupKey[]): Grouped {
-    const { hueke, axis, state, hits } = evaluate(this);
-    return new GroupedQuery(hueke.settings.weekStart, axis, state.times, hits, keys);
+    const { hueke, axis, state, hits, read } = evaluate(this);
+    // A key given twice counts once (docs/core/query.md, "Grouping").
+    const unique = [...new Set(keys)];
+    return new GroupedQuery(hueke.settings.weekStart, axis, state.times, hits, unique, (t, p) =>
+      entitiesOf(t, p, read.accounts, read.obligations),
+    );
   }
 
   #with(change: Partial<State>): Query {
@@ -145,6 +156,13 @@ function inner(q: Query): { readonly hueke: Hueke; readonly state: State } {
  * The same query as a period report with a default axis: a record whose time overlaps the period
  * shows in full, so `within` reads as `overlaps` (docs/core/query.md, "`balance`").
  */
+/** The end of the query's range: the time clause that ends first; none without one. */
+export function rangeEnd(q: Query): TimeValue | undefined {
+  let end: TimeValue | undefined;
+  for (const c of inner(q).state.times) if (!end || c.time.end < end.end) end = c.time;
+  return end;
+}
+
 export function periodReport(q: Query, defaultAxis: Axis): Query {
   const { hueke, state } = inner(q);
   return new Query(hueke, {
@@ -158,10 +176,21 @@ export function periodReport(q: Query, defaultAxis: Axis): Query {
  * A transaction matches when one of its postings, or its empty posting, meets every clause
  * (docs/core/query.md, "Matched postings").
  */
-function evaluate(q: Query): { hueke: Hueke; axis: Axis; state: State; hits: Hit[] } {
+function evaluate(q: Query): {
+  hueke: Hueke;
+  axis: Axis;
+  state: State;
+  hits: Hit[];
+  read: Reader;
+} {
   const { hueke, state: s } = inner(q);
   const axis = s.axis ?? "effective";
   const show = shownAccount(hueke);
+  const read: Reader = {
+    show,
+    accounts: new Map(hueke.accounts.map((a) => [a.id, a])),
+    obligations: obligationEntitiesOf(hueke),
+  };
   const hits: Hit[] = [];
   for (const t of hueke.transactions) {
     if (!s.occurrence.includes(t.occurrence)) continue;
@@ -175,22 +204,30 @@ function evaluate(q: Query): { hueke: Hueke; axis: Axis; state: State; hits: Hit
     if (t.postings.length === 0) {
       // The empty posting: the transaction's values, no account and no amount.
       const empty = { status: t.status, refs: [], tags: t.tags, effective: t.effective };
-      if (postingMatches(s, t, empty, axis, show)) hits.push({ transaction: t, postings: [] });
+      if (postingMatches(s, t, empty, axis, read)) hits.push({ transaction: t, postings: [] });
       continue;
     }
-    const hit = t.postings.filter((p) => postingMatches(s, t, p, axis, show));
+    const hit = t.postings.filter((p) => postingMatches(s, t, p, axis, read));
     if (hit.length > 0) hits.push({ transaction: t, postings: hit });
   }
   const order = sourceOrder(hueke);
   const time = (h: Hit): TimeValue => transactionTime(h.transaction, axis);
   hits.sort((a, b) => compareTime(time(a), time(b)) || order(a.transaction) - order(b.transaction));
-  return { hueke, axis, state: s, hits };
+  return { hueke, axis, state: s, hits, read };
 }
 
 /** What a clause reads from a posting; the empty posting has no account. */
 type QueryPosting = Pick<Posting, "status" | "refs" | "tags" | "effective"> & {
+  readonly id?: Id;
   readonly account?: Id;
 };
+
+/** What reading a posting needs from the ledger. */
+interface Reader {
+  readonly show: (account: Id) => Id;
+  readonly accounts: ReadonlyMap<Id, Account>;
+  readonly obligations: ReturnType<typeof obligationEntitiesOf>;
+}
 
 /** A posting's values in a query: its tags include its transaction's; references fall back. */
 function postingMatches(
@@ -198,9 +235,10 @@ function postingMatches(
   t: Transaction,
   p: QueryPosting,
   axis: Axis,
-  show: (account: Id) => Id,
+  { show, accounts, obligations }: Reader,
 ): boolean {
   const account = p.account;
+  if (s.ids && !s.ids.includes(t.id) && !(p.id !== undefined && s.ids.includes(p.id))) return false;
   if (
     s.accounts &&
     !s.accounts.some(
@@ -210,7 +248,7 @@ function postingMatches(
     return false;
   if (s.status && !s.status.includes(p.status)) return false;
   if (s.entities) {
-    const refs = (p.refs.length > 0 ? p.refs : t.refs).map((r) => r.entity);
+    const refs = entitiesOf(t, p, accounts, obligations);
     if (!s.entities.some((e) => refs.includes(e))) return false;
   }
   if (s.tags) {
@@ -226,7 +264,8 @@ function tagKey(t: TagInput): { scope: string; key: string } {
   if (typeof t !== "string") return { scope: t.scope ?? "tag", key: anchorKey(t.ref) };
   const body = t.startsWith("#") ? t.slice(1) : t;
   const colon = body.indexOf(":");
-  if (colon < 0) return { scope: "tag", key: body };
+  if (colon < 0)
+    throw new Error(`query.tag-without-scope: "${t}": write a tag in full, such as "tag:${body}"`);
   // The text after the scope is written as `anchorKey` gives it, `#shared:<module>:` included.
   return { scope: body.slice(0, colon), key: body.slice(colon + 1) };
 }

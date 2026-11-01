@@ -24,9 +24,10 @@ export interface ReconcileView {
 export function reconcile(ledger: Hueke, req: { account: Id; at: TimeInput }): ReconcileView[] {
   const { timezone, weekStart } = ledger.settings;
   const at = timeInput(req.at, { timezone, weekStart });
-  // Only Balances on exactly this account count, not those on its sub-accounts.
+  // Only Balances on exactly this account count, not those on its sub-accounts nor those with an
+  // entity.
   const mine = ledger.balances.filter(
-    (b) => b.account === req.account && matches(b.effective, "until", at),
+    (b) => b.account === req.account && b.entity === undefined && matches(b.effective, "until", at),
   );
   const postings = query(ledger).axis("effective").accounts(req.account).until(at).postings();
   const commodities = new Set([

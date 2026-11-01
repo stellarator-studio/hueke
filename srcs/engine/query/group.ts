@@ -54,6 +54,8 @@ export class GroupedQuery implements Grouped {
     private readonly times: readonly TimeClause[],
     private readonly hits: readonly Hit[],
     private readonly keys: readonly GroupKey[],
+    /** The entities a posting is read with (docs/core/query.md, "Matched postings"). */
+    private readonly entities: (t: Transaction, p: Posting) => readonly Id[],
   ) {}
 
   sum(): Group<Amount[]>[] {
@@ -117,8 +119,8 @@ export class GroupedQuery implements Grouped {
       case "primaryTag":
         return [t.primaryTag ?? null];
       case "entity": {
-        const refs = p.refs.length > 0 ? p.refs : t.refs;
-        return refs.length > 0 ? refs.map((r) => r.entity) : [null];
+        const refs = this.entities(t, p);
+        return refs.length > 0 ? [...refs] : [null];
       }
       case "tag":
         return p.tags.length > 0
@@ -172,7 +174,7 @@ function compareKeys(
   a: Readonly<Record<string, string | null>>,
   b: Readonly<Record<string, string | null>>,
 ): number {
-  for (const k of new Set(keys)) {
+  for (const k of keys) {
     const x = a[k] ?? null;
     const y = b[k] ?? null;
     if (x === y) continue;

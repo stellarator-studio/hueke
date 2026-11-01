@@ -1,16 +1,39 @@
 // Presentation for the CLI (docs/cli.md, "Output"): tables and CSV. Nothing here changes what the
 // API computed.
 
-import type { Amount, Commodity, Id } from "../index.js";
+import type { Amount, Hueke, LedgerSettings } from "../index.js";
 
 export type Format = "table" | "csv";
 
-/** Pads a decimal with zeros up to the commodity's precision; never drops digits. */
-export function amountText(a: Amount, commodities: ReadonlyMap<Id, Commodity>): string {
-  const precision = commodities.get(a.commodity)?.precision ?? 0;
-  const [whole = a.value, fraction = ""] = a.value.split(".");
+type Marks = Pick<LedgerSettings, "decimalMark" | "groupMark">;
+
+/**
+ * Writes a value for a table, without its commodity: in the ledger's marks, padded with zeros up to
+ * the commodity's precision, never dropping digits. A fraction is grouped but not padded.
+ */
+export function valueText(hueke: Hueke): (a: Amount) => string {
+  const precisions = new Map(hueke.commodities.map((c) => [c.id, c.precision]));
+  return (a) => {
+    const slash = a.value.indexOf("/");
+    if (slash >= 0)
+      return `${number(a.value.slice(0, slash), 0, hueke.settings)}/${number(a.value.slice(slash + 1), 0, hueke.settings)}`;
+    return number(a.value, precisions.get(a.commodity) ?? 0, hueke.settings);
+  };
+}
+
+/** Writes an amount for a table: its value as `valueText` writes it, then its commodity. */
+export function amountText(hueke: Hueke): (a: Amount) => string {
+  const value = valueText(hueke);
+  return (a) => `${value(a)} ${a.commodity}`;
+}
+
+function number(value: string, precision: number, marks: Marks): string {
+  const negative = value.startsWith("-");
+  const [whole = "", fraction = ""] = (negative ? value.slice(1) : value).split(".");
+  const grouped =
+    marks.groupMark === null ? whole : whole.replace(/\B(?=(\d{3})+$)/g, marks.groupMark);
   const digits = fraction.padEnd(precision, "0");
-  return `${whole}${digits ? `.${digits}` : ""} ${a.commodity}`;
+  return `${negative ? "-" : ""}${grouped}${digits ? `${marks.decimalMark}${digits}` : ""}`;
 }
 
 /**

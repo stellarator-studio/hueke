@@ -44,3 +44,11 @@ Status: `implemented`
 | --- | --- |
 | `option currency NTD` | `option.unknown`, message names `currency` |
 | `option timezone Asia/Tokyo` (a second `timezone`) | `option.duplicate`; the creation option or UTC is used |
+| `option strict account, entity` | `strict` is `account` and `entity`; commodities follow normal mode |
+| `option strict account,` | `option.invalid-value`; no strict mode |
+| `option strict` | `option.invalid-value`: the value is empty |
+| `option week-start funday` | `option.invalid-value`; weeks start on Monday |
+| `option income-expense yes` | `option.invalid-value`; income and expenses are not merged |
+| `option income-expense on Flow:Food` | `option.invalid-value`: the name contains `:` |
+| `option group-mark none`, then `1,000 NTD` | `parse.invalid-number`; the transaction is not loaded. `1000 NTD` reads as 1000 |
+| `option pad-account Nowhere:Else`, a transaction moving 180 NTD from `Assets:Cash` to `Expenses:Food`, and `2026-10-31 balance Assets:Cash 0 NTD pad` | No diagnostic about the setting. The pad generates `Assets:Cash` 180 NTD and `Nowhere:Else` −180 NTD, and `Nowhere:Else` is `name.unknown-root` |

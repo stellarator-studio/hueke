@@ -76,7 +76,7 @@ Status: `implemented`
 
 - Only the time is required.
 - At most one header mark: none (recorded, not checked), `*` (status cleared), `!` (occurrence planned) or `#` (occurrence cancelled). Two marks are `parse.token-order`.
-- At most one `%anchor`, at most one `^`; any number of `@` references and `#` tags, in that order.
+- At most one `%anchor`, at most one `^`; any number of `@` references and `#` tags, in that order. A second `^` is `txn.multiple-primary-tag`, reported by the parser, and the block is not loaded.
 - `^tag:x` is the same as `^x`; a primary tag with another scope is `parse.syntax`.
 - `#scope:x` gives a tag a scope; `#x` is `#tag:x`. `#shared:<module>:x` names the anchor `x` of another module. `@role:x` gives a reference a role; `@x` is `@person:x`.
 
@@ -121,13 +121,14 @@ Status: `implemented`
 Status: `implemented`
 
 ```text
-<time>[=<time>] balance <account> <amount> [pad [<padding> [@ price | @@ price]] [-> <counter-account>]]
+<time>[=<time>] balance <account> [@entity] <amount> [pad [<padding> [@ price | @@ price]] [-> <counter-account>]]
 ```
 
 - The effective time is one day; an accounting time may follow after `=` (see [../core/balance.md](../core/balance.md), "Balance assertions").
 - The amount is signed; with `pad`, it is the balance after padding.
 - After `pad`, a number or alias is the padding (signed, on the asserted account); `->` names the counter-account. Both are optional.
-- A Balance takes metadata but no tags; a tag is `parse.syntax`. An `@entity` after the account is reserved (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax").
+- `@entity` limits the assertion to one entity (see [../core/balance.md](../core/balance.md), "Entities in Balance assertions"). At most one; a second is `parse.syntax`. `@person:entity` is the same as `@entity`, and any other role is `name.unknown-role`, as on any reference. On obligations, only a pad on one obligation takes an entity (see [../core/balance.md](../core/balance.md), "Obligations in Balance assertions").
+- A Balance takes metadata but no tags; a tag is `parse.syntax`.
 
 ```hueke
 2026-10-25 balance Bank:Checking 12345 NTD
@@ -135,6 +136,8 @@ Status: `implemented`
 2026-10-25 balance Bank:Checking 12345 NTD pad 45 NTD -> Expenses:ReconcileDiff
 2026-10-31 balance Liabilities:CreditCard -3200 NTD
     ;; document: statements/card-2026-10.pdf
+2026-10-31 balance Bank:Checking @acme 52000 NTD
+2026-10-20 balance Assets:Receivable:lunch-1011 0 NTD pad -50 NTD -> Expenses:Discount
 ```
 
 ### Declarations
@@ -146,12 +149,14 @@ Status: `implemented`
 | Setting | `option <name> <value>`; the value runs to the end of the line | None |
 | Account root | `account-root <name> <type>` | None |
 | Commodity | `commodity <code>` | `item` (no value), `precision <whole number>`, `alias <text> prefix` or `alias <text> suffix` (may repeat), metadata |
-| Account | `account <name>`; a `%anchor` after the name is reserved (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax") | `primary <commodity>`, metadata |
+| Account | `account <name> [%anchor]` | `display-name <text>`, `obligation receivable` or `obligation payable`, `pad-account <account>`; `primary <commodity>`; metadata |
+| Entity | `entity <id>` | `display-name <text>`, metadata; `type` is reserved (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax") |
 | Include | `include <path>`; the path is one token | None |
 
 - Declarations have no time; their order does not matter. Only the root module's declarations take effect (see [../core/modules.md](../core/modules.md), "Declarations in included modules").
 - The settings and their values are listed in [../core/settings.md](../core/settings.md), "Settings".
 - `precision` must be a whole number without marks, and `alias` must have exactly a text and `prefix` or `suffix`; otherwise `parse.syntax`, and the declaration is not loaded.
+- `display-name` runs to the end of the line and may contain spaces; with no text, it is `parse.syntax`, and the declaration is not loaded. `obligation` takes exactly `receivable` or `payable`, `pad-account` exactly one account name; otherwise `parse.syntax`, and the declaration is not loaded.
 
 ```hueke
 option timezone Asia/Taipei
@@ -167,9 +172,16 @@ commodity camera-01
     item
     ;; category: camera
 
-account Bank:Checking
+account Bank:Checking %main-bank
+    display-name Main checking account
     primary NTD
     ;; bank_code: 808
+account Assets:Receivable
+    obligation receivable
+    pad-account Expenses:WriteOff
+
+entity NAT
+    display-name Nat Chen
 ```
 
 ### `include`

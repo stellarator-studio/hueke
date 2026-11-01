@@ -12,7 +12,10 @@ import { supported } from "./unsupported.js";
 export interface Modules {
   /** The logical paths of the ledger's modules, in module order. */
   readonly ledger: SourcePath[];
-  /** Every supported record and declaration, in module order; `include` lines are consumed. */
+  /**
+   * Every supported record and declaration, and the transactions dropped for unsupported syntax,
+   * in module order; `include` lines are consumed.
+   */
   readonly items: SourcedItem[];
   /** Parse diagnostics of each module, in module order. */
   readonly parsed: Diagnostic[];
@@ -28,9 +31,9 @@ export function collectModules(
   const visit = (path: SourcePath, module: ModuleData): void => {
     result.ledger.push(path);
     result.parsed.push(...module.diagnostics);
-    for (const item of supported(module.items, path, out)) {
+    for (const { item, dropped } of supported(module.items, path, out)) {
       if (item.kind !== "include") {
-        result.items.push({ item, source: path });
+        result.items.push({ item, source: path, ...(dropped && { dropped }) });
         continue;
       }
       const [written = ""] = item.args;

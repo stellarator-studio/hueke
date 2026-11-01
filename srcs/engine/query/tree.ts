@@ -69,7 +69,7 @@ export function accountTree(hueke: Hueke, postings: readonly Posting[]): Registe
 }
 
 /** Segment by segment, so that `Assets:Cash` stays next to `Assets` before `Assets-X`. */
-function compareAccounts(a: Id, b: Id): number {
+export function compareAccounts(a: Id, b: Id): number {
   const x = a.split(":");
   const y = b.split(":");
   for (let i = 0; i < Math.min(x.length, y.length); i++) {

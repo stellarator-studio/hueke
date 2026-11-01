@@ -174,7 +174,6 @@ export type DeclarationKind =
   | "schedule"
   | "installment"
   | "rule"
-  | "cap-group"
   | "module"
   | "include";
 
@@ -182,7 +181,7 @@ export type DeclarationKind =
 export interface DeclarationData extends Line {
   readonly kind: DeclarationKind;
   readonly args: readonly string[]; // declaration-line arguments, e.g. ["timezone", "Asia/Taipei"], ["2026.hueke"]
-  readonly anchor?: AnchorRef; // account, schedule, installment, rule, cap-group
+  readonly anchor?: AnchorRef; // account, schedule, installment, rule
   readonly tail?: HeaderTailData; // schedule, installment, rule
   readonly description?: string; // module
   readonly lines: readonly ItemChild[];

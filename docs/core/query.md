@@ -15,6 +15,7 @@ A **query** selects transactions and postings, then optionally groups and aggreg
 | Aggregation | `implemented` |
 | `balance` | `implemented` |
 | `register` | `implemented` |
+| Settled obligations in `balance` and `register` | `implemented` |
 
 ## Concepts
 
@@ -47,7 +48,8 @@ Status: `implemented`
 | `within`, `overlaps`, `covers`, `until` | By axis | Time predicates (see [time.md](time.md), "Time predicates"). |
 | `accounts` | Posting | Account IDs, sub-accounts included. |
 | `entities` | Posting | Entity IDs in the posting's references (see "Matched postings"). |
-| `tags` | Posting | The posting's tags (see "Matched postings"). A tag is given as a tag, or as text, with or without `#`: `travel`, `#system:balance`, `shared:trip:hotel`. Text matches a tag exactly, period included: `trip` does not match `#trip/2026-10`. |
+| `ids` | By ID | Transaction and posting IDs: anchors or generated IDs. A transaction's ID is a transaction-level condition; a posting's ID is a posting-level one (see [anchors.md](anchors.md), "Looking up by ID"). |
+| `tags` | Posting | The posting's tags (see "Matched postings"). A tag is given as a tag, or as text written in full, `<scope>:<anchor>`, with or without `#`: `tag:travel`, `#system:balance`, `shared:trip:hotel`. Text without a scope, such as `travel`, throws `query.tag-without-scope`. Text matches a tag exactly, period included: `tag:trip` does not match `#trip/2026-10`. |
 | `status` | Posting | The posting's status: `none`, `cleared`. |
 | `primaryTag` | Transaction | The transaction's primary tag. |
 | `involves` | Transaction | Each listed commodity appears in the amount of some posting. Prices and costs are not looked at. |
@@ -57,6 +59,7 @@ Status: `implemented`
 - Calling a time clause again adds another condition; calling any other clause again replaces it.
 - There is no filtering by account type. List the accounts with `accounts`.
 - An account, entity or commodity that the ledger does not have is not an error; it matches nothing.
+- `tags` matches tags whether anchored or plain, and never a tag skipped for a scope error (see [anchors.md](anchors.md), "Scopes").
 - `accounts` also accepts the merged income and expense root and its accounts, such as `IncomeExpenses:Food` (see [accounts.md](accounts.md), "Combined income and expense").
 - `occurrence("occurred")`, and calling `axis` after a time clause, are not settled. [draft]
 
@@ -73,7 +76,7 @@ Status: `implemented`
 | Value | Taken from |
 | --- | --- |
 | Tags | The posting's own tags plus its transaction's |
-| References | The posting's own references; its transaction's when the posting has none |
+| References | The posting's own references; its transaction's when the posting has none. On an obligation, the obligation's entities instead, whatever the posting or its transaction names (see [obligations.md](obligations.md), "Entities of an obligation") |
 | Metadata | For each key, the posting's value; its transaction's when the posting has none |
 | Status, effective time | The posting's (see [transactions.md](transactions.md), "Concepts") |
 
@@ -155,15 +158,23 @@ Status: `implemented`
 
 `register` gives the same rows as `balance` for the same query, and each row that is not a subtotal also lists the postings it counts. It reads `within` as `balance` does.
 
+### Settled obligations in `balance` and `register`
+
+Status: `implemented`
+
+- `balance` and `register` leave out the rows of settled obligations unless the option `all` is set, as described in [obligations.md](obligations.md), "Hiding settled obligations".
+- Subtotal rows stay, including a parent all of whose obligations are hidden.
+
 ## API
 
 - `query(ledger)` starts a query over the ledger with no clauses.
-- Each clause in "Filtering" is a method of the same name that returns a new query. Time clauses take a time and throw when it is rejected (see [time.md](time.md), "Times given to the API"). `accounts`, `entities`, `tags`, `status`, `involves` and `occurrence` take any number of values.
+- Each clause in "Filtering" is a method of the same name that returns a new query. Time clauses take a time and throw when it is rejected (see [time.md](time.md), "Times given to the API"). `ids`, `accounts`, `entities`, `tags`, `status`, `involves` and `occurrence` take any number of values.
 - Iterating a query yields the matching transactions, whole and with metadata, in "Ordering" order.
 - `postings()` returns the matched postings, in "Ordering" order.
 - `groupBy(...keys)` returns a grouped query with `sum()` and `count()`, each returning a list of groups.
-- `balance(ledger, query?)` returns the account tree rows of `balance`; without a query, it covers the whole ledger.
-- `register(ledger, query?)` returns the account tree rows of `register`; without a query, it covers the whole ledger.
+- `balance(ledger, query?, options?)` returns the account tree rows of `balance`; without a query, it covers the whole ledger. The option `all` also lists settled obligations.
+- `register(ledger, query?, options?)` returns the account tree rows of `register`; without a query, it covers the whole ledger. It takes the same option `all`.
+- The rows of an obligation's progress come from `obligations` (see [obligations.md](obligations.md), "API"); `query` has no aggregate for them.
 
 Which axis suits which use is described in [time.md](time.md), "Time axes".
 
@@ -176,6 +187,7 @@ Which axis suits which use is described in [time.md](time.md), "Time axes".
 | Register of an account in a period | `query(ledger).accounts(id).within(period)` |
 | Register laid out by account | `register(ledger, query(ledger).within(period))` |
 | Calendar view | `query(ledger).axis("txn-effective").overlaps(month)` |
+| Members of a group | `query(ledger).tags("<scope>:<anchor>")` or `query(ledger).primaryTag(name)`; the anchor's record with `query(ledger).ids(anchor)` (see [anchors.md](anchors.md), "Groups") |
 
 ## Examples
 
@@ -265,3 +277,52 @@ The periods are accounting times: a posting's effective time is one day or one m
 ```
 
 `query(ledger).accounts("Bank:Checking").postings()` lists the opening, the late transfer, then the generated 50 NTD padding: it comes after the transfer, which has the same time.
+
+**Grouping and aggregation**
+
+```hueke
+2026-10-05 * "October salary" @acme
+    Bank:Checking     50000 NTD
+    Income:Salary    -50000 NTD
+
+2026-10-12 "Lunch with NAT" @NAT #food
+    ;; place: Xinyi
+    Expenses:Food      600 NTD
+    Assets:Cash       -600 NTD
+
+2026-10-20 * "Dinner with NAT and KEN" @NAT @KEN #food #friends
+    Expenses:Food     1200 NTD
+        ;; place: Daan
+    Assets:Cash      -1200 NTD
+
+2026-11-02 * "Tokyo snacks" #food
+    Expenses:Food     1000 JPY @@ 220 NTD
+    Assets:Cash       -220 NTD
+```
+
+With `e = query(ledger).accounts("Expenses")`, each call returns these groups, in this order:
+
+| Call | Groups |
+| --- | --- |
+| `e.groupBy().sum()` | One group with an empty `key`: 1000 JPY, 1800 NTD |
+| `e.groupBy("account").sum()` | `Expenses:Food`: 1000 JPY, 1800 NTD |
+| `e.groupBy("commodity").sum()` | JPY 1000 JPY; NTD 1800 NTD |
+| `e.groupBy("entity").sum()` | "none" 1000 JPY; `KEN` 1200 NTD; `NAT` 1800 NTD. The dinner counts for both, so the groups add up to more than the whole |
+| `e.groupBy("tag").sum()` | `tag:food` 1000 JPY, 1800 NTD; `tag:friends` 1200 NTD |
+| `e.groupBy("meta:place").sum()` | "none" 1000 JPY; `Daan` 1200 NTD, the posting's own value; `Xinyi` 600 NTD, taken from the lunch's transaction |
+| `e.groupBy("week").sum()` | `2026-W42` 600 NTD; `2026-W43` 1200 NTD; `2026-W45` 1000 JPY |
+| `e.groupBy("month").sum()` | `2026-10` 1800 NTD; `2026-11` 1000 JPY |
+| `e.groupBy("quarter").sum()` and `e.groupBy("year").sum()` | One group each, `2026-Q4` and `2026`: 1000 JPY, 1800 NTD |
+| `e.groupBy("month", "commodity").sum()` | (`2026-10`, NTD) 1800 NTD; (`2026-11`, JPY) 1000 JPY |
+| `e.groupBy("entity", "entity").sum()` | The same groups as `e.groupBy("entity").sum()` |
+| `query(ledger).groupBy("entity").count()` | "none" 1; `KEN` 1; `NAT` 2; `acme` 1: transactions, not postings |
+| `e.within("2026-10").groupBy("week").sum()` | `2026-W42` 600 NTD; `2026-W43` 1200 NTD: the snacks are outside the range |
+
+| Call | Result |
+| --- | --- |
+| `query(ledger).status("none").postings()` | The lunch's two postings |
+| `query(ledger).status("cleared").postings()` | The postings of the salary, the dinner and the snacks |
+| Iterating `query(ledger).involves("JPY")` | The snacks |
+| Iterating `query(ledger).involves("JPY", "NTD")` | The snacks: it has amounts in both |
+| Iterating `query(ledger).involves("JPY", "USD")` | Nothing |
+| Iterating `query(ledger).involves("NTD")` | All four transactions |

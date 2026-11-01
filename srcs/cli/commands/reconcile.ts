@@ -4,7 +4,7 @@ import { reconcile, type Amount, type Hueke, type Id, type Posting } from "../..
 import { UsageError, type CliIO } from "../io.js";
 import { addDecimals, amountText, table } from "../output.js";
 import type { Command, Options } from "./command.js";
-import { commodityMap, mark, postingIndex, postingRows, postingTable } from "./postings.js";
+import { mark, postingIndex, postingRows, postingTable } from "./postings.js";
 
 export const reconcileCommand: Command = {
   usage: "reconcile <account> --at <time> --file <path> [--balance] [--strict]",
@@ -18,12 +18,11 @@ export const reconcileCommand: Command = {
       throw new UsageError(`reconcile has no ${options.format} output`);
     const postings = postingIndex(hueke);
     const pick = (ids: readonly Id[]): Posting[] => ids.flatMap((id) => postings.get(id) ?? []);
-    const commodities = commodityMap(hueke);
+    const amount = amountText(hueke);
     const text = reconcile(hueke, { account, at: options.at }).map((v) => {
       const period = postingRows(hueke, pick(v.postings), "effective");
       const uncleared = postingRows(hueke, pick(v.uncleared), "effective");
       const head = `${v.account}  ${v.commodity}  ${v.range.after?.literal ?? "start"} .. ${v.range.until.literal}\n`;
-      const amount = (a: Amount): string => amountText(a, commodities);
       let running = v.opening.value;
       // With --balance, opening and closing sit in the balance column.
       const wide = options.balance === true;

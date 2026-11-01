@@ -44,7 +44,8 @@ A module includes another with `include <path>` (see [../dsl/records.md](../dsl/
 
 Status: `implemented`
 
-- Only the root module's declarations take effect: `option`, `account-root`, `commodity` and `account`. Where they stand in the root does not matter.
+- Only the root module's declarations take effect: `option`, `account-root`, `commodity`, `account` and `entity`. Where they stand in the root does not matter.
+- Records are not declarations: the transactions and Balances of every module join the ledger, and their anchors share one namespace with the root's (see [anchors.md](anchors.md), "Anchors").
 - Declarations in an included module, at any depth, are kept in its Raw model but never take effect, whether or not the root declares the same thing. They are never duplicates of the root's or of each other.
 - Each such declaration is `module.ignored-declaration` (warning), saying that only the root's declarations take effect.
 

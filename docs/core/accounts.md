@@ -1,6 +1,6 @@
 # Accounts
 
-An **account** is a named place that holds amounts, in any number of commodities. Account names form a hierarchy, and the first segment of a name, the **root**, decides the account's type. This document covers the hierarchy, account and root declarations, combined income and expense accounts, and accounts whose root is unknown. Declarations of accounts and commodities alike, strict mode and duplicates, are described in [ledger.md](ledger.md); only the root module's declarations take effect (see [modules.md](modules.md), "Declarations in included modules").
+An **account** is a named place that holds amounts, in any number of commodities. Account names form a hierarchy, and the first segment of a name, the **root**, decides the account's type. This document covers the hierarchy, account and root declarations, combined income and expense accounts, and accounts whose root is unknown. Obligation accounts are described in [obligations.md](obligations.md). Declarations of accounts and commodities alike, strict mode and duplicates, are described in [ledger.md](ledger.md); only the root module's declarations take effect (see [modules.md](modules.md), "Declarations in included modules").
 
 ## Features
 
@@ -8,6 +8,8 @@ An **account** is a named place that holds amounts, in any number of commodities
 | --- | --- |
 | Accounts and the hierarchy | `implemented` |
 | Account declarations | `implemented` |
+| Account anchors and display names | `implemented` |
+| Obligation and pad settings | `implemented` |
 | Account roots | `implemented` |
 | Combined income and expense | `implemented` |
 | Untyped accounts | `implemented` |
@@ -32,7 +34,11 @@ An **account** is a named place that holds amounts, in any number of commodities
 | `span` | Where it is declared; absent for an account used without a declaration. |
 | `type` | From its root; absent when the root is unknown. |
 | `parent` | The name without its last segment; absent for a single segment. |
+| `anchor` | The anchor written after the name, if any (see [anchors.md](anchors.md)). |
+| `displayName` | The name to show in reports, if declared (see [entities.md](entities.md), "Display names"). |
 | `primaryCommodity` | The default commodity for display, if declared. |
+| `obligation` | `receivable` or `payable`, declared or inherited from an obligation account (see [obligations.md](obligations.md)); absent otherwise. |
+| `padAccount` | The default counter-account of a pad on this account, declared or inherited from an obligation account; absent otherwise. |
 | `meta` | Metadata written under the declaration. |
 
 ## Behavior
@@ -49,10 +55,26 @@ Status: `implemented`
 
 Status: `implemented`
 
-- An account is declared with `account <name>`. A `%anchor` after the name is reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
+- An account is declared with `account <name>`, optionally followed by `%anchor` (see "Account anchors and display names").
 - `primary <commodity>` sets `primaryCommodity`.
 - Metadata lines under the declaration go to the account's `meta`, apart from any posting's metadata.
-- Other account properties are reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
+- `display-name`, `obligation` and `pad-account` are described below. Other account properties are reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
+
+### Account anchors and display names
+
+Status: `implemented`
+
+- `account <name> %anchor` gives the account an anchor. It shares the ledger's one namespace of anchors, so tags can name the account (see [anchors.md](anchors.md)). The account is found in the ledger's `accounts` by its `anchor`. The account's ID is still its full name.
+- `display-name <text>` sets `displayName`, a name only for showing (see [entities.md](entities.md), "Display names").
+- Sub-accounts inherit neither.
+
+### Obligation and pad settings
+
+Status: `implemented`
+
+- `obligation receivable` or `obligation payable` makes the account an obligation account, whatever its type; its direct sub-accounts are obligations (see [obligations.md](obligations.md), "Obligation accounts").
+- `pad-account <account>` sets `padAccount`: the counter-account of a pad on this account that names none, before the ledger's `pad-account` (see [balance.md](balance.md), "`pad` assertions"). It is kept as written and not checked when read.
+- An obligation's sub-accounts inherit both from the obligation account, and need no declaration even in strict mode. Other sub-accounts inherit neither: a pad on `Bank:Checking` does not use the `pad-account` of `Bank`.
 
 ### Account roots
 
@@ -92,6 +114,8 @@ Unless strict mode covers accounts (see [ledger.md](ledger.md), "Declarations an
 | Postings on `Expenses:Food` and `Assets:Cash`, no `account-root` | `Expenses:Food` has type `expense`; no diagnostics |
 | `account-root Assets liability`, a posting on `Assets:Cash` | The `Assets` root has type `liability` and `builtin` false; `Assets:Cash` has type `liability` |
 | Postings on `Spending:Food`, `Spending` not declared | `name.unknown-root` naming `Spending`; the account has no type and still totals 180 NTD |
+| `account Bank:Checking %main-bank` with `display-name Main checking account` | The account's ID is `Bank:Checking`, its `anchor` `main-bank`, its `displayName` "Main checking account" |
+| `account Assets:Receivable` with `obligation receivable` and `pad-account Expenses:WriteOff`, and a posting on `Assets:Receivable:lunch-1011` | `Assets:Receivable:lunch-1011` has `obligation` `receivable` and `padAccount` `Expenses:WriteOff`; with `option strict account`, it is not `strict.undeclared` |
 
 ```hueke
 option income-expense on

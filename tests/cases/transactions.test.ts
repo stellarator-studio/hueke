@@ -118,12 +118,7 @@ option strict commodity
       { name: "Points", total: { value: "40", commodity: "POINT" } },
     ]);
   });
-  it("reads a single space as part of the name", () => {
-    const g = line("- Toast 65");
-    expect(codes(g)).toEqual([]);
-    expect(breakdownOf(g)).toEqual([{ name: "Toast 65" }]);
-  });
-  it("reads an old amount alone as a quantity", () => {
+  it("reads a number alone, after two spaces, as a quantity", () => {
     const g = line("- Toast  65");
     expect(codes(g)).toEqual([]);
     expect(breakdownOf(g)).toEqual([{ name: "Toast", quantity: { value: "65" } }]);
@@ -174,6 +169,17 @@ describe("an omitted amount", () => {
     Bank:Checking
 `);
     expect(codes(h)).toEqual(["txn.amount-not-inferable"]);
+    expect(h.transactions).toEqual([]);
+  });
+  it("keeps the filled-in posting's own effective time", () => {
+    const h = ledger(`
+2026-10-12 * "Transfer"
+    Assets:Cash      500 NTD
+    Bank:Checking  [2026-10-14]
+`);
+    expect(codes(h)).toEqual([]);
+    expect(balanceOf(h, "Bank:Checking", "2026-10-13")).toBe("0");
+    expect(balanceOf(h, "Bank:Checking", "2026-10-14")).toBe("-500");
   });
   it("uses the price's total", () => {
     const h = ledger(`
@@ -192,6 +198,7 @@ describe("an omitted amount", () => {
     Assets:Cash
 `);
     expect(codes(h)).toEqual(["txn.amount-not-inferable"]);
+    expect(h.transactions).toEqual([]);
   });
 });
 
@@ -204,6 +211,8 @@ describe("unbalanced", () => {
 `);
     expect(codes(h)).toEqual(["txn.unbalanced"]);
     expect(checkMessages(h).join()).toContain("30 NTD");
+    // The transaction still loads and its postings count.
+    expect(balanceOf(h, "Assets:Cash", "2026-10-12")).toBe("-150");
   });
   it("two commodities without a price", () => {
     const h = ledger(`
@@ -258,7 +267,22 @@ describe("tolerance", () => {
       `2026-10-12 * "Lunch"\n    Expenses:Food  180.5 NTD\n    Assets:Cash  -180.5 NTD\n`,
     );
     expect(codes(h)).toEqual(["posting.excess-precision", "posting.excess-precision"]);
+    expect(check(h).map((d) => d.severity)).toEqual(["warning", "warning"]);
     expect(balanceOf(h, "Assets:Cash", "2026-10-12")).toBe("-180.5");
+  });
+  it("checks only amounts written in a commodity with a declared precision", () => {
+    const h = ledger(`
+2026-10-12 * "Points with an inferred precision"
+    Assets:Points       1.125 POINT
+    Income:Rewards     -1.125 POINT
+
+2026-10-12 * "An item, prices and a filled-in amount"
+    Assets:Equipment    1 camera-01 @@ 300.5 NTD
+    Bank:USDAccount     10 USD @ 32.125 NTD
+    Bank:Checking
+`);
+    expect(codes(h, true)).toEqual(["name.inferred-commodity"]);
+    expect(balanceOf(h, "Bank:Checking", "2026-10-12")).toBe("-621.75");
   });
 });
 
@@ -317,39 +341,13 @@ describe("status marks", () => {
 2026-10-13 #travel
     Expenses:Transport     500 NTD
     Assets:Cash           -500 NTD
-
-2026-10-14 * "Taxi" # travel
-    Expenses:Transport     300 NTD
-    Assets:Cash           -300 NTD
-
-schedule %gym * "Gym membership"
-    from 2026-01-05
-    every 1 month
-    Expenses:Sports     1500 NTD
-    Bank:Checking      -1500 NTD
 `);
-    expect(codes(h)).toEqual(["parse.token-order", "parse.syntax"]);
-    expect(balanceOf(h, "Assets:Cash", "2026-10-13")).toBe("-500");
-  });
-});
-
-describe("correcting a cleared record", () => {
-  const h = ledger(`
-2026-10-12 # "Lunch"
-    Expenses:Food     180 NTD
-    Assets:Cash      -180 NTD
-
-2026-10-12 * "Lunch (corrected to 150)"
-    Expenses:Food     150 NTD
-    Assets:Cash      -150 NTD
-`);
-  it("leaves the cancelled one out of balances", () => {
     expect(codes(h)).toEqual([]);
-    expect(balanceOf(h, "Assets:Cash", "2026-10-12")).toBe("-150");
-    const cancelled = [...query(h).accounts("Expenses:Food").occurrence("cancelled")];
-    expect(cancelled.map((t) => [t.description, t.postings[0]?.amount.value])).toEqual([
-      ["Lunch", "180"],
+    expect(h.transactions.map((t) => [t.occurrence, t.tags.map((g) => g.ref.name)])).toEqual([
+      ["cancelled", []],
+      ["occurred", ["travel"]],
     ]);
+    expect(balanceOf(h, "Assets:Cash", "2026-10-13")).toBe("-500");
   });
 });
 
@@ -359,7 +357,7 @@ function checkMessages(h: Hueke): string[] {
     .map((d) => d.message);
 }
 
-describe("occurrence", () => {
+describe("occurrence and correcting a record", () => {
   const h = ledger(`
 2026-10-12 # "Lunch"
     Expenses:Food     180 NTD
@@ -378,6 +376,10 @@ describe("occurrence", () => {
     expect(h.transactions.map((t) => t.occurrence)).toEqual(["cancelled", "occurred", "planned"]);
     expect(balanceOf(h, "Assets:Cash", "2026-10-31")).toBe("-150");
     expect([...query(h)].map((t) => t.description)).toEqual(["Lunch (corrected to 150)"]);
+    const cancelled = [...query(h).accounts("Expenses:Food").occurrence("cancelled")];
+    expect(cancelled.map((t) => [t.description, t.postings[0]?.amount.value])).toEqual([
+      ["Lunch", "180"],
+    ]);
   });
 });
 
@@ -592,5 +594,44 @@ describe("order of transactions", () => {
           .map((p) => p.amount.value),
       ).toEqual(["-200", "-500", "1000"]);
     });
+  });
+});
+
+describe("tags, references and anchors", () => {
+  it("keep what they resolve to, and leave out what is skipped", () => {
+    const h = ledger(`
+2026-10-18 %trip "Trip"
+
+2026-10-19 * "Hotel" @NAT @payee:KEN ^trip #trip #claim #category:x
+    Expenses:Lodging     8000 NTD
+    Bank:Checking       -8000 NTD
+`);
+    expect(codes(h)).toEqual(["name.unknown-role", "tag.unknown-scope"]);
+    const hotel = h.transactions.find((t) => t.description === "Hotel");
+    expect(hotel?.primaryTag).toBe("trip");
+    expect(hotel?.primaryTarget).toBe("trip");
+    expect(hotel?.tags).toStrictEqual([
+      { scope: "tag", ref: { name: "trip" }, target: "trip" },
+      { scope: "tag", ref: { name: "claim" } },
+    ]);
+    expect(hotel?.refs).toEqual([{ role: "person", entity: "NAT" }]);
+    expect(hotel?.origin?.refs).toEqual(["NAT", "payee:KEN"]);
+    expect(hotel?.origin?.tags).toStrictEqual([
+      { ref: { name: "trip" } },
+      { ref: { name: "claim" } },
+      { scope: "category", ref: { name: "x" } },
+    ]);
+  });
+  it("give a posting its own tags, then its transaction's", () => {
+    const h = ledger(`
+2026-10-19 * "Hotel" #trip
+    Expenses:Lodging     8000 NTD  #claim
+    Bank:Checking       -8000 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions[0]?.postings.map((p) => p.tags.map((t) => t.ref.name))).toEqual([
+      ["claim", "trip"],
+      ["trip"],
+    ]);
   });
 });

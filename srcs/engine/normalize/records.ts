@@ -1,5 +1,6 @@
 // Normalization of records: Raw transactions and balances become derived ones. Times and status
-// are inherited, prices and costs become totals, and an omitted amount is filled in.
+// are inherited, prices and costs become totals, and an omitted amount is filled in. References
+// with a role Core does not define are skipped.
 
 import type {
   Account,
@@ -18,7 +19,9 @@ import type {
   Transaction,
 } from "../../data/model/types.js";
 import { anchorKey } from "../../data/raw/anchor.js";
+import { obligationPlace } from "../../data/model/account.js";
 import type {
+  AnchorRef,
   BalanceData,
   BreakdownLine,
   PostingData,
@@ -39,7 +42,6 @@ import {
   type Rational,
 } from "../../data/values/decimal.js";
 import {
-  ConflictedAlias,
   NumberError,
   parseAmount,
   parseFigureValue,
@@ -60,6 +62,8 @@ export interface RecordContext {
   readonly time: TimeContext;
   readonly roots: ReadonlyMap<string, AccountRoot>;
   readonly accounts: ReadonlyMap<Id, Account>;
+  /** Whether an anchor defines its record: an anchor defined more than once does not. */
+  readonly defines: (anchor: AnchorRef) => boolean;
   readonly out: Diagnostic[];
   /** Digits after the decimal mark of each written posting amount, for precision checks. */
   readonly decimals: Map<Posting, number>;
@@ -89,7 +93,6 @@ function guard<T>(ctx: RecordContext, data: { span?: TransactionData["span"] }, 
   try {
     return read();
   } catch (e) {
-    if (e instanceof ConflictedAlias) throw new Dropped(e.message);
     if (e instanceof NumberError) fail(ctx, "parse.invalid-number", e.message, data);
     if (e instanceof TimeError) fail(ctx, e.code, e.message, data);
     throw e;
@@ -98,11 +101,34 @@ function guard<T>(ctx: RecordContext, data: { span?: TransactionData["span"] }, 
 
 const tagOf = (t: TagData): Tag => ({ scope: t.scope ?? "tag", ref: t.ref });
 
-function referenceOf(text: string): Reference {
-  const colon = text.indexOf(":");
-  return colon < 0
-    ? { role: "person", entity: text }
-    : { role: text.slice(0, colon), entity: text.slice(colon + 1) };
+/** Roles Core defines (docs/core/entities.md, "References and roles"). */
+const ROLES = new Set(["person"]);
+
+/** The references written, without those whose role is unknown. */
+function referencesOf(
+  ctx: RecordContext,
+  written: readonly string[],
+  span: SourceSpan | undefined,
+): Reference[] {
+  const refs: Reference[] = [];
+  for (const text of written) {
+    const colon = text.indexOf(":");
+    const ref =
+      colon < 0
+        ? { role: "person", entity: text }
+        : { role: text.slice(0, colon), entity: text.slice(colon + 1) };
+    if (ROLES.has(ref.role)) refs.push(ref);
+    else
+      ctx.out.push(
+        diagnostic(
+          "name.unknown-role",
+          `@${text}: Core defines no role "${ref.role}"`,
+          ctx.source,
+          span,
+        ),
+      );
+  }
+  return refs;
 }
 
 function amountOf(ctx: RecordContext, text: string, written?: (decimals: number) => void): Amount {
@@ -219,7 +245,7 @@ function transaction(
       );
     const draft: Draft = {
       data: p,
-      id: p.anchor ? anchorKey(p.anchor) : `${id}.${String(i + 1)}`,
+      id: p.anchor && ctx.defines(p.anchor) ? anchorKey(p.anchor) : `${id}.${String(i + 1)}`,
       effective: own ?? effective,
       status: p.cleared ? "cleared" : status,
       breakdown: [],
@@ -283,7 +309,7 @@ function transaction(
       status: d.status,
       effective: d.effective,
       tags: [...d.data.tags.map(tagOf), ...tags],
-      refs: d.data.refs.map(referenceOf),
+      refs: referencesOf(ctx, d.data.refs, d.data.span),
       meta: metaFrom(d.data.lines, d.data.trailer),
       breakdown: d.breakdown,
     };
@@ -303,7 +329,7 @@ function transaction(
     status,
     ...(data.primaryTag && { primaryTag: data.primaryTag.ref.name }),
     tags,
-    refs: data.refs.map(referenceOf),
+    refs: referencesOf(ctx, data.refs, data.span),
     meta: metaFrom(data.lines, data.trailer),
     postings,
   };
@@ -354,7 +380,7 @@ function breakdownLine(ctx: RecordContext, line: BreakdownLine): Breakdown {
       ...(parts.total !== undefined && { total: figure(parts.total) }),
     };
   } catch (e) {
-    if (!(e instanceof NumberError || e instanceof ConflictedAlias)) throw e;
+    if (!(e instanceof NumberError)) throw e;
     ctx.out.push(
       diagnostic(
         "breakdown.invalid-figure",
@@ -377,6 +403,17 @@ export function buildBalance(data: BalanceData, ctx: RecordContext): Balance | u
         data.accounting === undefined ? undefined : parseTime(data.accounting, ctx.time);
       let decimals = 0;
       const amount = amountOf(ctx, data.amount, (d) => (decimals = d));
+      const [ref] = data.entity === undefined ? [] : referencesOf(ctx, [data.entity], data.span);
+      // On obligations, only a pad on one obligation names an entity
+      // (docs/core/balance.md, "Obligations in Balance assertions").
+      const place = obligationPlace(data.account, ctx.accounts);
+      if (ref && place && !(data.pad && place.kind === "obligation"))
+        fail(
+          ctx,
+          "balance.obligation-entity",
+          `a Balance on ${data.account} asserts whole obligations and takes no entity`,
+          data,
+        );
       const pad = data.pad?.amount === undefined ? undefined : amountOf(ctx, data.pad.amount);
       const padPrice =
         data.pad?.price && pad ? totalOf(ctx, data.pad.price, pad, data.span) : undefined;
@@ -385,6 +422,7 @@ export function buildBalance(data: BalanceData, ctx: RecordContext): Balance | u
         ...(data.span && { span: data.span }),
         origin: data,
         account: data.account,
+        ...(ref && { entity: ref.entity }),
         effective,
         ...(accounting && { accounting }),
         amount,

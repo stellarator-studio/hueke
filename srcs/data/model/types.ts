@@ -41,12 +41,29 @@ export interface AccountRoot {
   readonly builtin: boolean;
 }
 
+export type ObligationKind = "receivable" | "payable";
+
 export interface Account {
   readonly id: Id; // the full name, e.g. "Bank:Checking"
   readonly span?: SourceSpan; // absent when used without a declaration
   readonly type?: AccountType; // from the root; absent when the root is unknown
   readonly parent?: Id;
+  readonly anchor?: string;
+  readonly displayName?: string;
   readonly primaryCommodity?: Id;
+  /** Declared, or inherited from the obligation account it is inside. */
+  readonly obligation?: ObligationKind;
+  /** Declared, or inherited from the obligation account it is inside. */
+  readonly padAccount?: Id;
+  readonly meta: Metadata;
+}
+
+// ---------- Entities ----------
+
+export interface Entity {
+  readonly id: Id;
+  readonly span?: SourceSpan; // absent when used without a declaration
+  readonly displayName?: string;
   readonly meta: Metadata;
 }
 
@@ -55,6 +72,7 @@ export interface Account {
 export interface Tag {
   readonly scope: string; // "tag" unless written
   readonly ref: AnchorRef;
+  readonly target?: Id; // the ID of the record defining the anchor; absent on a plain tag
 }
 
 export interface Reference {
@@ -109,6 +127,7 @@ export interface Transaction {
   readonly occurrence: Occurrence;
   readonly status: Status; // the default of its postings
   readonly primaryTag?: string;
+  readonly primaryTarget?: Id;
   readonly tags: readonly Tag[];
   readonly refs: readonly Reference[];
   readonly meta: Metadata;
@@ -120,6 +139,7 @@ export interface Balance {
   readonly span?: SourceSpan;
   readonly origin?: BalanceData;
   readonly account: Id;
+  readonly entity?: Id; // the assertion is limited to this entity's postings
   readonly effective: TimeValue; // the point asserted: one day
   readonly accounting?: TimeValue; // for the transaction a pad generates
   readonly amount: Amount;

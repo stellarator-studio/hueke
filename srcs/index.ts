@@ -13,5 +13,10 @@ export { Hueke, check, type HuekeOptions } from "./engine/hueke.js";
 export { query, type Query, type TagInput, type TimeInput } from "./engine/query/query.js";
 export type { Group, GroupKey, Grouped } from "./engine/query/group.js";
 export type { AccountTreeRow, RegisterRow } from "./engine/query/tree.js";
-export { balance, register } from "./engine/query/balance.js";
+export { balance, register, type BalanceOptions } from "./engine/query/balance.js";
 export { reconcile, type ReconcileView } from "./engine/query/reconcile.js";
+export {
+  obligations,
+  type ObligationProgress,
+  type ObligationsOptions,
+} from "./finance/obligations.js";

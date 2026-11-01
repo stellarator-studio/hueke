@@ -27,9 +27,9 @@ Status: `implemented`
 | Postings | A lead (optional `* `, then the account), then the amount. Among a transaction's postings that have an amount, the numbers end in one column: the leftmost column at which every such line has at least two spaces between its lead and its number, so the tightest line has exactly two. The rest of the line follows with single spaces. A posting without an amount does not count toward the column |
 | Other separators | One space between tokens, also in properties such as `alias NT$ prefix` |
 | Token order | As in [records.md](records.md) |
-| Properties | Under a declaration, in a fixed order: `commodity`: `item`, `precision`, `alias`; `account`: `primary`. A property that may repeat (`alias`) keeps its written order. Metadata comes after the properties, in written order |
-| References | `@NAT`, never `@person:NAT`; another role is kept: `@payer:KEN` |
-| Tags | `#travel`, `^trip`, never `#tag:travel`, `^tag:trip`; another scope, a module and a period are kept: `#statement:card/2026-10`, `#shared:trip:hotel` |
+| Properties | Under a declaration, in a fixed order: `commodity`: `item`, `precision`, `alias`; `account`: `display-name`, `obligation`, `pad-account`, `primary`; `entity`: `display-name`. A property that may repeat (`alias`) keeps its written order. Metadata comes after the properties, in written order |
+| References | `@NAT`, never `@person:NAT`; another role is kept: `@payer:KEN`. On a Balance, the entity follows the account: `balance Bank:Checking @acme 52000 NTD` |
+| Tags | `#travel`, `^trip`, never `#tag:travel`, `^tag:trip`; another scope is kept: `#refund:t_book`. A tag with a reserved scope, a module or a period is unsupported syntax and has no canonical form (see below) |
 | Numbers | The ledger's decimal mark; the ledger's group mark between every three digits before the decimal mark (none with `group-mark none`); the decimal places as written. An expression is kept exactly as written |
 | Commodities | Always the code: `180 NTD`, never an alias |
 | Omitted amounts | Stay omitted |
@@ -70,7 +70,7 @@ Status: `draft`
 
 ## API
 
-- `serialize(ledger, record)` returns the canonical text of one Raw record, with its child lines and comments, ending with a line break. Only the ledger's `settings` and `commodities` are used. It throws when an amount, price, cost or time of the record cannot be read, including one with an alias in conflict; when a breakdown line has no name; when the record holds unsupported syntax; or when metadata at the end of a line has a line break. A breakdown figure that cannot be read is written as written, trimmed.
+- `serialize(ledger, record)` returns the canonical text of one Raw record, with its child lines and comments, ending with a line break. Only the ledger's `settings` and `commodities` are used. It throws when an amount, price, cost or time of the record cannot be read; when a breakdown line has no name; when the record holds unsupported syntax; or when metadata at the end of a line has a line break. A breakdown figure that cannot be read is written as written, trimmed.
 - `format(ledger, path)` [draft] would return the changes that put the module at `path` in canonical form.
 
 ## Examples

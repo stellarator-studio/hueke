@@ -4,7 +4,6 @@ import {
   timeOnAxis,
   type Amount,
   type Axis,
-  type Commodity,
   type Hueke,
   type Id,
   type Posting,
@@ -19,19 +18,21 @@ export interface PostingRow {
   readonly posting: Id;
   readonly occurrence: Transaction["occurrence"];
   readonly status: Status;
-  readonly account: Id;
+  readonly account: string; // the ID, or the display name with --name
   readonly amount: Amount;
   readonly description: string;
 }
-
-export const commodityMap = (hueke: Hueke): Map<Id, Commodity> =>
-  new Map(hueke.commodities.map((c) => [c.id, c]));
 
 export function postingIndex(hueke: Hueke): Map<Id, Posting> {
   return new Map(hueke.transactions.flatMap((t) => t.postings.map((p) => [p.id, p] as const)));
 }
 
-export function postingRows(hueke: Hueke, postings: readonly Posting[], axis: Axis): PostingRow[] {
+export function postingRows(
+  hueke: Hueke,
+  postings: readonly Posting[],
+  axis: Axis,
+  shown: (account: Id) => string = (account) => account,
+): PostingRow[] {
   const transactions = new Map(hueke.transactions.map((t) => [t.id, t]));
   return postings.flatMap((p) => {
     const t = transactions.get(p.transaction);
@@ -43,7 +44,7 @@ export function postingRows(hueke: Hueke, postings: readonly Posting[], axis: Ax
         posting: p.id,
         occurrence: t.occurrence,
         status: p.status,
-        account: p.account,
+        account: shown(p.account),
         amount: p.amount,
         description: t.description ?? "",
       },
@@ -59,9 +60,9 @@ export function mark(r: PostingRow): string {
 }
 
 export function postingTable(hueke: Hueke, rows: readonly PostingRow[]): string {
-  const commodities = commodityMap(hueke);
+  const amount = amountText(hueke);
   return table(
-    rows.map((r) => [r.date, mark(r), r.account, amountText(r.amount, commodities), r.description]),
+    rows.map((r) => [r.date, mark(r), r.account, amount(r.amount), r.description]),
     [3],
   );
 }

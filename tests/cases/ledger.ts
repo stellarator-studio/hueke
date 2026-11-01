@@ -86,6 +86,11 @@ export function codes(hueke: Hueke, withInfo = false): string[] {
     .map((d) => d.code);
 }
 
+/** The diagnostics with one code, in `check` order. */
+export function diagnostics(hueke: Hueke, code: string): Diagnostic[] {
+  return check(hueke).filter((d) => d.code === code);
+}
+
 /** The balance of one account in one commodity, as a number-like decimal string. */
 export function balanceOf(hueke: Hueke, account: string, at: string, commodity = "NTD"): string {
   const rows = balance(hueke, query(hueke).accounts(account).until(at));

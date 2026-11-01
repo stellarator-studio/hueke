@@ -1,7 +1,8 @@
-// Normalization step 2: ledger settings, account roots, commodities and accounts as declared.
-// Only the root module's declarations take effect (docs/core/modules.md, "Declarations in
-// included modules"). A commodity, account or account root declared twice keeps its first
-// declaration (docs/core/ledger.md, "Duplicate declarations").
+// Normalization step 2: ledger settings, account roots, commodities, accounts and entities as
+// declared. Only the root module's declarations take effect (docs/core/modules.md, "Declarations
+// in included modules"). A commodity, account, account root or entity declared twice keeps its
+// first declaration (docs/core/ledger.md, "Duplicate declarations"). Accounts inside an obligation
+// account inherit its settings (docs/core/accounts.md, "Obligation and pad settings").
 
 import type {
   Account,
@@ -9,10 +10,13 @@ import type {
   AccountType,
   Commodity,
   CommodityAlias,
+  Entity,
   Id,
   LedgerSettings,
+  ObligationKind,
   Weekday,
 } from "../../data/model/types.js";
+import { obligationPlace } from "../../data/model/account.js";
 import type { DeclarationData } from "../../data/raw/model.js";
 import type { Diagnostic, SourcePath, SourceSpan } from "../../data/source/source.js";
 import { isTimeZone } from "../../data/time/time.js";
@@ -35,9 +39,10 @@ export interface Declarations {
   readonly roots: Map<string, AccountRoot>;
   readonly commodities: Map<Id, Commodity>;
   readonly accounts: Map<Id, Account>;
+  readonly entities: Map<Id, Entity>;
   readonly aliases: AliasTable;
-  /** The module of each declared commodity and account, for their diagnostics. */
-  readonly sources: Map<Commodity | Account, SourcePath>;
+  /** The module of each declared commodity, account and entity, for their diagnostics. */
+  readonly sources: Map<Commodity | Account | Entity, SourcePath>;
   /** Where `option income-expense` is written, when it took effect. */
   readonly incomeExpenseAt?: { readonly source: SourcePath; readonly span?: SourceSpan };
 }
@@ -58,7 +63,7 @@ const WEEKDAYS: readonly Weekday[] = [
   "saturday",
   "sunday",
 ];
-const DECLARATIONS = new Set(["option", "account-root", "commodity", "account"]);
+const DECLARATIONS = new Set(["option", "account-root", "commodity", "account", "entity"]);
 const OPTIONS = new Set([
   "timezone",
   "pad-account",
@@ -227,7 +232,11 @@ export function collectDeclarations(
     groupMark,
   };
 
-  const sources = new Map<Commodity | Account, SourcePath>();
+  const sources = new Map<Commodity | Account | Entity, SourcePath>();
+  const property = (d: DeclarationData, key: string): string | undefined => {
+    const line = d.lines.find((l) => l.kind === "property" && l.key === key);
+    return line?.kind === "property" ? line.value : undefined;
+  };
 
   // ---- Commodities and aliases ----
   // The parser has checked each precision and alias line.
@@ -275,12 +284,11 @@ export function collectDeclarations(
   }
   const prefix = new Map<string, Id>();
   const suffix = new Map<string, Id>();
-  const conflicted = new Set<string>();
+  // A conflicting alias is not loaded for any declaration; amounts read as if it were not declared.
   for (const [text, owners] of aliasOwners) {
     const [first, ...others] = owners;
     if (!first) continue;
     if (others.length > 0 || commodities.has(text)) {
-      conflicted.add(text);
       for (const o of others.length > 0 ? others : [first])
         report("commodity.alias-conflict", `alias "${text}" of ${o.owner} is already used`, o.at);
       continue;
@@ -299,14 +307,81 @@ export function collectDeclarations(
       continue;
     }
     accountDeclared.set(id, at);
-    const primary = at.d.lines.find((l) => l.kind === "property" && l.key === "primary");
+    const primary = property(at.d, "primary");
+    const displayName = property(at.d, "display-name");
+    const obligation = property(at.d, "obligation") as ObligationKind | undefined;
+    const padAccount = property(at.d, "pad-account");
     const account = makeAccount(id, roots, {
       ...(at.d.span && { span: at.d.span }),
-      ...(primary?.kind === "property" && { primaryCommodity: primary.value }),
+      ...(at.d.anchor && { anchor: at.d.anchor.name }),
+      ...(displayName !== undefined && { displayName }),
+      ...(primary !== undefined && { primaryCommodity: primary }),
+      ...(obligation !== undefined && { obligation }),
+      ...(padAccount !== undefined && { padAccount }),
       meta: metaFrom(at.d.lines, at.d.trailer),
     });
     accounts.set(id, account);
     sources.set(account, at.source);
+  }
+
+  // An `obligation` inside an obligation account takes no effect; outer accounts come first.
+  const byDepth = [...accounts.values()]
+    .filter((a) => a.obligation !== undefined)
+    .sort((a, b) => a.id.split(":").length - b.id.split(":").length);
+  const effective = new Map<Id, Account>();
+  const nested = new Set<Id>();
+  for (const a of byDepth) {
+    const place = obligationPlace(a.id, effective);
+    if (place === undefined) {
+      effective.set(a.id, a);
+      continue;
+    }
+    const at = accountDeclared.get(a.id);
+    nested.add(a.id);
+    if (at)
+      report(
+        "obligation.nested",
+        `${a.id} is inside the obligation account ${place.root}; its obligation takes no effect`,
+        at,
+      );
+  }
+  // An obligation has no sub-accounts: declaring one is reported, once.
+  for (const [id, at] of accountDeclared) {
+    const place = obligationPlace(id, effective);
+    if (place?.kind === "nested" && !nested.has(id))
+      report(
+        "obligation.nested",
+        `${id} is inside the obligation ${place.obligation}; an obligation has no sub-accounts`,
+        at,
+      );
+  }
+  for (const [id, a] of accounts) {
+    if (effective.has(id)) continue;
+    const rest: { -readonly [K in keyof Account]?: Account[K] } = { ...a };
+    delete rest.obligation;
+    accounts.set(id, inherit(rest as Account, effective));
+  }
+
+  // ---- Entities ----
+  const entities = new Map<Id, Entity>();
+  const entityDeclared = new Map<Id, Sourced>();
+  for (const at of kind("entity")) {
+    const [id = ""] = at.d.args;
+    const first = entityDeclared.get(id);
+    if (first) {
+      duplicate(`entity ${id}`, first, at);
+      continue;
+    }
+    entityDeclared.set(id, at);
+    const displayName = property(at.d, "display-name");
+    const entity: Entity = {
+      id,
+      ...(at.d.span && { span: at.d.span }),
+      ...(displayName !== undefined && { displayName }),
+      meta: metaFrom(at.d.lines, at.d.trailer),
+    };
+    entities.set(id, entity);
+    sources.set(entity, at.source);
   }
 
   return {
@@ -314,12 +389,29 @@ export function collectDeclarations(
     roots,
     commodities,
     accounts,
-    aliases: { prefix, suffix, conflicted },
+    entities,
+    aliases: { prefix, suffix },
     sources,
     ...(incomeExpenseRoot !== undefined &&
       ie && {
         incomeExpenseAt: { source: ie.at.source, ...(ie.at.d.span && { span: ie.at.d.span }) },
       }),
+  };
+}
+
+/**
+ * An account inside an obligation account takes its `obligation`, and its `pad-account` unless it
+ * declares one. `obligations` holds the obligation accounts.
+ */
+export function inherit(account: Account, obligations: ReadonlyMap<Id, Account>): Account {
+  const place = obligationPlace(account.id, obligations);
+  const root = place && obligations.get(place.root);
+  if (!root?.obligation) return account;
+  const padAccount = account.padAccount ?? root.padAccount;
+  return {
+    ...account,
+    obligation: root.obligation,
+    ...(padAccount !== undefined && { padAccount }),
   };
 }
 

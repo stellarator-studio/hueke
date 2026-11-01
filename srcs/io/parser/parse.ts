@@ -25,7 +25,6 @@ import {
   AccountDeclContext,
   EntityDeclContext,
   GeneratorDeclContext,
-  CapGroupDeclContext,
   ModuleDeclContext,
   IncludeDeclContext,
   PaidByLineContext,
@@ -40,6 +39,7 @@ import {
   aliasError,
   anchorError,
   commodityError,
+  entityError,
   referenceError,
   rootError,
   scopeError,
@@ -78,7 +78,7 @@ const ACCEPTS: Partial<Record<DeclarationKind | "transaction", readonly string[]
   transaction: ["share", "into"],
   commodity: ["item", "precision", "alias"],
   account: [
-    "name",
+    "display-name",
     "active",
     "obligation",
     "pad-account",
@@ -90,7 +90,7 @@ const ACCEPTS: Partial<Record<DeclarationKind | "transaction", readonly string[]
     "self",
     "map",
   ],
-  entity: ["name", "type"],
+  entity: ["display-name", "type"],
   module: ["share"],
   schedule: [...CYCLE, "override"],
   installment: [
@@ -105,10 +105,21 @@ const ACCEPTS: Partial<Record<DeclarationKind | "transaction", readonly string[]
     "absorb",
     "fee",
   ],
-  rule: ["from", "rate", "follows", "every", "cap", "minimum", "rounding"],
+  rule: ["active", "rate", "fixed", "follows", "every", "cap", "minimum", "rounding", "cap-group"],
 };
 const STATEMENT = [...CYCLE, "due", "override"];
-const REPEATABLE = new Set(["alias", "map", "share", "from", "every", "override"]);
+/** Properties that may repeat in a record; any other property is written at most once. */
+const REPEATABLE: Partial<Record<DeclarationKind | "transaction", readonly string[]>> = {
+  transaction: ["share"],
+  commodity: ["alias"],
+  account: ["map"],
+  module: ["share"],
+  schedule: ["from", "every", "override"],
+  installment: ["from", "every", "override"],
+  rule: ["active", "cap", "minimum"],
+};
+/** `active` opens a new segment of a rule; these properties are once per segment. */
+const RULE_SEGMENT = ["rate", "fixed", "rounding"];
 /** Records whose blocks accept whole-line Metadata. */
 const TAKES_META = new Set<string>([
   "transaction",
@@ -120,7 +131,6 @@ const TAKES_META = new Set<string>([
   "schedule",
   "installment",
   "rule",
-  "cap-group",
 ]);
 const TEMPLATE = new Set<string>(["schedule", "installment", "rule"]);
 
@@ -235,7 +245,7 @@ interface Block {
   postings?: PostingData[];
   posting?: { data: PostingData; lines: PostingChild[]; span: { start: number; end: number } };
   statement?: { children: ItemChild[]; span: { start: number; end: number } } | undefined;
-  /** Keys seen since the last `from` (rule segments) or in the whole record. */
+  /** Keys seen in the record; for a rule, segment keys only since the last `active`. */
   seen: Set<string>;
   hasItem: boolean;
   hasPrecision: boolean;
@@ -561,6 +571,7 @@ class Builder {
     if (ctx instanceof CommodityDeclContext || ctx instanceof EntityDeclContext) {
       const values = words.map((t) => this.text(t));
       if (ctx instanceof CommodityDeclContext) identifier(commodityError(values[0] ?? ""));
+      else identifier(entityError(values[0] ?? ""));
       return args(ctx instanceof CommodityDeclContext ? "commodity" : "entity", values);
     }
     if (ctx instanceof AccountDeclContext) {
@@ -584,10 +595,6 @@ class Builder {
         tail: this.header(rest, false).tail,
       });
     }
-    if (ctx instanceof CapGroupDeclContext)
-      return args("cap-group", [this.ctxText(ctx.amount())], {
-        anchor: definedAnchor(this.text(ctx.ANCHOR().symbol), false),
-      });
     const m = ctx as ModuleDeclContext;
     const description = m.STRING();
     return args(
@@ -613,6 +620,11 @@ class Builder {
       const order = HEADER_ORDER.get(tok.type);
       if (order === undefined) continue;
       const t = this.text(tok);
+      if (tok.type === P.PRIMARY && primaryTag)
+        throw new BlockError(
+          "txn.multiple-primary-tag",
+          `"${t}": a transaction has one primary tag`,
+        );
       if (order < last || (order === last && !REPEATED_IN_HEADER.has(order)))
         throw new BlockError("parse.token-order", `"${t}" is out of order`);
       last = order;
@@ -733,8 +745,10 @@ class Builder {
     const accepted = ACCEPTS[block.kind as DeclarationKind | "transaction"] ?? [];
     if (!accepted.includes(key))
       throw new BlockError("parse.unexpected-property", `${block.kind} does not take "${key}"`);
-    if (block.kind === "rule" && key === "from") block.seen.clear();
-    if (!REPEATABLE.has(key) && block.seen.has(key))
+    if (block.kind === "rule" && key === "active")
+      for (const k of RULE_SEGMENT) block.seen.delete(k);
+    const repeatable = REPEATABLE[block.kind as DeclarationKind | "transaction"] ?? [];
+    if (!repeatable.includes(key) && block.seen.has(key))
       throw new BlockError("parse.duplicate-property", `"${key}" is written twice`);
     block.seen.add(key);
     if (block.kind === "commodity") {
@@ -755,6 +769,18 @@ class Builder {
       }
     }
     if (block.kind === "account" && key === "primary") identifier(commodityError(line.value));
+    if (key === "display-name" && line.value === "")
+      throw new BlockError("parse.syntax", "display-name needs a text");
+    if (key === "obligation" && line.value !== "receivable" && line.value !== "payable")
+      throw new BlockError(
+        "parse.syntax",
+        `obligation is receivable or payable, not "${line.value}"`,
+      );
+    if (key === "pad-account") {
+      if (line.value === "" || /\s/.test(line.value))
+        throw new BlockError("parse.syntax", "pad-account takes one account");
+      identifier(accountError(line.value));
+    }
     if (key === "statement") {
       const children: ItemChild[] = [];
       block.lines.push({ ...line, children });
@@ -1114,7 +1140,8 @@ function definedAnchor(text: string, allowPeriod: boolean): AnchorRef {
 }
 
 function anchorName(name: string): string {
-  identifier(anchorError(name));
+  const error = anchorError(name);
+  if (error !== undefined) throw new BlockError("anchor.invalid-name", error);
   return name;
 }
 

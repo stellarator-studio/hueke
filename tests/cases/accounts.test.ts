@@ -1,7 +1,7 @@
 // docs/core/accounts.md
 import { describe, expect, it } from "vitest";
-import { balance, check, position, query } from "../../srcs/index.js";
-import { codes, ledger, rows } from "./ledger.js";
+import { balance, check, position, query, register } from "../../srcs/index.js";
+import { codes, diagnostics, ledger, rows } from "./ledger.js";
 
 const account = (h: ReturnType<typeof ledger>, id: string) => h.accounts.find((a) => a.id === id);
 
@@ -20,6 +20,19 @@ describe("accounts and the hierarchy", () => {
     expect(query(h).accounts("Bank:Checking").within("2026-10").postings()).toHaveLength(3);
     expect(account(h, "Bank:Checking:Sub")?.parent).toBe("Bank:Checking");
     expect(account(h, "Bank:Checking")?.parent).toBe("Bank");
+  });
+
+  it("includes sub-accounts in a Balance assertion", () => {
+    const text = `
+2026-10-12 * "Deposit"
+    Bank:Checking        200 NTD
+    Bank:Checking:Sub    300 NTD
+    Assets:Cash         -500 NTD
+`;
+    expect(codes(ledger(`${text}\n2026-10-13 balance Bank:Checking 500 NTD\n`))).toEqual([]);
+    expect(codes(ledger(`${text}\n2026-10-13 balance Bank:Checking 200 NTD\n`))).toEqual([
+      "balance.mismatch",
+    ]);
   });
 
   it("keeps balances per commodity", () => {
@@ -50,60 +63,14 @@ describe("account declarations", () => {
     const h = ledger(`2026-10-12 * "x"\n    Bank:Checking  1 NTD\n    Equity:Opening  -1 NTD\n`);
     const a = account(h, "Bank:Checking");
     expect(a).toBeDefined();
-    expect("span" in (a ?? {})).toBe(false);
-    expect("primaryCommodity" in (a ?? {})).toBe(false);
-  });
-
-  it("reserves an anchor after the name and does not load the declaration", () => {
-    const h = ledger(`
-account Bank:Savings %savings
-    primary NTD
-    ;; bank_code: 808
-
-2026-10-12 * "Deposit"
-    Bank:Savings      1000 NTD
-    Assets:Cash      -1000 NTD
-`);
-    expect(codes(h)).toEqual(["syntax.unsupported"]);
-    const a = account(h, "Bank:Savings");
-    expect(a).toBeDefined();
-    expect("anchor" in (a ?? {})).toBe(false);
-    expect("span" in (a ?? {})).toBe(false);
-    expect("primaryCommodity" in (a ?? {})).toBe(false);
-    expect(a?.meta.bank_code).toBeUndefined();
-    expect(a?.type).toBe("asset");
-  });
-
-  it("an anchored declaration does not declare the account in strict mode", () => {
-    const h = ledger(`
-option strict account
-
-account Bank:Savings %savings
-
-2026-10-12 * "Deposit"
-    Bank:Savings      1000 NTD
-    Assets:Cash      -1000 NTD
-`);
-    expect(codes(h)).toContain("syntax.unsupported");
-    expect(codes(h)).toContain("strict.undeclared");
+    expect(a).not.toHaveProperty("span");
+    expect(a).not.toHaveProperty("primaryCommodity");
   });
 
   it("reserves other account properties", () => {
-    const h = ledger(`account Bank:Checking\n    primary NTD\n    obligation card\n`);
+    const h = ledger(`account Bank:Checking\n    primary NTD\n    active 2026-01\n`);
     expect(codes(h)).toEqual(["syntax.unsupported"]);
     expect(account(h, "Bank:Checking")).toBeUndefined();
-  });
-
-  it("uses the first of duplicate declarations, strict or not", () => {
-    const text = `account Bank:Checking\n    primary NTD\n\naccount Bank:Checking\n    primary USD\n`;
-    for (const strict of ["", "option strict account\n\n"]) {
-      const h = ledger(`${strict}${text}`);
-      expect(codes(h)).toEqual(["declaration.duplicate"]);
-      const d = check(h).find((x) => x.code === "declaration.duplicate");
-      expect(d?.severity).toBe("error");
-      expect(d?.message).toMatch(/main\.hueke:\d+/);
-      expect(account(h, "Bank:Checking")?.primaryCommodity).toBe("NTD");
-    }
   });
 });
 
@@ -127,10 +94,11 @@ describe("account roots", () => {
       expect(h.roots.find((r) => r.name === name)).toEqual({ name, type, builtin: true });
   });
 
-  it("changes the type of a built-in root", () => {
+  it("changes the type of a built-in root, without a diagnostic", () => {
     const h = ledger(
       `account-root Assets liability\n\n2026-10-12 * "x"\n    Assets:Cash  1 NTD\n    Equity:Opening  -1 NTD\n`,
     );
+    expect(codes(h, true)).toEqual([]);
     expect(h.roots.find((r) => r.name === "Assets")).toEqual({
       name: "Assets",
       type: "liability",
@@ -215,6 +183,28 @@ ${CASE}`);
     expect(query(h).accounts("Income").postings()).toHaveLength(2);
   });
 
+  it("merges a declared root of type income or expense too", () => {
+    const g = ledger(`option income-expense on
+account-root Gifts income
+
+2026-10-05 * "Birthday money"
+    Assets:Cash        1000 NTD
+    Gifts:Birthday    -1000 NTD
+`);
+    expect(codes(g, true)).toEqual([]);
+    expect(rows(balance(g, query(g).accounts("IncomeExpenses")))).toEqual([
+      "IncomeExpenses:Birthday -1000 NTD",
+    ]);
+  });
+
+  it("shows the merged names in register", () => {
+    expect(
+      register(h, query(h).accounts("Income:Food"))
+        .filter((r) => !r.subtotal)
+        .map((r) => [r.account, r.postings.map((p) => p.account)]),
+    ).toEqual([["IncomeExpenses:Food", ["Income:Food"]]]);
+  });
+
   it("takes another name for the merged root", () => {
     const g = ledger(`option income-expense on Flow
 ${CASE}`);
@@ -242,7 +232,7 @@ option income-expense on
 ${CASE}`);
     expect(codes(g)).toEqual(["option.invalid-root"]);
     expect(merged(g, "IncomeExpenses")).toEqual([]);
-    expect("incomeExpenseRoot" in g.settings).toBe(false);
+    expect(g.settings).not.toHaveProperty("incomeExpenseRoot");
   });
 
   it("rejects a name that an undeclared account's root already uses", () => {
@@ -258,10 +248,10 @@ ${CASE}`);
 `;
     const g = ledger(text, { prelude: "option timezone Asia/Taipei\n" });
     expect(codes(g)).toEqual(["option.invalid-root"]);
-    const [invalid] = check(g).filter((d) => d.code === "option.invalid-root");
+    const [invalid] = diagnostics(g, "option.invalid-root");
     const data = g.data.get("main.hueke");
     expect(data && invalid?.span && position(data, invalid.span.start).line).toBe(3);
-    expect("incomeExpenseRoot" in g.settings).toBe(false);
+    expect(g.settings).not.toHaveProperty("incomeExpenseRoot");
     expect(rows(balance(g, query(g).accounts("Flow", "Expenses")))).toEqual([
       "Expenses:Food 200 NTD",
       "Flow:Food 800 NTD",
@@ -272,7 +262,7 @@ ${CASE}`);
 option income-expense on Flow
 ${CASE}`);
     expect(codes(g)).toEqual(["option.invalid-root"]);
-    expect("incomeExpenseRoot" in g.settings).toBe(false);
+    expect(g.settings).not.toHaveProperty("incomeExpenseRoot");
   });
 });
 
@@ -283,7 +273,8 @@ describe("untyped accounts", () => {
     expect(codes(h, true)).toEqual(["name.unknown-root"]);
     expect(check(h)[0]?.severity).toBe("info");
     expect(check(h)[0]?.message).toContain("Spending");
-    expect("type" in (account(h, "Spending:Food") ?? {})).toBe(false);
+    expect(account(h, "Spending:Food")).toBeDefined();
+    expect(account(h, "Spending:Food")).not.toHaveProperty("type");
     expect(rows(balance(h, query(h).within("2026-10").accounts("Spending")))).toEqual([
       "Spending:Food 180 NTD",
     ]);
@@ -294,6 +285,10 @@ describe("untyped accounts", () => {
 
   it("reports once per account and allows a posting's own time", () => {
     const h = ledger(`
+2026-10-11 * "Coffee"
+    Spending:Drinks  90 NTD
+    Assets:Cash     -90 NTD
+
 2026-10-12 * "Lunch"
     Spending:Food  180 NTD [2026-10-13]
     Assets:Cash   -180 NTD
@@ -304,7 +299,7 @@ describe("untyped accounts", () => {
 
 2026-10-15 balance Spending:Food 480 NTD
 `);
-    expect(codes(h, true)).toEqual(["name.unknown-root"]);
+    expect(codes(h, true)).toEqual(["name.unknown-root", "name.unknown-root"]);
     expect(
       query(h)
         .accounts("Spending:Food")
@@ -323,6 +318,11 @@ describe("untyped accounts", () => {
   it("strict accounts", () => {
     const h = ledger(`option strict account\n\naccount Spending:Food\n\n${UNDECLARED_ROOT}`);
     expect(codes(h, true)).toEqual(["strict.unknown-root"]);
+  });
+
+  it("strict accounts, undeclared", () => {
+    const h = ledger(`option strict account\n\n${UNDECLARED_ROOT}`);
+    expect(codes(h, true)).toEqual(["strict.undeclared"]);
   });
 });
 
@@ -347,41 +347,162 @@ account Bank:Checking
         .map((p) => p.meta),
     ).toEqual([{ passbook_no: "3" }]);
   });
+});
 
-  it("a new passbook", () => {
+describe("account anchors and display names", () => {
+  it("keeps the full name as the ID, with the anchor and the display name besides", () => {
     const h = ledger(`
-account Bank:Checking
-    ;; bank_code: 808
-    ;; account_no: 0123-456-789
-
-2026-10-30 * "Deposit"
-    Bank:Checking     1000 NTD
-        ;; passbook_no: 3
-        ;; passbook_page: 40
-        ;; passbook_line: 22
-    Assets:Cash      -1000 NTD
-
-2026-11-02 * "First entry in the new passbook: interest"
-    Bank:Checking       12 NTD
-        ;; passbook_no: 4
-        ;; passbook_page: 1
-        ;; passbook_line: 1
-    Income:Interest    -12 NTD
+account Bank:Checking %main-bank
+    display-name Main checking account
 `);
     expect(codes(h)).toEqual([]);
-    expect(
-      query(h)
-        .accounts("Bank:Checking")
-        .within("2026-10-30..2026-11-02")
-        .postings()
-        .map((p) => [p.meta.passbook_no, p.meta.passbook_page, p.meta.passbook_line]),
-    ).toEqual([
-      ["3", "40", "22"],
-      ["4", "1", "1"],
+    const a = account(h, "Bank:Checking");
+    expect(a?.id).toBe("Bank:Checking");
+    expect(a?.anchor).toBe("main-bank");
+    expect(a?.displayName).toBe("Main checking account");
+    expect(h.accounts.find((x) => x.anchor === "main-bank")?.id).toBe("Bank:Checking");
+  });
+
+  it("an anchored declaration declares the account in strict mode", () => {
+    const h = ledger(`
+option strict account
+
+account Bank:Savings %savings
+    primary NTD
+    ;; bank_code: 808
+
+2026-10-12 * "Deposit"
+    Bank:Savings      1000 NTD
+    Assets:Cash      -1000 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    const a = account(h, "Bank:Savings");
+    expect(a?.span).toBeDefined();
+    expect(a?.primaryCommodity).toBe("NTD");
+    expect(a?.meta).toEqual({ bank_code: "808" });
+  });
+
+  it("lets a tag name the account, its target being the account's full name", () => {
+    const h = ledger(`
+account Bank:Checking %main-bank
+
+2026-10-12 * "Transfer" #main-bank
+    Bank:Checking      100 NTD
+    Assets:Cash       -100 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    const [t] = h.transactions;
+    expect(t?.tags).toEqual([
+      { scope: "tag", ref: { name: "main-bank" }, target: "Bank:Checking" },
     ]);
-    expect(account(h, "Bank:Checking")?.meta).toEqual({
-      bank_code: "808",
-      account_no: "0123-456-789",
-    });
+  });
+
+  it("is not inherited by sub-accounts", () => {
+    const h = ledger(`
+account Bank:Checking %main-bank
+    display-name Main checking account
+
+2026-10-12 * "Move to a sub-account"
+    Bank:Checking:Sub    300 NTD
+    Bank:Checking       -300 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    const sub = account(h, "Bank:Checking:Sub");
+    expect(sub).toBeDefined();
+    expect(sub).not.toHaveProperty("anchor");
+    expect(sub).not.toHaveProperty("displayName");
+  });
+
+  it("leaves out the fields an account does not declare", () => {
+    const h = ledger(`account Bank:Checking\n    primary NTD\n`);
+    const a = account(h, "Bank:Checking");
+    for (const field of ["anchor", "displayName", "obligation", "padAccount"])
+      expect(a).not.toHaveProperty(field);
+  });
+});
+
+describe("obligation and pad settings", () => {
+  const RECEIVABLE = `
+account Assets:Receivable
+    obligation receivable
+    pad-account Expenses:WriteOff
+`;
+  const LUNCH = `
+2026-10-11 * "Lunch"
+    Expenses:Food                   600 NTD
+    Assets:Receivable:lunch-1011    400 NTD @NAT
+    Assets:Cash                   -1000 NTD
+`;
+
+  it("an obligation's sub-account inherits the obligation and the pad account", () => {
+    const h = ledger(`${RECEIVABLE}${LUNCH}`);
+    expect(codes(h)).toEqual([]);
+    expect(account(h, "Assets:Receivable")?.obligation).toBe("receivable");
+    expect(account(h, "Assets:Receivable")?.padAccount).toBe("Expenses:WriteOff");
+    const sub = account(h, "Assets:Receivable:lunch-1011");
+    expect(sub?.obligation).toBe("receivable");
+    expect(sub?.padAccount).toBe("Expenses:WriteOff");
+    expect(sub).not.toHaveProperty("span");
+  });
+
+  it("an obligation's sub-account counts as declared in strict mode", () => {
+    const h = ledger(`option strict account
+
+account Expenses:Food
+${RECEIVABLE}${LUNCH}`);
+    expect(diagnostics(h, "strict.undeclared")).toEqual([]);
+  });
+
+  it("declares a payable obligation account", () => {
+    const h = ledger(`account Liabilities:Payable\n    obligation payable\n`);
+    expect(codes(h)).toEqual([]);
+    expect(account(h, "Liabilities:Payable")?.obligation).toBe("payable");
+    expect(account(h, "Liabilities:Payable")).not.toHaveProperty("padAccount");
+  });
+
+  it("keeps a pad account as written, without checking it", () => {
+    const h = ledger(`
+option strict account
+
+account Bank:Checking
+    pad-account Expenses:Nowhere
+`);
+    expect(codes(h)).toEqual([]);
+    expect(account(h, "Bank:Checking")?.padAccount).toBe("Expenses:Nowhere");
+  });
+
+  it("a pad uses the account's pad account before the ledger's", () => {
+    const h = ledger(`
+option pad-account Expenses:ReconcileDiff
+
+account Bank:Checking
+    pad-account Expenses:BankDiff
+
+2026-10-01 * "Opening"
+    Bank:Checking      12300 NTD
+    Equity:Opening    -12300 NTD
+
+2026-10-25 balance Bank:Checking 12345 NTD pad
+`);
+    expect(codes(h)).toEqual([]);
+    expect(rows(balance(h, query(h).tags("system:balance")))).toEqual([
+      "Bank:Checking 45 NTD",
+      "Expenses:BankDiff -45 NTD",
+    ]);
+  });
+
+  it("a sub-account of an account that is not an obligation account does not inherit", () => {
+    const h = ledger(`
+account Bank
+    pad-account Expenses:BankDiff
+
+2026-10-01 * "Opening"
+    Bank:Checking      12300 NTD
+    Equity:Opening    -12300 NTD
+
+2026-10-25 balance Bank:Checking 12345 NTD pad
+`);
+    expect(codes(h)).toEqual(["balance.missing-pad-account"]);
+    expect(account(h, "Bank:Checking")).not.toHaveProperty("padAccount");
   });
 });

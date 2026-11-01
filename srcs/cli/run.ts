@@ -6,6 +6,8 @@ import { parseArgs } from "node:util";
 import { Hueke, parse, referencedSources } from "../index.js";
 import { balanceCommand } from "./commands/balance.js";
 import { checkCommand, problems } from "./commands/check.js";
+import { groupCommand } from "./commands/group.js";
+import { obligationsCommand } from "./commands/obligations.js";
 import type { Command, Options } from "./commands/command.js";
 import { queryCommand } from "./commands/query.js";
 import { reconcileCommand } from "./commands/reconcile.js";
@@ -29,6 +31,12 @@ const OPTIONS = {
   involves: { type: "string" },
   planned: { type: "boolean" },
   cancelled: { type: "boolean" },
+  id: { type: "string" },
+  who: { type: "string" },
+  tag: { type: "string" },
+  primary: { type: "string" },
+  all: { type: "boolean" },
+  name: { type: "boolean" },
   depth: { type: "string" },
   balance: { type: "boolean" },
   help: { type: "boolean", short: "h" },
@@ -40,6 +48,8 @@ const COMMANDS: Readonly<Record<string, Command>> = {
   query: queryCommand,
   register: registerCommand,
   reconcile: reconcileCommand,
+  obligations: obligationsCommand,
+  group: groupCommand,
 };
 
 const COMMON = ["root", "file", "strict", "format", "help"];
@@ -54,6 +64,9 @@ Commands:
   register [account...]       matching postings by account, with balances
   reconcile <account> --at <time>
                               the reconciliation view of one account
+  obligations [account...]    the progress of obligations
+  group <#scope:anchor | ^anchor>
+                              an anchor's record and the members of its group
 
 Run "hueke <command> --help" for its options. See docs/cli.md.
 `;

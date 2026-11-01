@@ -57,7 +57,7 @@ A posting's `price` is the trade price; its `cost` is the cost of the lot held. 
 
 - A price is written as a unit price (`@`) or a total (`@@`), a cost as a unit cost (`{…}`) or a total (`{{…}}`). Both are stored as totals: a unit price or cost is multiplied by the posting's quantity during normalization.
 - Prices and costs are written without a sign (see [../dsl/records.md](../dsl/records.md), "Amounts") and are always positive, even when the quantity is negative. One whose written value is negative, such as `@ -170 USD` or `@ (10 - 20) USD`, is `posting.signed-price` (warning) and is used without the sign. The same holds for the price of a pad (see [balance.md](balance.md)).
-- A price or cost on a posting whose amount is omitted is ignored.
+- A price or cost on a posting whose amount is omitted is ignored. Ledger text cannot write one (see [../dsl/records.md](../dsl/records.md), "Postings"); only a Raw record changed through the API can hold one.
 
 ## Examples
 
