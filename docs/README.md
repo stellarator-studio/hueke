@@ -1,6 +1,8 @@
-# Hueke core documentation
+# Hueke documentation
 
-Hueke core is a double-entry bookkeeping library. It reads ledger text, normalizes it into a model of accounts, commodities, transactions and assertions, checks it, and answers queries. It does no I/O of its own; the `hueke` command line wraps it for use on files.
+Hueke is a double-entry bookkeeping command line for plain-text ledgers. Its package provides two things: the `hueke` command, which reads ledger files and prints results, and the library the command is built on, for platforms that handle ledgers themselves, such as an editor plugin or a web page.
+
+These documents call the library Core. Core reads ledger text, normalizes it into a model of accounts, commodities, transactions and assertions, checks it, and answers queries. It does no I/O of its own.
 
 These documents are the specification. They are written and settled first; the code is built from them. Where the documents and the code disagree, the documents are right: a feature marked `implemented` that behaves otherwise has a bug.
 
@@ -22,7 +24,7 @@ Every feature carries one status.
 
 | Document | Covers |
 | --- | --- |
-| [architecture.md](architecture.md) | Modules, dependency direction, source layout, which document drives which code and tests, rules for the public API |
+| [architecture.md](architecture.md) | What the package provides, modules, dependency direction, source layout, which document drives which code and tests, rules for the public API |
 | [core/values.md](core/values.md) | Amounts, numbers as written, arithmetic, prices and costs |
 | [core/commodities.md](core/commodities.md) | Commodities, aliases, declared and inferred precision, item mode |
 | [core/time.md](core/time.md) | Time values, time zones, weeks, the two time axes, comparing times, time predicates |
@@ -42,7 +44,7 @@ Every feature carries one status.
 
 ## Reading order
 
-1. [architecture.md](architecture.md): the parts of Core and how data flows through them.
+1. [architecture.md](architecture.md): what the package provides, the parts of Core and how data flows through them.
 2. [dsl/README.md](dsl/README.md): what a ledger file looks like.
 3. [core/values.md](core/values.md), [core/commodities.md](core/commodities.md), [core/time.md](core/time.md), [core/accounts.md](core/accounts.md): amounts, commodities, time and accounts, which every record is built from.
 4. [core/transactions.md](core/transactions.md), [core/balance.md](core/balance.md): the records, transactions and Balance assertions.

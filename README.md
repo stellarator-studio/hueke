@@ -1,6 +1,6 @@
-# hueke-core
+# hueke
 
-A double-entry bookkeeping accounting core in TypeScript. It reads plain-text ledgers, checks them and answers queries; the `hueke` command line runs it on files.
+A double-entry bookkeeping command line for plain-text ledgers, in TypeScript. The `hueke` command loads ledgers, checks them and answers queries. The same package exports the library the command is built on, for platforms such as editor plugins and web pages.
 
 The specification is in [docs/](docs/README.md).
 
@@ -11,13 +11,13 @@ The specification is in [docs/](docs/README.md).
 - Node 22.12 or later. It is only needed for development, tests and the CLI; Core itself uses no Node API.
 - pnpm, at the version pinned in `package.json` (`packageManager`). Corepack, which ships with Node, provides it.
 
-The repository includes a conda environment, `hueke-core`, that provides Node 22 from conda-forge (`environment.yml`). Using it is optional.
+The repository includes a conda environment, `hueke`, that provides Node 22 from conda-forge (`environment.yml`). Using it is optional.
 
 ### Setup
 
 ```sh
 conda env create -f environment.yml   # once; later: conda env update -f environment.yml
-conda activate hueke-core
+conda activate hueke
 corepack enable                       # once; puts pnpm on the PATH
 pnpm install --frozen-lockfile        # also generates the parser
 ```
@@ -32,7 +32,7 @@ pnpm install --frozen-lockfile        # also generates the parser
 | `pnpm test` | Vitest |
 | `pnpm format` | Prettier, writing changes |
 | `pnpm format:check` | Prettier, checking only |
-| `pnpm build` | Compiles `srcs/` to `dist/`; `dist/cli/main.js` is the `hueke` binary |
+| `pnpm build` | Compiles `srcs/` to `dist/`, with type declarations; `dist/index.js` is the library entry point and `dist/cli/main.js` the `hueke` binary |
 | `pnpm check` | Deletes generated files, then runs typecheck, lint, format check and tests. Run it before every commit. |
 
 `typecheck`, `lint` and `test` regenerate the parser first.

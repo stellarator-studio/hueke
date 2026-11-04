@@ -1,5 +1,4 @@
 import js from "@eslint/js";
-import prettier from "eslint-config-prettier";
 import tseslint from "typescript-eslint";
 
 const NO_IO = {
@@ -16,7 +15,7 @@ const DATA_LAYERS = {
 };
 
 export default tseslint.config(
-  { ignores: [".work/", "dist/", "coverage/", "srcs/io/parser/generated/"] },
+  { ignores: [".work/", "dist/", "srcs/io/parser/generated/"] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   {
@@ -51,5 +50,4 @@ export default tseslint.config(
       ],
     },
   })),
-  prettier,
 );

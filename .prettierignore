@@ -1,4 +1,2 @@
-.work/
 pnpm-lock.yaml
 *.md
-srcs/io/parser/generated/

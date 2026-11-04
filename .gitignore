@@ -2,5 +2,4 @@
 .vscode/settings.json
 node_modules/
 dist/
-coverage/
 srcs/io/parser/generated/

@@ -1,6 +1,6 @@
-# Hueke core
+# Hueke
 
-A double-entry bookkeeping accounting core in TypeScript. The project is in the architecture phase; most design is not final.
+A double-entry bookkeeping command line in TypeScript. One package provides the `hueke` command and the library it is built on (Core); `docs/architecture.md`, "Package". The project is in the architecture phase; most design is not final.
 
 ## Language
 
@@ -20,7 +20,7 @@ Other directories are not decided yet; ask before adding new top-level ones.
 
 ## Environment
 
-- Node and pnpm come from the conda environment `hueke-core` (`environment.yml`); pnpm is provided by corepack, not conda. See `README.md`, "Development".
+- Node and pnpm come from the conda environment `hueke` (`environment.yml`); pnpm is provided by corepack, not conda. See `README.md`, "Development".
 
 ## Code conventions
 

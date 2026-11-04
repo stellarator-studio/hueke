@@ -1,6 +1,18 @@
 # Architecture
 
-How Core is split into modules and which way they depend on each other, how the Raw model and the derived model relate, where each module lives in the source tree, which document drives which code and tests, and the rules every public function follows.
+What the Hueke package provides, how Core is split into modules and which way they depend on each other, how the Raw model and the derived model relate, where each module lives in the source tree, which document drives which code and tests, and the rules every public function follows.
+
+## Package
+
+Hueke is published as one package, `hueke`, with two entry points built from the same source and released under the same version.
+
+| Entry point | Built file | For | Described in |
+| --- | --- | --- | --- |
+| The `hueke` command | `dist/cli/main.js`, the package's `bin` | People working with ledger files: load, check, query and reconcile from a terminal | [cli.md](cli.md) |
+| The library (Core) | `dist/index.js` with type declarations, the package's only export | Platforms that read and write ledger text themselves, such as an editor plugin or a web page | The topic documents, "API" sections; "Public API rules" below |
+
+- The command uses only the library's public API (see "Dependency direction").
+- The package's dependencies are the library's. The command adds no runtime dependency of its own beyond Node.
 
 ## Data flow
 
@@ -77,7 +89,7 @@ Each subdirectory of `srcs/` is one module. Unit tests in `tests/` mirror `srcs/
 | `srcs/cli/` | CLI | `main.ts` (the `hueke` binary); argument handling and loading, including following `referencedSources`; one file per subcommand; output formats |
 
 - `srcs/io/parser/generated/` is generated from `Hueke.g4` by `pnpm generate` and not committed. `prepare` (run by `pnpm install`), `typecheck`, `test` and `lint` run `generate` first.
-- `pnpm build` compiles `srcs/` to `dist/` (not committed); `dist/cli/main.js` is the `hueke` binary.
+- `pnpm build` compiles `srcs/` to `dist/` (not committed), with type declarations. The built entry points are listed under "Package".
 - Within the data core, `values/` and `time/` import nothing else in it. `source/` may import those two, `raw/` may import those three, and `model/` may import all four. A lower layer never imports a higher one; linting rejects such an import.
 - Helpers used by more than one normalization step are in their own file, not inside one of the steps.
 
