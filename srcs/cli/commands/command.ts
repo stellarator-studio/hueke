@@ -21,6 +21,7 @@ export interface Options {
   readonly who?: string;
   readonly tag?: string;
   readonly primary?: string;
+  readonly breakdown?: string;
   readonly all?: boolean;
   readonly name?: boolean;
   readonly depth?: string;
@@ -45,6 +46,7 @@ export const FILTERS = [
   "who",
   "tag",
   "primary",
+  "breakdown",
 ];
 export const OCCURRENCE = ["planned", "cancelled"] as const;
 
@@ -62,6 +64,7 @@ export function filtered(hueke: Hueke, accounts: readonly string[], o: Options):
   if (o.who !== undefined) q = q.entities(...list(o.who));
   if (o.tag !== undefined) q = q.tags(...list(o.tag));
   if (o.primary !== undefined) q = q.primaryTag(o.primary);
+  if (o.breakdown !== undefined) q = q.breakdown(...list(o.breakdown));
   const occurrence = OCCURRENCE.filter((k) => o[k] === true);
   if (occurrence.length > 0) q = q.occurrence(...occurrence);
   return q;

@@ -1,7 +1,7 @@
 // docs/core/query.md
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { balance, query, register } from "../../srcs/index.js";
-import type { AccountTreeRow, GroupKey } from "../../srcs/index.js";
+import { balance, periodLabel, query, register } from "../../srcs/index.js";
+import type { AccountTreeRow, BreakdownLineRow, GroupKey } from "../../srcs/index.js";
 import { balanceOf, codes, descriptions, ledger, rows } from "./ledger.js";
 
 /** Every account tree row, subtotals included, as "account [subtotal] value commodity". */
@@ -912,5 +912,203 @@ account Assets:Receivable
     expect(rows(balance(h, query(h).accounts("Assets:Receivable").until("2026-10-14")))).toEqual([
       "Assets:Receivable:lunch-1011 400 NTD",
     ]);
+  });
+});
+
+describe("period labels", () => {
+  const h = ledger("");
+
+  it("gives the label of the period a date falls in, as grouping writes it", () => {
+    expect(periodLabel(h, "2026-12-29", "week")).toBe("2027-W01");
+    expect(periodLabel(h, "2026-11-03", "quarter")).toBe("2026-Q4");
+    expect(periodLabel(h, "2026-11-03", "day")).toBe("2026-11-03");
+    expect(periodLabel(h, "2026-11-03", "month")).toBe("2026-11");
+    expect(periodLabel(h, "2026-11-03", "year")).toBe("2026");
+  });
+
+  it("follows week-start", () => {
+    const sunday = ledger("option week-start sunday");
+    expect(periodLabel(sunday, "2026-01-01", "week")).toBe("2026-W01");
+    expect(periodLabel(h, "2026-12-28", "week")).toBe("2027-W01");
+    expect(periodLabel(sunday, "2026-12-28", "week")).toBe("2027-W01");
+  });
+
+  it("throws on text that is not a day", () => {
+    expect(() => periodLabel(h, "2026-11", "month")).toThrow("parse.invalid-time");
+    expect(() => periodLabel(h, "2026-02-30", "day")).toThrow("parse.invalid-time");
+  });
+  it("throws parse.invalid-time on a time of day too", () => {
+    expect(() => periodLabel(h, "2026-11-03T10:00", "day")).toThrow("parse.invalid-time");
+  });
+});
+
+describe("breakdown lines", () => {
+  const h = ledger(`
+2026-10-12 * "Lunch" @seven
+    Expenses:Food       120 NTD
+        - Bento  = 95 NTD
+        - Egg  = 25 NTD
+    Expenses:Drinks      45 NTD
+        - Black tea  1 * 45 NTD = 45 NTD
+    Assets:Cash        -165 NTD
+
+2026-10-20 * "Afternoon tea" @lawson
+    Expenses:Drinks      80 NTD
+        - Black tea  2 * 40 NTD = 80 NTD
+    Assets:Cash         -80 NTD
+
+2026-11-02 * "Tokyo lunch" @matsuya
+    Expenses:Food     1200 JPY @@ 260 NTD
+        - Ramen  = 1000 JPY
+        - Black tea  = 43 NTD
+    Assets:Cash        -260 NTD
+`);
+  /** Each row as "transaction | account | line name". */
+  const where = (rows: readonly BreakdownLineRow[]): string[] =>
+    rows.map((r) => `${String(r.transaction.description)} | ${r.posting.account} | ${r.line.name}`);
+
+  it("loads the example ledger without diagnostics", () => {
+    expect(codes(h)).toEqual([]);
+  });
+  it("lists the lines with a name, whichever account their posting is in", () => {
+    const found = query(h).breakdown("Black tea").breakdownLines();
+    expect(where(found)).toEqual([
+      "Lunch | Expenses:Drinks | Black tea",
+      "Afternoon tea | Expenses:Drinks | Black tea",
+      "Tokyo lunch | Expenses:Food | Black tea",
+    ]);
+    expect(found.map((r) => r.line)).toEqual([
+      {
+        name: "Black tea",
+        quantity: { value: "1" },
+        unitPrice: { value: "45", commodity: "NTD" },
+        total: { value: "45", commodity: "NTD" },
+      },
+      {
+        name: "Black tea",
+        quantity: { value: "2" },
+        unitPrice: { value: "40", commodity: "NTD" },
+        total: { value: "80", commodity: "NTD" },
+      },
+      { name: "Black tea", total: { value: "43", commodity: "NTD" } },
+    ]);
+  });
+  it("carries each row's whole transaction, so its date and its shop", () => {
+    const found = query(h).breakdown("Black tea").breakdownLines();
+    const transactions = [...query(h)];
+    expect(found.map((r) => r.transaction)).toEqual([
+      transactions[0],
+      transactions[1],
+      transactions[2],
+    ]);
+    expect(found.map((r) => r.transaction.effective.literal)).toEqual([
+      "2026-10-12",
+      "2026-10-20",
+      "2026-11-02",
+    ]);
+    expect(found.map((r) => r.transaction.refs.map((ref) => ref.entity))).toEqual([
+      ["seven"],
+      ["lawson"],
+      ["matsuya"],
+    ]);
+    expect(found.map((r) => r.posting.transaction)).toEqual(found.map((r) => r.transaction.id));
+  });
+  it("combines with other clauses", () => {
+    expect(where(query(h).breakdown("Black tea").entities("lawson").breakdownLines())).toEqual([
+      "Afternoon tea | Expenses:Drinks | Black tea",
+    ]);
+    expect(where(query(h).breakdown("Black tea").within("2026-10").breakdownLines())).toEqual([
+      "Lunch | Expenses:Drinks | Black tea",
+      "Afternoon tea | Expenses:Drinks | Black tea",
+    ]);
+  });
+  it("selects the postings that have a line with the name", () => {
+    expect(
+      query(h)
+        .breakdown("Black tea")
+        .postings()
+        .map((p) => `${p.account} ${p.amount.value} ${p.amount.commodity}`),
+    ).toEqual(["Expenses:Drinks 45 NTD", "Expenses:Drinks 80 NTD", "Expenses:Food 1200 JPY"]);
+  });
+  it("lists every line of the matched postings without a breakdown clause, as written", () => {
+    expect(
+      query(h)
+        .accounts("Expenses:Food")
+        .breakdownLines()
+        .map((r) => r.line.name),
+    ).toEqual(["Bento", "Egg", "Ramen", "Black tea"]);
+  });
+  it("gives no rows for postings without lines of their own", () => {
+    expect(query(h).accounts("Assets:Cash").breakdownLines()).toEqual([]);
+  });
+  it("matches names exactly", () => {
+    expect(query(h).breakdown("black tea").breakdownLines()).toEqual([]);
+    expect(query(h).breakdown("Black tea ").breakdownLines()).toEqual([]);
+    expect(query(h).breakdown("black tea").postings()).toEqual([]);
+  });
+  it("matches any of several names", () => {
+    expect(where(query(h).breakdown("Egg", "Ramen").breakdownLines())).toEqual([
+      "Lunch | Expenses:Food | Egg",
+      "Tokyo lunch | Expenses:Food | Ramen",
+    ]);
+    expect(
+      query(h)
+        .breakdown("Egg", "Ramen")
+        .postings()
+        .map((p) => p.amount.value),
+    ).toEqual(["120", "1200"]);
+  });
+  it("groups the postings' amounts, not the lines' totals", () => {
+    expect(query(h).breakdown("Black tea").groupBy("account").sum()).toEqual([
+      { key: { account: "Expenses:Drinks" }, value: [{ value: "125", commodity: "NTD" }] },
+      { key: { account: "Expenses:Food" }, value: [{ value: "1200", commodity: "JPY" }] },
+    ]);
+  });
+  it("orders rows by posting order on the axis, then as written within a posting", () => {
+    const g = ledger(`
+2026-10-12 * "Groceries"
+    Assets:Prepaid      30 NTD [2026-10-15]
+        - Milk  = 20 NTD
+        - Bread  = 10 NTD
+    Expenses:Other      20 NTD
+        - Soap  = 20 NTD
+    Assets:Cash        -50 NTD
+
+2026-10-13 * "Snack"
+    Expenses:Food       15 NTD
+        - Cookie  = 15 NTD
+    Assets:Cash        -15 NTD
+`);
+    expect(codes(g)).toEqual([]);
+    const names = (q: ReturnType<typeof query>): string[] =>
+      q.breakdownLines().map((r) => r.line.name);
+    expect(names(query(g))).toEqual(["Soap", "Cookie", "Milk", "Bread"]);
+    expect(names(query(g).axis("accounting"))).toEqual(["Milk", "Bread", "Soap", "Cookie"]);
+  });
+  it("gives no rows for a transaction without postings", () => {
+    const g = ledger(`
+2026-10-12 "Confirmed with NAT: 800 owed" @NAT
+`);
+    expect(query(g).entities("NAT").breakdownLines()).toEqual([]);
+    expect(query(g).breakdownLines()).toEqual([]);
+  });
+  it("gives no rows for generated postings", () => {
+    const g = ledger(`
+2026-10-01 * "Opening"
+    Bank:Checking      12000 NTD
+        - Deposit  = 12000 NTD
+    Equity:Opening    -12000 NTD
+
+2026-10-25 balance Bank:Checking 12345 NTD pad -> Expenses:ReconcileDiff
+`);
+    expect(codes(g)).toEqual([]);
+    const padding = query(g).tags("system:balance");
+    expect(padding.postings()).toHaveLength(2);
+    expect(padding.breakdownLines()).toEqual([]);
+    expect(
+      query(g)
+        .breakdownLines()
+        .map((r) => r.line.name),
+    ).toEqual(["Deposit"]);
   });
 });

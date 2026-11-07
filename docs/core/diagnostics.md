@@ -89,7 +89,7 @@ Status: `implemented`
 | `refund.exceeds` | warning | The refunds of a transaction exceed the original amount on one or more of its accounts; once per refunded transaction (see [anchors.md](anchors.md), "Refunds") | Computed as written | `implemented` |
 | `posting.signed-price` | warning | A price or cost is negative as written (see [values.md](values.md), "Prices and costs") | Computed without the sign | `implemented` |
 | `breakdown.invalid-figure` | warning | A breakdown figure cannot be read (see [transactions.md](transactions.md), "Breakdowns") | The line keeps its name; its figures are skipped | `implemented` |
-| `breakdown.commodity-mismatch` | error | A breakdown's unit price, total and posting amount are written in different commodities | Computed as written; the line is kept | `implemented` |
+| `breakdown.commodity-mismatch` | error | A breakdown line's unit price and total are written in different commodities, or in one not written on its posting's amount, price or cost (see [transactions.md](transactions.md), "Breakdowns") | Computed as written; the line is kept | `implemented` |
 | `item.fractional` | error | A written posting amount in an item commodity is not a whole number | Computed as written | `implemented` |
 | `item.invalid-balance` | error | An account holds a negative quantity of an item at some point, counting `occurred` transactions | Computed | `implemented` |
 | `balance.mismatch` | error | A `hard` Balance differs from the computed balance beyond the tolerance, or a written pad does not close the difference | No record generated | `implemented` |

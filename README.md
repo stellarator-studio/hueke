@@ -1,5 +1,7 @@
 # hueke
 
+<img src="assets/hueke.svg" alt="Hueke icon" width="128">
+
 A double-entry bookkeeping command line for plain-text ledgers, in TypeScript. The `hueke` command loads ledgers, checks them and answers queries. The same package exports the library the command is built on, for platforms such as editor plugins and web pages.
 
 The specification is in [docs/](docs/README.md).

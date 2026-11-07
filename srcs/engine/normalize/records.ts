@@ -257,7 +257,12 @@ function transaction(
       if (p.price) draft.price = totalOf(ctx, p.price, amount, p.span);
       written.push([amount.commodity, decimals ?? 0]);
     }
-    draft.breakdown = breakdownOf(ctx, p, amount);
+    // Without a written amount, a line has no posting commodity to agree with.
+    const onPosting =
+      p.amount === undefined || amount === undefined
+        ? []
+        : [amount.commodity, draft.price?.commodity, draft.cost?.commodity];
+    draft.breakdown = breakdownOf(ctx, p, onPosting);
     return draft;
   });
 
@@ -335,25 +340,33 @@ function transaction(
   };
 }
 
-/** Breakdown lines as written; only the written amount's commodity is compared, never taken. */
-function breakdownOf(ctx: RecordContext, p: PostingData, amount: Amount | undefined): Breakdown[] {
+/**
+ * Breakdown lines as written. A line's commodities are compared with each other and with those
+ * written on the posting (its amount's, price's or cost's); none is ever taken from the posting.
+ */
+function breakdownOf(
+  ctx: RecordContext,
+  p: PostingData,
+  onPosting: readonly (Id | undefined)[],
+): Breakdown[] {
+  const allowed = onPosting.filter((c) => c !== undefined);
   const out: Breakdown[] = [];
   for (const line of p.lines) {
     if (line.kind !== "breakdown") continue;
     const b = breakdownLine(ctx, line);
     out.push(b);
-    const written = [b.unitPrice?.commodity, b.total?.commodity];
-    if (p.amount !== undefined) written.push(amount?.commodity);
-    const commodities = new Set(written.filter((c) => c !== undefined));
-    if (commodities.size > 1)
-      ctx.out.push(
-        diagnostic(
-          "breakdown.commodity-mismatch",
-          `${line.name}: ${[...commodities].join(", ")} are different commodities`,
-          ctx.source,
-          line.span,
-        ),
-      );
+    const commodities = [
+      ...new Set([b.unitPrice?.commodity, b.total?.commodity].filter((c) => c !== undefined)),
+    ];
+    const [commodity] = commodities;
+    const message =
+      commodities.length > 1
+        ? `${line.name}: ${commodities.join(", ")} are different commodities`
+        : commodity !== undefined && allowed.length > 0 && !allowed.includes(commodity)
+          ? `${line.name}: ${commodity} is not written on the posting (${[...new Set(allowed)].join(", ")})`
+          : undefined;
+    if (message !== undefined)
+      ctx.out.push(diagnostic("breakdown.commodity-mismatch", message, ctx.source, line.span));
   }
   return out;
 }

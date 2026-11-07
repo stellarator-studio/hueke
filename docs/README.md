@@ -25,7 +25,7 @@ Every feature carries one status.
 | Document | Covers |
 | --- | --- |
 | [architecture.md](architecture.md) | What the package provides, modules, dependency direction, source layout, which document drives which code and tests, rules for the public API |
-| [core/values.md](core/values.md) | Amounts, numbers as written, arithmetic, prices and costs |
+| [core/values.md](core/values.md) | Amounts, numbers as written, arithmetic in amounts and on values, prices and costs |
 | [core/commodities.md](core/commodities.md) | Commodities, aliases, declared and inferred precision, item mode |
 | [core/time.md](core/time.md) | Time values, time zones, weeks, the two time axes, comparing times, time predicates |
 | [core/accounts.md](core/accounts.md) | Accounts, the account hierarchy, account roots, account anchors and display names, obligation and pad settings, combined income and expense, untyped accounts |
@@ -34,7 +34,7 @@ Every feature carries one status.
 | [core/transactions.md](core/transactions.md) | Transactions, postings, breakdowns, balancing, omitted amounts, status and occurrence |
 | [core/balance.md](core/balance.md) | Balance assertions, `pad`, entities and obligations in Balances, the reconciliation view |
 | [core/obligations.md](core/obligations.md) | Obligation accounts, lending and repayment, the entities of an obligation, progress, settling, `obligations` |
-| [core/query.md](core/query.md) | Filtering, ordering, grouping and aggregation; the account tree, `balance` and `register` |
+| [core/query.md](core/query.md) | Filtering, ordering, grouping and period labels, aggregation, listing breakdown lines; the account tree, `balance` and `register` |
 | [core/ledger.md](core/ledger.md) | The two models, loading, declarations and strict mode, normalization, IDs, source positions |
 | [core/modules.md](core/modules.md) | Modules, `include`, module order, logical paths and how written paths resolve |
 | [core/settings.md](core/settings.md) | Every ledger setting, its values and default, wrong or repeated settings |

@@ -11,7 +11,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./assets/*": "./assets/*"
   },
   "bin": {
     "hueke": "dist/cli/main.js"

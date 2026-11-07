@@ -1,6 +1,16 @@
 // docs/core/values.md
 import { describe, expect, it } from "vitest";
-import { balance, check, Hueke, parse, query } from "../../srcs/index.js";
+import {
+  balance,
+  check,
+  compareValues,
+  Hueke,
+  multiplyValues,
+  negateValue,
+  parse,
+  query,
+  sumValues,
+} from "../../srcs/index.js";
 import type { ItemData, PostingData } from "../../srcs/index.js";
 import { balanceOf, codes, ledger, rows, SHARED } from "./ledger.js";
 
@@ -325,5 +335,50 @@ describe("the code joined to the number", () => {
     );
     expect(codes(h)).toEqual([]);
     expect(h.transactions[0]?.postings[1]?.amount).toEqual({ value: "-50", commodity: "USD" });
+  });
+});
+
+describe("value arithmetic", () => {
+  const h = ledger(`
+2026-10-12 * "Split three ways"
+    Expenses:Food      (1000/3) NTD
+    Expenses:Food      (1000/3) NTD
+    Expenses:Food      (1000/3) NTD
+    Bank:Checking      -1000 NTD
+`);
+  const values = query(h)
+    .accounts("Expenses:Food")
+    .postings()
+    .map((p) => p.amount.value);
+
+  it("sums values exactly, fractions included", () => {
+    expect(values).toEqual(["1000/3", "1000/3", "1000/3"]);
+    expect(sumValues(values)).toBe("1000");
+    expect(sumValues(["-12.5", "2.25"])).toBe("-10.25");
+    expect(sumValues([])).toBe("0");
+  });
+
+  it("multiplies, negates and compares", () => {
+    expect(multiplyValues("3", "1.10")).toBe("3.3");
+    expect(multiplyValues("1000/3", "3")).toBe("1000");
+    expect(negateValue("-1000/3")).toBe("1000/3");
+    expect(negateValue("0")).toBe("0");
+    expect(compareValues("2.50", "10")).toBeLessThan(0);
+    expect(compareValues("1000/3", "333.33")).toBeGreaterThan(0);
+    expect(compareValues("2/4", "0.5")).toBe(0);
+    expect(negateValue("12.5")).toBe("-12.5");
+  });
+
+  it("reads leading zeros and -0 as their values", () => {
+    expect(sumValues(["007", "-0"])).toBe("7");
+    expect(negateValue("-0/5")).toBe("0");
+    expect(sumValues(["-007.50"])).toBe("-7.5");
+  });
+
+  it.each(["1,000", "+5", "1/0", "", "abc", "1e3", ".5"])("throws on %j", (text) => {
+    expect(() => sumValues([text])).toThrow("not a value");
+    expect(() => multiplyValues(text, "1")).toThrow("not a value");
+    expect(() => negateValue(text)).toThrow("not a value");
+    expect(() => compareValues("1", text)).toThrow("not a value");
   });
 });

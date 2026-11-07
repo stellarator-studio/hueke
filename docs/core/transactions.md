@@ -160,7 +160,7 @@ A breakdown line is a note for display, such as one item on a receipt. It need n
 - Numbers are read with the ledger's marks (see [values.md](values.md), "Numbers as written"). Expressions are not allowed. Decimal places are not checked against precision.
 - A commodity written in a breakdown is not a use of it: it creates no commodity, is never `strict.undeclared` or `name.inferred-commodity`, and does not affect inferred precision. An alias is read as its commodity's code; any other code is kept as written.
 - A figure that cannot be read, such as a number that does not fit the marks, an expression, parts out of order, or an alias on the wrong side, is `breakdown.invalid-figure` (warning). The line keeps its name and drops all its figures; the transaction loads.
-- The commodities written on the unit price, on the total and on the posting's amount must all be the same; only those written are compared, so an omitted posting amount does not take part. The posting's amount counts, not its price or cost: under `1200 JPY @@ 260 NTD`, a breakdown in JPY agrees. A difference is `breakdown.commodity-mismatch` (error); the line is kept as written and the transaction loads.
+- The commodities written on a line's unit price and total must be the same, and must be one written on the posting: its amount's, its price's or its cost's. Only commodities written are compared: a line with none written always agrees, and under an omitted amount only the line's own two are compared. Each line chooses on its own: under `1200 JPY @@ 260 NTD`, one line may be in JPY and the next in NTD, but one line may not hold both. A difference is `breakdown.commodity-mismatch` (error); the line is kept as written and the transaction loads.
 
 ### System-generated transactions
 
@@ -204,6 +204,10 @@ The `Expenses:Food` posting has five breakdown lines: "Bubble tea" with quantity
 | --- | --- |
 | `- Ramen  1 * 1200 JPY` | `breakdown.commodity-mismatch`; the line is kept as written and the transaction loads |
 | `- Ramen  = 1200 JPY`, under `Expenses:Food 1200 JPY @@ 260 NTD` | No diagnostic: the posting's amount is in JPY |
+| `- Ramen  = 260 NTD`, under `Expenses:Food 1200 JPY @@ 260 NTD` | No diagnostic: the posting's price is in NTD |
+| `- Ramen  = 1000 JPY` and `- Tea  = 43 NTD`, both under `Expenses:Food 1200 JPY @@ 260 NTD` | No diagnostic: each line chooses its commodity on its own |
+| `- Ramen  1 * 1000 JPY = 217 NTD`, under `Expenses:Food 1200 JPY @@ 260 NTD` | `breakdown.commodity-mismatch`: one line holds both |
+| `- Ramen  = 260 USD`, under `Expenses:Food 1200 JPY @@ 260 NTD` | `breakdown.commodity-mismatch`: USD is not written on the posting |
 | `- Toast  1 * 65 NTD = 65 USD` | `breakdown.commodity-mismatch` |
 | `- Toast  = (130/2)` | `breakdown.invalid-figure`; the line keeps the name `Toast` and has no figures |
 | `- Points  = 40 POINT`, under a posting whose amount is omitted, with `option strict commodity` and `POINT` not declared | No diagnostic, and no commodity `POINT` is created |

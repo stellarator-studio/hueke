@@ -36,50 +36,6 @@ function number(value: string, precision: number, marks: Marks): string {
   return `${negative ? "-" : ""}${grouped}${digits ? `${marks.decimalMark}${digits}` : ""}`;
 }
 
-/**
- * Adds Decimal strings exactly, for running balances. A value is a decimal ("-12.5") or a
- * reduced fraction ("1000/3"); the sum is written the same way as the API writes values.
- */
-export function addDecimals(a: string, b: string): string {
-  const [an, ad] = fraction(a);
-  const [bn, bd] = fraction(b);
-  let n = an * bd + bn * ad;
-  let d = ad * bd;
-  const g = gcd(n, d);
-  n /= g;
-  d /= g;
-  let rest = d;
-  let scale = 0;
-  for (const p of [2n, 5n])
-    for (let k = 0; rest % p === 0n; k++) {
-      rest /= p;
-      scale = Math.max(scale, k + 1);
-    }
-  if (rest !== 1n) return `${n.toString()}/${d.toString()}`;
-  const scaled = (n * 10n ** BigInt(scale)) / d;
-  const digits = (scaled < 0n ? -scaled : scaled).toString().padStart(scale + 1, "0");
-  const whole = digits.slice(0, digits.length - scale);
-  const decimals = digits.slice(digits.length - scale);
-  return `${scaled < 0n ? "-" : ""}${whole}${decimals ? `.${decimals}` : ""}`;
-}
-
-/** A Decimal as numerator and positive denominator. */
-function fraction(value: string): [bigint, bigint] {
-  const slash = value.indexOf("/");
-  if (slash >= 0) return [BigInt(value.slice(0, slash)), BigInt(value.slice(slash + 1))];
-  const negative = value.startsWith("-");
-  const [whole = "0", decimals = ""] = value.replace(/^[-+]/, "").split(".");
-  const n = BigInt(whole + decimals);
-  return [negative ? -n : n, 10n ** BigInt(decimals.length)];
-}
-
-function gcd(a: bigint, b: bigint): bigint {
-  let x = a < 0n ? -a : a;
-  let y = b;
-  while (y !== 0n) [x, y] = [y, x % y];
-  return x;
-}
-
 /** Columns separated by two spaces; columns listed in `right` are right-aligned. */
 export function table(
   lines: readonly (readonly string[])[],

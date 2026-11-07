@@ -9,8 +9,9 @@ Hueke is published as one package, `hueke`, with two entry points built from the
 | Entry point | Built file | For | Described in |
 | --- | --- | --- | --- |
 | The `hueke` command | `dist/cli/main.js`, the package's `bin` | People working with ledger files: load, check, query and reconcile from a terminal | [cli.md](cli.md) |
-| The library (Core) | `dist/index.js` with type declarations, the package's only export | Platforms that read and write ledger text themselves, such as an editor plugin or a web page | The topic documents, "API" sections; "Public API rules" below |
+| The library (Core) | `dist/index.js` with type declarations, the package's main export (`hueke`) | Platforms that read and write ledger text themselves, such as an editor plugin or a web page | The topic documents, "API" sections; "Public API rules" below |
 
+- Besides the library, the package exports `assets/` as files, as `hueke/assets/<file>`: Hueke's icon (`hueke.svg`), for platforms that show it.
 - The command uses only the library's public API (see "Dependency direction").
 - The package's dependencies are the library's. The command adds no runtime dependency of its own beyond Node.
 
@@ -135,7 +136,8 @@ Each document drives the code and tests listed here. When a document changes, th
 | `Hueke` (`load`, `init`), `check`, `position`, `anchorKey` | [core/ledger.md](core/ledger.md), "API" |
 | `resolvePath`, `referencedSources` | [core/modules.md](core/modules.md), "API" |
 | `timeOnAxis` | [core/time.md](core/time.md), "API" |
-| `query`, `balance`, `register` | [core/query.md](core/query.md), "API" |
+| `sumValues`, `multiplyValues`, `negateValue`, `compareValues` | [core/values.md](core/values.md), "API" |
+| `query`, `balance`, `register`, `periodLabel` | [core/query.md](core/query.md), "API" |
 | `reconcile` | [core/balance.md](core/balance.md), "API" |
 | `obligations` | [core/obligations.md](core/obligations.md), "API" |
 | `serialize` | [dsl/formatting.md](dsl/formatting.md), "API" |

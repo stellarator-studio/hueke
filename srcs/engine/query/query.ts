@@ -7,6 +7,7 @@ import { timeOnAxis, transactionTime } from "../../data/model/axis.js";
 import type {
   Account,
   Axis,
+  Breakdown,
   Id,
   Occurrence,
   Posting,
@@ -26,6 +27,13 @@ export type TimeInput = TimeValue | string;
 /** A tag, or its DSL text written in full, with or without `#`: "tag:travel", "system:balance". */
 export type TagInput = Tag | { readonly scope?: string; readonly ref: AnchorRef } | string;
 
+/** One breakdown line, with the posting it is written under and that posting's transaction. */
+export interface BreakdownLineRow {
+  readonly transaction: Transaction;
+  readonly posting: Posting;
+  readonly line: Breakdown;
+}
+
 export interface TimeClause {
   readonly predicate: Predicate;
   readonly time: TimeValue;
@@ -41,6 +49,7 @@ interface State {
   readonly primaryTag?: string;
   readonly occurrence: readonly Occurrence[];
   readonly status?: readonly Status[];
+  readonly breakdown?: readonly string[];
   readonly involves?: readonly Id[];
 }
 
@@ -101,6 +110,10 @@ export class Query implements Iterable<Transaction> {
   status(...s: Status[]): Query {
     return this.#with({ status: s });
   }
+  /** Posting level: the posting has a breakdown line with one of the names, as written. */
+  breakdown(...names: string[]): Query {
+    return this.#with({ breakdown: names });
+  }
   /** Transaction level; every commodity must appear in some posting's amount (AND). */
   involves(...commodities: Id[]): Query {
     return this.#with({ involves: commodities });
@@ -112,15 +125,21 @@ export class Query implements Iterable<Transaction> {
 
   /** The postings that matched, ordered on the query's axis. */
   postings(): Posting[] {
-    const { hueke, axis, hits } = evaluate(this);
-    const order = sourceOrder(hueke);
-    const out = hits.flatMap((m) =>
-      m.postings.map((p) => ({ p, t: m.transaction, time: timeOnAxis(m.transaction, p, axis) })),
+    return orderedPostings(evaluate(this)).map((x) => x.posting);
+  }
+
+  /**
+   * The breakdown lines of the matched postings, postings in order and lines as written; with a
+   * `breakdown` clause, only the lines it names (docs/core/query.md, "Breakdown lines").
+   */
+  breakdownLines(): BreakdownLineRow[] {
+    const e = evaluate(this);
+    const names = e.state.breakdown;
+    return orderedPostings(e).flatMap(({ transaction, posting }) =>
+      posting.breakdown
+        .filter((line) => names === undefined || names.includes(line.name))
+        .map((line) => ({ transaction, posting, line })),
     );
-    // The sort is stable: within a transaction, postings keep their written order.
-    return out
-      .sort((a, b) => compareTime(a.time, b.time) || order(a.t) - order(b.t))
-      .map((x) => x.p);
   }
 
   groupBy(...keys: GroupKey[]): Grouped {
@@ -144,6 +163,26 @@ export class Query implements Iterable<Transaction> {
       times: [...state.times, { predicate, time: timeInput(t, { timezone, weekStart }) }],
     });
   }
+}
+
+/** The matched postings with their transactions, ordered on the query's axis. */
+function orderedPostings({
+  hueke,
+  axis,
+  hits,
+}: ReturnType<typeof evaluate>): { transaction: Transaction; posting: Posting }[] {
+  const order = sourceOrder(hueke);
+  const out = hits.flatMap((m) =>
+    m.postings.map((posting) => ({
+      transaction: m.transaction,
+      posting,
+      time: timeOnAxis(m.transaction, posting, axis),
+    })),
+  );
+  // The sort is stable: within a transaction, postings keep their written order.
+  return out
+    .sort((a, b) => compareTime(a.time, b.time) || order(a.transaction) - order(b.transaction))
+    .map(({ transaction, posting }) => ({ transaction, posting }));
 }
 
 function inner(q: Query): { readonly hueke: Hueke; readonly state: State } {
@@ -203,7 +242,13 @@ function evaluate(q: Query): {
     }
     if (t.postings.length === 0) {
       // The empty posting: the transaction's values, no account and no amount.
-      const empty = { status: t.status, refs: [], tags: t.tags, effective: t.effective };
+      const empty = {
+        status: t.status,
+        refs: [],
+        tags: t.tags,
+        effective: t.effective,
+        breakdown: [],
+      };
       if (postingMatches(s, t, empty, axis, read)) hits.push({ transaction: t, postings: [] });
       continue;
     }
@@ -217,7 +262,7 @@ function evaluate(q: Query): {
 }
 
 /** What a clause reads from a posting; the empty posting has no account. */
-type QueryPosting = Pick<Posting, "status" | "refs" | "tags" | "effective"> & {
+type QueryPosting = Pick<Posting, "status" | "refs" | "tags" | "effective" | "breakdown"> & {
   readonly id?: Id;
   readonly account?: Id;
 };
@@ -247,6 +292,8 @@ function postingMatches(
   )
     return false;
   if (s.status && !s.status.includes(p.status)) return false;
+  const names = s.breakdown;
+  if (names && !p.breakdown.some((line) => names.includes(line.name))) return false;
   if (s.entities) {
     const refs = entitiesOf(t, p, accounts, obligations);
     if (!s.entities.some((e) => refs.includes(e))) return false;

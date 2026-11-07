@@ -17,7 +17,7 @@
 
 ## Concepts
 
-The command is named `hueke`. It computes nothing the API does not return, apart from the running balance of `reconcile --balance`, and it never writes files.
+The command is named `hueke`. It computes nothing the API does not return, apart from the running balance of `reconcile --balance`, which it adds up with the API's value arithmetic (see [core/values.md](core/values.md), "Arithmetic"), and it never writes files.
 
 ```text
 hueke <command> [arguments] --file <path> [options]
@@ -90,6 +90,7 @@ Status: `implemented`
 | `--who <entity,…>` | `entities` |
 | `--tag <tag,…>` | `tags`, each written in full as in the API, with or without `#`: `--tag tag:travel,refund:t_book` |
 | `--primary <anchor>` | `primaryTag` |
+| `--breakdown <name,…>` | `breakdown`: the posting has a breakdown line with one of the names, matched exactly as written (see [core/query.md](core/query.md), "Breakdown lines"); a name with `,` cannot be given. The postings' amounts count, not the lines' totals |
 
 - Each option is written at most once; writing one twice is a usage error.
 - Times are text, read as the API reads them (see [core/time.md](core/time.md), "Times given to the API"): `--period 2026-10`, `--at 2026-10-31`, `--period 2026-11..2026-12`. A time the API rejects is a usage error.
@@ -293,3 +294,29 @@ $ hueke obligations --file main.hueke --format csv --name
 account,commodity,entities,original,repaid,remaining,settled,last_repaid
 Assets:Receivable:lunch-1011,NTD,Nat Chen,400,250,150,false,2026-10-20
 ```
+
+With these lines also added to `main.hueke`:
+
+```hueke
+2026-10-15 * %lunch "Lunch" @seven
+    Expenses:Food       120 NTD
+        - Bento  = 95 NTD
+        - Egg  = 25 NTD
+    Expenses:Drinks      45 NTD
+        - Black tea  1 * 45 NTD = 45 NTD
+    Assets:Cash        -165 NTD
+
+2026-10-22 %market "Market" @lawson
+    Expenses:Drinks      80 NTD
+        - Black tea  2 * 40 NTD = 80 NTD
+    Expenses:Groceries  120 NTD
+        - Apples  2 kg
+    Assets:Cash        -200 NTD
+```
+
+| Command | Result |
+| --- | --- |
+| `hueke query --file main.hueke --breakdown 'Black tea'` | The two `Expenses:Drinks` postings |
+| `hueke balance Expenses --file main.hueke --breakdown 'Black tea'` | `Expenses (total)` and `Expenses:Drinks`, each 125 NTD: the postings' amounts, not the lines' totals |
+| `hueke query Assets --file main.hueke --breakdown 'Black tea'` | No postings: the cash postings have no lines of their own |
+| `hueke query --file main.hueke --breakdown 'black tea'` | No postings: names match exactly |

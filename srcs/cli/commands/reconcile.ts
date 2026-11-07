@@ -1,8 +1,15 @@
 // `hueke reconcile`: the reconciliation views of one account at `--at`, one per commodity.
 
-import { reconcile, type Amount, type Hueke, type Id, type Posting } from "../../index.js";
+import {
+  reconcile,
+  sumValues,
+  type Amount,
+  type Hueke,
+  type Id,
+  type Posting,
+} from "../../index.js";
 import { UsageError, type CliIO } from "../io.js";
-import { addDecimals, amountText, table } from "../output.js";
+import { amountText, table } from "../output.js";
 import type { Command, Options } from "./command.js";
 import { mark, postingIndex, postingRows, postingTable } from "./postings.js";
 
@@ -30,7 +37,7 @@ export const reconcileCommand: Command = {
         wide ? [label, "", "", amount(a)] : [label, "", amount(a)];
       const posting = (r: (typeof period)[number]): string[] => {
         if (!wide) return [r.date, mark(r), amount(r.amount), r.description];
-        running = addDecimals(running, r.amount.value);
+        running = sumValues([running, r.amount.value]);
         const after = amount({ value: running, commodity: v.commodity });
         return [r.date, mark(r), amount(r.amount), after, r.description];
       };

@@ -86,3 +86,27 @@ export function sum(values: Iterable<Decimal>): Decimal {
   for (const v of values) total = add(total, rational(v));
   return decimal(total);
 }
+
+// The public value arithmetic (docs/core/values.md, "Arithmetic"): Decimal strings in and
+// out, for a presentation that works figures out of values the API returned.
+
+const VALUE = /^-?\d+(\.\d+)?$|^-?\d+\/\d*[1-9]\d*$/;
+
+function checked(value: Decimal): Rational {
+  if (typeof value !== "string" || !VALUE.test(value))
+    throw new RangeError(`not a value: ${JSON.stringify(value)}`);
+  return rational(value);
+}
+
+export function sumValues(values: Iterable<Decimal>): Decimal {
+  let total = ZERO;
+  for (const v of values) total = add(total, checked(v));
+  return decimal(total);
+}
+
+export const multiplyValues = (a: Decimal, b: Decimal): Decimal =>
+  decimal(mul(checked(a), checked(b)));
+
+export const negateValue = (value: Decimal): Decimal => decimal(neg(checked(value)));
+
+export const compareValues = (a: Decimal, b: Decimal): number => cmp(checked(a), checked(b));

@@ -19,7 +19,7 @@ export const queryCommand: Command = {
     "query [account...] --file <path> [--at <time>] [--period <time>] [--overlaps <time>]\n" +
     "  [--covers <time>] [--axis <axis>] [--status <status,...>] [--involves <commodity,...>]\n" +
     "  [--id <id,...>] [--who <entity,...>] [--tag <tag,...>] [--primary <anchor>]\n" +
-    "  [--planned] [--cancelled] [--name] [--strict] [--format table|csv]",
+    "  [--breakdown <name,...>] [--planned] [--cancelled] [--name] [--strict] [--format table|csv]",
   options: [...FILTERS, ...OCCURRENCE, "name"],
   run(hueke: Hueke, args: readonly string[], options: Options, io: CliIO): number {
     const axis = options.axis === undefined ? "effective" : axisOf(options.axis);

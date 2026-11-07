@@ -65,9 +65,62 @@ describe("breakdown", () => {
       { name: "Ramen", quantity: { value: "1" }, unitPrice: { value: "1200", commodity: "JPY" } },
     ]);
   });
-  it("compares the posting's amount, not its price", () => {
-    const g = line("- Ramen  = 1200 JPY", "Expenses:Food     1200 JPY @@ 260 NTD");
+  const exchanged = "Expenses:Food     1200 JPY @@ 260 NTD";
+  it("accepts a line in the commodity of the posting's amount", () => {
+    expect(codes(line("- Ramen  = 1200 JPY", exchanged))).toEqual([]);
+  });
+  it("accepts a line in the commodity of the posting's price", () => {
+    expect(codes(line("- Ramen  = 260 NTD", exchanged))).toEqual([]);
+    expect(codes(line("- Ramen  1 * 260 NTD", "Expenses:Food     1200 JPY @ 0.2 NTD"))).toEqual([]);
+  });
+  it("lets each line choose its commodity on its own", () => {
+    const g = ledger(`
+2026-10-12 * "Meal"
+    ${exchanged}
+        - Ramen  = 1000 JPY
+        - Tea  = 43 NTD
+    Assets:Cash
+`);
     expect(codes(g)).toEqual([]);
+    expect(breakdownOf(g)).toEqual([
+      { name: "Ramen", total: { value: "1000", commodity: "JPY" } },
+      { name: "Tea", total: { value: "43", commodity: "NTD" } },
+    ]);
+  });
+  it("reports one line holding both commodities of the posting", () => {
+    const g = line("- Ramen  1 * 1000 JPY = 217 NTD", exchanged);
+    expect(codes(g)).toEqual(["breakdown.commodity-mismatch"]);
+    expect(g.transactions).toHaveLength(1);
+    expect(breakdownOf(g)).toEqual([
+      {
+        name: "Ramen",
+        quantity: { value: "1" },
+        unitPrice: { value: "1000", commodity: "JPY" },
+        total: { value: "217", commodity: "NTD" },
+      },
+    ]);
+  });
+  it("reports a commodity not written on the posting", () => {
+    const g = line("- Ramen  = 260 USD", exchanged);
+    expect(codes(g)).toEqual(["breakdown.commodity-mismatch"]);
+    expect(breakdownOf(g)).toEqual([{ name: "Ramen", total: { value: "260", commodity: "USD" } }]);
+  });
+  it("accepts a line in the commodity of the posting's cost", () => {
+    const g = ledger(`
+2026-10-12 * "Buy shares"
+    Assets:Broker     10 AAPL {150 USD}
+        - Share  1 * 150 USD = 150 USD
+    Bank:USDAccount  -1500 USD
+`);
+    expect(codes(g)).toEqual([]);
+    expect(query(g).accounts("Assets:Broker").postings()[0]?.breakdown).toEqual([
+      {
+        name: "Share",
+        quantity: { value: "1" },
+        unitPrice: { value: "150", commodity: "USD" },
+        total: { value: "150", commodity: "USD" },
+      },
+    ]);
   });
   it("reports a unit price and a total in different commodities", () => {
     const g = line("- Toast  1 * 65 NTD = 65 USD");
@@ -89,6 +142,17 @@ describe("breakdown", () => {
     Assets:Cash     -200 NTD
 `);
     expect(codes(g)).toEqual([]);
+  });
+  it("compares only the line's own two under an omitted posting amount", () => {
+    const g = ledger(`
+2026-10-12 * "Meal"
+    Expenses:Food
+        - Ramen  1 * 1200 JPY = 260 NTD
+        - Toast  1 * 65 USD = 65 USD
+    Assets:Cash     -200 NTD
+`);
+    expect(codes(g)).toEqual(["breakdown.commodity-mismatch"]);
+    expect(check(g)[0]?.message).toContain("Ramen");
   });
   it("drops the figures of an expression and keeps the name", () => {
     const g = line("- Toast  = (130/2)");

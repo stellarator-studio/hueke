@@ -20,7 +20,7 @@ export const registerCommand: Command = {
     "register [account...] --file <path> [--at <time>] [--period <time>] [--overlaps <time>]\n" +
     "  [--covers <time>] [--axis <axis>] [--status <status,...>] [--involves <commodity,...>]\n" +
     "  [--id <id,...>] [--who <entity,...>] [--tag <tag,...>] [--primary <anchor>]\n" +
-    "  [--planned] [--cancelled] [--all] [--name] [--strict]",
+    "  [--breakdown <name,...>] [--planned] [--cancelled] [--all] [--name] [--strict]",
   options: [...FILTERS, ...OCCURRENCE, "all", "name"],
   run(hueke: Hueke, args: readonly string[], options: Options, io: CliIO): number {
     if (options.format !== "table")

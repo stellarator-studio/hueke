@@ -13,6 +13,7 @@ A double-entry bookkeeping command line in TypeScript. One package provides the 
 | `srcs/` | Source code |
 | `tests/` | Tests |
 | `docs/` | Finalized, committed documentation |
+| `assets/` | Files shipped as they are, such as Hueke's icon (`hueke.svg`) |
 
 Other directories are not decided yet; ask before adding new top-level ones.
 

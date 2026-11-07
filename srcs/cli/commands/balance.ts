@@ -10,7 +10,8 @@ export const balanceCommand: Command = {
     "balance [account...] --file <path> [--at <time>] [--period <time>] [--overlaps <time>]\n" +
     "  [--covers <time>] [--axis <axis>] [--status <status,...>] [--involves <commodity,...>]\n" +
     "  [--id <id,...>] [--who <entity,...>] [--tag <tag,...>] [--primary <anchor>]\n" +
-    "  [--planned] [--cancelled] [--all] [--name] [--depth <n>] [--strict] [--format table|csv]",
+    "  [--breakdown <name,...>] [--planned] [--cancelled] [--all] [--name] [--depth <n>]\n" +
+    "  [--strict] [--format table|csv]",
   options: [...FILTERS, ...OCCURRENCE, "all", "name", "depth"],
   run(hueke: Hueke, args: readonly string[], options: Options, io: CliIO): number {
     const depth = options.depth === undefined ? undefined : Number(options.depth);

@@ -35,6 +35,7 @@ const OPTIONS = {
   who: { type: "string" },
   tag: { type: "string" },
   primary: { type: "string" },
+  breakdown: { type: "string" },
   all: { type: "boolean" },
   name: { type: "boolean" },
   depth: { type: "string" },

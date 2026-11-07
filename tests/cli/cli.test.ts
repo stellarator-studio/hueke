@@ -28,15 +28,18 @@ interface Result {
   readonly stderr: string;
 }
 
-/** Runs `hueke` with the files given, under /ledger as the current directory unless given. */
+/**
+ * Runs `hueke` with the files given, under /ledger as the current directory unless given. Text is
+ * split at spaces; a list of arguments is passed as it is, for an argument with spaces.
+ */
 function hueke(
-  args: string,
+  args: string | readonly string[],
   files: Record<string, string> = { "/ledger/main.hueke": MAIN },
   cwd = "/ledger",
 ): Result {
   let stdout = "";
   let stderr = "";
-  const status = run(args.split(" ").filter(Boolean), {
+  const status = run(typeof args === "string" ? args.split(" ").filter(Boolean) : [...args], {
     cwd,
     readFile: (path) => {
       const text = files[path];
@@ -965,5 +968,68 @@ describe("examples with an obligation", () => {
       "account,commodity,entities,original,repaid,remaining,settled,last_repaid\n" +
         "Assets:Receivable:lunch-1011,NTD,Nat Chen,400,250,150,false,2026-10-20\n",
     );
+  });
+});
+
+const BREAKDOWN = `${OBLIGATIONS}
+2026-10-15 * %lunch "Lunch" @seven
+    Expenses:Food       120 NTD
+        - Bento  = 95 NTD
+        - Egg  = 25 NTD
+    Expenses:Drinks      45 NTD
+        - Black tea  1 * 45 NTD = 45 NTD
+    Assets:Cash        -165 NTD
+
+2026-10-22 %market "Market" @lawson
+    Expenses:Drinks      80 NTD
+        - Black tea  2 * 40 NTD = 80 NTD
+    Expenses:Groceries  120 NTD
+        - Apples  2 kg
+    Assets:Cash        -200 NTD
+`;
+
+describe("the breakdown filter", () => {
+  const files = { "/ledger/main.hueke": BREAKDOWN };
+  const run = (args: string, name: string) =>
+    hueke([...args.split(" "), "--breakdown", name], files);
+
+  it("loads the example without warnings or errors", () => {
+    expect(hueke("check --file main.hueke", files)).toEqual({ status: 0, stdout: "", stderr: "" });
+  });
+  it("query --breakdown 'Black tea' lists the postings with the line", () => {
+    expect(run("query --file main.hueke", "Black tea").stdout).toBe(
+      "2026-10-15  *  Expenses:Drinks  45 NTD  Lunch\n" +
+        "2026-10-22     Expenses:Drinks  80 NTD  Market\n",
+    );
+  });
+  it("balance --breakdown counts the postings' amounts, not the lines' totals", () => {
+    expect(run("balance Expenses --file main.hueke", "Black tea").stdout).toBe(
+      "125 NTD  Expenses (total)\n125 NTD    Expenses:Drinks\n",
+    );
+  });
+  it("applies to register", () => {
+    expect(run("register Expenses --file main.hueke", "Black tea").stdout).toContain(
+      "125 NTD    Expenses:Drinks",
+    );
+  });
+  it("gives no postings without lines of their own", () => {
+    expect(run("query Assets --file main.hueke", "Black tea").stdout).toBe("");
+  });
+  it("matches names exactly", () => {
+    expect(run("query --file main.hueke", "black tea").stdout).toBe("");
+  });
+  it("takes several names", () => {
+    const out = run("query --file main.hueke", "Bento,Apples").stdout;
+    expect(out).toBe(
+      "2026-10-15  *  Expenses:Food       120 NTD  Lunch\n" +
+        "2026-10-22     Expenses:Groceries  120 NTD  Market\n",
+    );
+  });
+  it("breakdown is not a command", () => {
+    expect(hueke("breakdown --file main.hueke", files)).toEqual({
+      status: 2,
+      stdout: "",
+      stderr: 'hueke: unknown command "breakdown"\n',
+    });
   });
 });
