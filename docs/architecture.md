@@ -4,14 +4,14 @@ What the Hueke package provides, how Core is split into modules and which way th
 
 ## Package
 
-Hueke is published as one package, `hueke`, with two entry points built from the same source and released under the same version.
+Hueke is published as one package, `@hueke/hueke`, with two entry points built from the same source and released under the same version.
 
 | Entry point | Built file | For | Described in |
 | --- | --- | --- | --- |
 | The `hueke` command | `dist/cli/main.js`, the package's `bin` | People working with ledger files: load, check, query and reconcile from a terminal | [cli.md](cli.md) |
-| The library (Core) | `dist/index.js` with type declarations, the package's main export (`hueke`) | Platforms that read and write ledger text themselves, such as an editor plugin or a web page | The topic documents, "API" sections; "Public API rules" below |
+| The library (Core) | `dist/index.js` with type declarations, the package's main export (`@hueke/hueke`) | Platforms that read and write ledger text themselves, such as an editor plugin or a web page | The topic documents, "API" sections; "Public API rules" below |
 
-- Besides the library, the package exports `assets/` as files, as `hueke/assets/<file>`: Hueke's icon (`hueke.svg`), for platforms that show it.
+- Besides the library, the package exports `assets/` as files, as `@hueke/hueke/assets/<file>`: Hueke's icon (`hueke.svg`), for platforms that show it.
 - The command uses only the library's public API (see "Dependency direction").
 - The package's dependencies are the library's. The command adds no runtime dependency of its own beyond Node.
 
