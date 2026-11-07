@@ -1,11 +1,23 @@
 {
-  "name": "hueke",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@hueke/hueke",
+  "version": "0.0.1",
+  "description": "A double-entry bookkeeping command line and library",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stellarator-studio/hueke.git"
+  },
   "type": "module",
   "packageManager": "pnpm@12.15.0",
   "engines": {
     "node": ">=22.12"
+  },
+  "files": [
+    "dist",
+    "assets"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "exports": {
     ".": {
@@ -15,7 +27,7 @@
     "./assets/*": "./assets/*"
   },
   "bin": {
-    "hueke": "dist/cli/main.js"
+    "hueke": "./dist/cli/main.js"
   },
   "scripts": {
     "prepare": "pnpm generate",
@@ -27,7 +39,8 @@
     "test": "pnpm generate && vitest run",
     "lint": "pnpm generate && eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "prepack": "pnpm clean && pnpm build"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
