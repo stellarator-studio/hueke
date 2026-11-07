@@ -38,6 +38,7 @@ A **module** is the parsed text of one file, identified by a **logical path** (s
 | `roots` | The account roots, built-in and declared. |
 | `accounts` | Every account, declared ones first, then those used without a declaration. |
 | `commodities` | Every commodity, declared ones first, then those used without a declaration. |
+| `entities` | Every entity, declared ones first, then those used without a declaration (see [entities.md](entities.md)). |
 | `transactions` | Every transaction, in order (see [transactions.md](transactions.md), "Order of transactions"), including generated ones. |
 | `balances` | Every Balance assertion (see [balance.md](balance.md)). |
 
@@ -63,23 +64,23 @@ The platform reads each file, parses its text into a module, and loads it under 
 
 Status: `implemented`
 
-Accounts and commodities may be declared, or used without a declaration. Strict mode is turned on per kind with the ledger setting `strict`. Kinds not listed follow normal mode.
+Accounts, commodities and entities may be declared, or used without a declaration. Strict mode is turned on per kind with the ledger setting `strict`. Kinds not listed follow normal mode.
 
 | Kind | Normal mode | Strict mode |
 | --- | --- | --- |
 | `account` | Any account can be used; an unknown root leaves it untyped (see [accounts.md](accounts.md), "Untyped accounts") | Only declared accounts can be used, and their root must be known |
 | `commodity` | Any commodity can be used; its precision is inferred and `name.inferred-commodity` (info) is reported (see [commodities.md](commodities.md), "Inferred precision") | Must be declared first |
+| `entity` | Any entity can be referenced; it has no display name (see [entities.md](entities.md)) | Must be declared first |
 
 - Objects used without a declaration are created during normalization, after the declared ones, in the order of their first use in the source. The info diagnostics about them follow the same order.
-- In strict mode, using an undeclared object is `strict.undeclared`, and a declared account with an unknown root is `strict.unknown-root`. Both are errors, but the ledger is computed exactly as in normal mode.
+- In strict mode, using an undeclared object is `strict.undeclared`, and a declared account with an unknown root is `strict.unknown-root`. An obligation's sub-account counts as declared (see [obligations.md](obligations.md), "Obligation accounts"). Both are errors, but the ledger is computed exactly as in normal mode.
 - The `strict` option given when creating the ledger turns on strict mode for every kind, whatever the ledger says.
-- The kind `entity` may be listed; it has no effect until entities exist.
 
 ### Duplicate declarations
 
 Status: `implemented`
 
-- When the root module declares a commodity, an account or an account root more than once, the first declaration is used and the later ones are ignored. Each later one is `declaration.duplicate` (error), naming the first one as `<module>:<line>`. This holds in every mode, strict or not.
+- When the root module declares a commodity, an account, an account root or an entity more than once, the first declaration is used and the later ones are ignored. Each later one is `declaration.duplicate` (error), naming the first one as `<module>:<line>`. This holds in every mode, strict or not.
 - Declarations in included modules are never duplicates (see [modules.md](modules.md), "Declarations in included modules").
 - Ledger settings follow their own rule (see [settings.md](settings.md), "Errors in settings").
 
@@ -91,8 +92,8 @@ Initialization turns the Raw models into the derived model in fixed steps. The r
 
 ```mermaid
 flowchart TD
-    m["1. Modules: root, includes, parse diagnostics, unsupported syntax"] --> d["2. Declarations: roots, settings, commodities, accounts"]
-    d --> r["3–5. Records: values and times, names, inheritance, totals, omitted amounts"]
+    m["1. Modules: root, includes, parse diagnostics, unsupported syntax"] --> d["2. Declarations: roots, settings, commodities, accounts, entities"]
+    d --> r["3–5. Records: values and times, names, anchors and tags, inheritance, totals, omitted amounts"]
     r --> e["6. Expansion: pads, sorting, undeclared objects, inferred precision"]
     e -. first check .-> v["7. Validation"]
 ```
@@ -100,10 +101,10 @@ flowchart TD
 | Step | What happens |
 | --- | --- |
 | 1. Modules | Find the root, follow its `include`s (see [modules.md](modules.md)), collect parse diagnostics, and drop unsupported syntax (see [diagnostics.md](diagnostics.md), "Unsupported syntax"). |
-| 2. Declarations | Read the root module's account roots (built-in and declared), then its ledger settings; then its commodities with their aliases, and its accounts. Declarations in included modules are not read (see [modules.md](modules.md)). |
-| 3–5. Records | Read numbers, amounts and times now that the settings are known. Resolve names. Inherit times, status and tags. Turn prices and costs into totals. Fill in omitted amounts. |
-| 6. Expansion | Expand `pad` Balances point by point (see [balance.md](balance.md)). Sort transactions. Create undeclared accounts and commodities, and infer precisions. |
-| 7. Validation | Balancing, precision, item rules, `hard` Balance assertions. |
+| 2. Declarations | Read the root module's account roots (built-in and declared), then its ledger settings; then its commodities with their aliases, its accounts, with what obligation sub-accounts inherit, and its entities. Declarations in included modules are not read (see [modules.md](modules.md)). |
+| 3–5. Records | Read numbers, amounts and times now that the settings are known. Resolve names and roles. Collect anchors and resolve tags and primary tags, skipping tags with scope errors (see [anchors.md](anchors.md)). Inherit times, status and tags. Turn prices and costs into totals. Fill in omitted amounts. |
+| 6. Expansion | Expand `pad` Balances point by point (see [balance.md](balance.md)). Sort transactions. Create undeclared accounts, commodities and entities, and infer precisions. |
+| 7. Validation | Balancing, precision, item rules, `hard` Balance assertions; obligation postings and refunds. |
 
 - Steps 1 to 6 run during initialization, because every other result depends on them.
 - Step 7 only flags problems and never changes what is computed. It runs on the first call to `check`, and its result is kept.
@@ -116,14 +117,15 @@ Status: `implemented`
 | Record | ID |
 | --- | --- |
 | Transaction with a `%anchor` | The anchor |
-| Transaction without one | `~<n>`, numbered in source order from 1 |
+| Transaction without one | `~<n>`, numbered in source order from 1, counting only the transactions without an anchor: a transaction with an anchor takes no number |
 | Posting with a `%anchor` | The anchor |
 | Posting without one | `<transaction ID>.<n>`, numbered within the transaction from 1 |
 | Transaction generated by `pad` | `~balance.<n>`, numbered in expansion order; its postings `~balance.<n>.<k>` |
 
 - Generated IDs start with `~`, which an anchor cannot contain, so they never collide with anchors.
-- A transaction dropped during normalization, such as one with `txn.amount-not-inferable`, still takes its number. A block that could not be parsed takes none.
+- A transaction dropped while loading still takes its number, whether it is dropped during normalization, such as one with `txn.amount-not-inferable`, or for syntax reported as `syntax.unsupported`. So IDs do not shift when that syntax becomes supported. A block that could not be parsed takes none.
 - IDs without an anchor change when records are added before them. To keep an ID, write an anchor.
+- An anchor defined more than once is no record's ID: those records take the IDs they would have without it (see [anchors.md](anchors.md), "Anchors").
 
 ### Source positions
 
@@ -143,6 +145,7 @@ Status: `implemented`
 - `position(module, offset)` returns the line and column of an offset, both from 1.
 - `anchorKey(anchor)` returns the canonical text of an anchor, such as `lunch`; definitions and references of the same anchor give the same text.
 - The functions for modules and paths, `referencedSources` and `resolvePath`, are described in [modules.md](modules.md).
+- Records are looked up by anchor or ID with the query clause `ids` (see [anchors.md](anchors.md), "Looking up by ID").
 
 ## Examples
 

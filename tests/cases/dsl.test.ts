@@ -78,6 +78,32 @@ describe("token order", () => {
   });
 });
 
+describe("once-only parts and line breaks", () => {
+  it.each([
+    ["a second anchor", '2026-10-12 * %a %b "Lunch"'],
+    ["a second description", '2026-10-12 * "Lunch" "Again"'],
+    ["a cancel mark after the description", '2026-10-14 * "Taxi" # travel'],
+  ])("%s is out of order", (_, header) => {
+    const h = ledger(`${header}\n    Expenses:Food  180 NTD\n    Assets:Cash\n`);
+    expect(codes(h)).toEqual(["parse.token-order"]);
+    expect(h.transactions).toEqual([]);
+  });
+  it("rejects unmatched braces", () => {
+    const h = ledger(
+      '2026-11-20 * "Sold"\n    Assets:Brokerage  -5 AAPL {150 USD}}\n    Bank:USDAccount  750 USD\n',
+    );
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.transactions).toEqual([]);
+  });
+  it("reads \\r\\n line breaks as \\n", () => {
+    const text = `2026-10-12 * "Lunch"\n    Expenses:Food  180 NTD\n    Assets:Cash\n`;
+    const h = ledger(text.replaceAll("\n", "\r\n"));
+    expect(codes(h)).toEqual([]);
+    expect(balanceOf(h, "Assets:Cash", "2026-10-12")).toBe("-180");
+    expect(h.transactions[0]?.description).toBe("Lunch");
+  });
+});
+
 describe("account names cannot contain spaces", () => {
   it("drops the block", () => {
     const h = ledger(
@@ -419,6 +445,20 @@ account Assets:Wallet  ;; owner: NAT
     expect(codes(h)).toEqual([]);
     expect(h.transactions[0]?.meta).toEqual({ title: '"Dune"', path: "a\\b" });
   });
+  it("Metadata may follow ;; without a space", () => {
+    const h = ledger(
+      `2026-10-12 * "Lunch"\n    ;;receipt: R-1\n    Expenses:Food 180 NTD\n    Assets:Cash\n`,
+    );
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions[0]?.meta).toEqual({ receipt: "R-1" });
+  });
+  it("a Metadata key starts with a letter", () => {
+    const h = ledger(
+      `2026-10-12 * "Lunch"\n    ;; 1receipt: R-1\n    Expenses:Food 180 NTD\n    Assets:Cash\n`,
+    );
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.transactions).toEqual([]);
+  });
   it(";; must be key: value", () => {
     const h = ledger(`
 2026-10-15 * "Late snack"
@@ -445,14 +485,25 @@ describe("identifiers", () => {
     ["a primary commodity that is not a code", "account Assets:Bank\n    primary $\n"],
     ["an entity with a dot", posting("Expenses:Food", " @a.b")],
     ["a role with a dot", posting("Expenses:Food", " @r.x:NAT")],
-    ["an anchor with a dot", '2026-10-12 * %a.b "x"\n'],
-    ["the anchor self", '2026-10-12 * "x"\n    Expenses:Food  1 NTD %self\n    Assets:Cash\n'],
     ["a tag scope with capitals", posting("Expenses:Food", " #Trip:x")],
     ["an alias with a digit", "commodity TWD\n    alias NT1 prefix\n"],
     ["an alias starting with a dot", "commodity TWD\n    alias .x suffix\n"],
   ])("rejects %s", (_, text) => {
     const h = ledger(text);
     expect(codes(h)).toEqual(["parse.syntax"]);
+  });
+  it.each([
+    ["an anchor with a dot", '2026-10-12 * %a.b "x"\n'],
+    ["the anchor self", '2026-10-12 * "x"\n    Expenses:Food  1 NTD %self\n    Assets:Cash\n'],
+    ["a tag's anchor with a dot", posting("Expenses:Food", " #lunch.1005")],
+    ["a scoped tag's anchor with a dot", posting("Expenses:Food", " #refund:lunch.1005")],
+    ["a primary tag's anchor with a dot", posting("Expenses:Food", " ^trip.1")],
+    ["an account's anchor with a dot", "account Bank:Checking %main.bank\n"],
+  ])("rejects %s as an invalid anchor name, and does not load the block", (_, text) => {
+    const h = ledger(text);
+    expect(codes(h)).toEqual(["anchor.invalid-name"]);
+    expect(h.transactions).toEqual([]);
+    expect(h.accounts.find((a) => a.id === "Bank:Checking")).toBeUndefined();
   });
   it.each([
     ["accounts with letters of any script", posting("支出:餐飲")],
@@ -463,8 +514,10 @@ describe("identifiers", () => {
     ],
     ["anchors, one with a period", '2026-10-12 * %lunch-1011 "x"\n2026-10-13 * %rent/2026-11\n'],
     ["aliases with symbols", "commodity TWD\n    alias NT$ prefix\n    alias 元 suffix\n"],
+    ["an entity and its display name", "entity NAT\n    display-name Nat Chen\n"],
   ])("accepts %s", (_, text) => {
-    expect(codes(ledger(text))).toEqual([]);
+    // The parser accepts them; whether a role or scope is known is checked when loading.
+    expect(parse("main.hueke", text).diagnostics).toEqual([]);
   });
 });
 
@@ -527,6 +580,44 @@ describe("times of day", () => {
   });
 });
 
+describe("symbols", () => {
+  const LINES = "    Expenses:Food  1 NTD\n    Assets:Cash\n";
+  it.each([
+    ["a primary tag with a scope other than tag", '2026-10-12 * "x" ^refund:a\n'],
+    ["## before a tag", '2026-10-12 * "x" ##a\n'],
+    ["@ followed by a digit", '2026-10-12 * "x" @1a\n'],
+  ])("rejects %s", (_, header) => {
+    const h = ledger(`${header}${LINES}`);
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.transactions).toEqual([]);
+  });
+  it.each([["@"], ["@@"]])("rejects %s joined to its price", (at) => {
+    const h = ledger(
+      `2026-10-12 * "x"\n    Bank:USDAccount  1 USD ${at}32 NTD\n    Bank:Checking\n`,
+    );
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.transactions).toEqual([]);
+  });
+  it("reads ^tag:x as ^x", () => {
+    const h = ledger(`2026-10-12 * "x" ^tag:trip\n${LINES}`);
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions[0]?.primaryTag).toBe("trip");
+  });
+});
+
+describe("Balance lines", () => {
+  it("take no posting line", () => {
+    const h = ledger("2026-10-12 balance Assets:Cash 0 NTD\n    Assets:Cash  1 NTD\n");
+    expect(codes(h)).toEqual(["parse.unexpected-property"]);
+    expect(h.balances).toEqual([]);
+  });
+  it("take no tag", () => {
+    const h = ledger("2026-10-12 balance Assets:Cash 0 NTD #x\n");
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.balances).toEqual([]);
+  });
+});
+
 describe("header marks", () => {
   it("set the status or the occurrence", () => {
     const h = ledger(`
@@ -545,10 +636,6 @@ describe("header marks", () => {
       ["none", "occurred"],
     ]);
     expect(h.transactions[4]?.tags.map((t) => t.ref.name)).toEqual(["travel"]);
-  });
-  it("two marks are out of order", () => {
-    const h = ledger(`2026-10-12 * ! "Lunch"\n`);
-    expect(codes(h)).toEqual(["parse.token-order"]);
   });
 });
 
@@ -571,22 +658,157 @@ describe("Balance times", () => {
     const h = ledger(`2026-10-25 balance Bank:Checking 0 NTD\n`);
     expect(codes(h)).toEqual([]);
     const [b] = h.balances;
-    expect(b && "accounting" in b).toBe(false);
-    expect(b?.origin && "accounting" in b.origin).toBe(false);
+    expect(b).toBeDefined();
+    expect(b).not.toHaveProperty("accounting");
+    expect(b?.origin).not.toHaveProperty("accounting");
   });
 });
 
 describe("account anchors", () => {
-  it("are reserved, and the declaration is not loaded", () => {
+  it("are read after the name, and the declaration is loaded", () => {
     const h = ledger(`
 account Bank:Checking %checking
     primary USD
     ;; bank_code: 808
 `);
-    expect(codes(h)).toEqual(["syntax.unsupported"]);
+    expect(codes(h)).toEqual([]);
     const account = h.accounts.find((a) => a.id === "Bank:Checking");
-    expect(account?.span).toBeUndefined();
-    expect(account?.primaryCommodity).toBeUndefined();
-    expect(account?.meta ?? {}).toEqual({});
+    expect(account?.anchor).toBe("checking");
+    expect(account?.span).toBeDefined();
+    expect(account?.primaryCommodity).toBe("USD");
+    expect(account?.meta).toEqual({ bank_code: "808" });
+  });
+  it("take no period", () => {
+    const h = ledger(`account Bank:Checking %checking/2026-10\n`);
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.accounts.find((a) => a.id === "Bank:Checking")).toBeUndefined();
+  });
+});
+
+describe("account and entity declarations", () => {
+  it("read every account property", () => {
+    const h = ledger(`
+account Bank:Checking %main-bank
+    display-name Main checking account
+    primary NTD
+    ;; bank_code: 808
+account Assets:Receivable
+    obligation receivable
+    pad-account Expenses:WriteOff
+
+entity NAT
+    display-name Nat Chen
+`);
+    expect(codes(h)).toEqual([]);
+    const bank = h.accounts.find((a) => a.id === "Bank:Checking");
+    expect(bank?.displayName).toBe("Main checking account");
+    expect(bank?.meta).toEqual({ bank_code: "808" });
+    const receivable = h.accounts.find((a) => a.id === "Assets:Receivable");
+    expect(receivable?.obligation).toBe("receivable");
+    expect(receivable?.padAccount).toBe("Expenses:WriteOff");
+    expect(h.entities.map((e) => [e.id, e.displayName])).toEqual([["NAT", "Nat Chen"]]);
+  });
+  it.each([
+    ["display-name without text", "account Bank:Checking\n    display-name\n"],
+    ["display-name without text on an entity", "entity NAT\n    display-name\n"],
+    [
+      "an obligation that is neither receivable nor payable",
+      "account Bank:Checking\n    obligation card\n",
+    ],
+    ["an obligation without a value", "account Bank:Checking\n    obligation\n"],
+    ["two pad accounts", "account Bank:Checking\n    pad-account Expenses:A Expenses:B\n"],
+    [
+      "a pad account that is not an account",
+      "account Bank:Checking\n    pad-account Expenses::A\n",
+    ],
+    ["an entity starting with a digit", "entity 1NAT\n"],
+    ["an entity with a dot", "entity N.AT\n"],
+    ["an entity without an ID", "entity\n"],
+  ])("reject %s, and the block is not loaded", (_, text) => {
+    const h = ledger(text);
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.accounts.some((a) => a.id === "Bank:Checking")).toBe(false);
+    expect(h.entities).toEqual([]);
+    expect(h.balances).toEqual([]);
+  });
+  it.each(["display-name A", "obligation payable", "pad-account Expenses:A"])(
+    "reject %s written twice",
+    (line) => {
+      const h = ledger(`account Bank:Checking\n    ${line}\n    ${line}\n`);
+      expect(codes(h)).toEqual(["parse.duplicate-property"]);
+      expect(h.accounts.some((a) => a.id === "Bank:Checking")).toBe(false);
+    },
+  );
+  it("an entity takes no account property", () => {
+    const h = ledger("entity NAT\n    primary NTD\n");
+    expect(codes(h)).toEqual(["parse.unexpected-property"]);
+    expect(h.entities).toEqual([]);
+  });
+  it("a display name runs to the end of the line", () => {
+    const h = ledger("entity NAT\n    display-name  Nat  Chen (school)  ; a friend\n");
+    expect(codes(h)).toEqual([]);
+    expect(h.entities[0]?.displayName).toBe("Nat  Chen (school)");
+  });
+  it("entity is a declaration keyword and cannot be an account root", () => {
+    expect(codes(ledger("account-root entity asset\n"))).toEqual(["parse.syntax"]);
+  });
+  it("name is not a keyword: it may be an account root", () => {
+    const h = ledger("account-root name asset\n");
+    expect(codes(h)).toEqual([]);
+    expect(h.roots.find((r) => r.name === "name")?.type).toBe("asset");
+  });
+  it("a Balance reads one entity after the account", () => {
+    const h = ledger("2026-10-31 balance Bank:Checking @acme 0 NTD\n");
+    expect(codes(h)).toEqual([]);
+    expect(h.balances[0]?.entity).toBe("acme");
+    expect(h.balances[0]?.origin?.entity).toBe("acme");
+  });
+});
+
+describe("properties that may repeat", () => {
+  it.each([
+    ["map on an account", "account Assets:Wallet\n    map Cash\n    map Purse\n"],
+    [
+      "share on a transaction",
+      '2026-10-12 "x"\n    share @NAT\n    share @AMY\n    Expenses:Food  2 NTD\n    Assets:Cash\n',
+    ],
+    ["from on a schedule", 'schedule %rent "Rent"\n    from 2026-01\n    from 2026-07\n'],
+    [
+      "active, cap and minimum on a rule",
+      "rule %dining\n    active 2026-01..2026-06\n    cap 300 NTD per month\n" +
+        "    cap 1000 NTD per year\n    minimum 10 NTD per posting\n    minimum 100 NTD per month\n" +
+        "    active 2026-07..\n",
+    ],
+    [
+      "rate, fixed and rounding once in each segment of a rule",
+      "rule %dining\n    active 2026-01..2026-06\n    rate 2%\n    fixed 5 NTD\n    rounding floor\n" +
+        "    active 2026-07..\n    rate 3%\n    fixed 15 NTD\n    rounding floor\n",
+    ],
+  ])("accepts %s, as reserved syntax", (_, text) => {
+    expect(codes(ledger(text))).toEqual(["syntax.unsupported"]);
+  });
+  it.each([
+    [
+      "fixed twice in one segment",
+      "rule %dining\n    active 2026..\n    fixed 5 NTD\n    fixed 6 NTD\n",
+    ],
+    ["follows twice on a rule", "rule %dining\n    follows card\n    follows card\n"],
+    [
+      "cap-group twice on a rule, even in two segments",
+      "rule %dining\n    cap-group a\n    active 2026..\n    cap-group b\n",
+    ],
+  ])("rejects %s", (_, text) => {
+    expect(codes(ledger(text))).toEqual(["parse.duplicate-property"]);
+  });
+  it("takes fixed and cap-group only on a rule", () => {
+    expect(codes(ledger("account Assets:Wallet\n    fixed 5 NTD\n"))).toEqual([
+      "parse.unexpected-property",
+    ]);
+    expect(codes(ledger("account Assets:Wallet\n    cap-group a\n"))).toEqual([
+      "parse.unexpected-property",
+    ]);
+  });
+  it("cap-group is not a declaration", () => {
+    expect(codes(ledger("cap-group %food 3000 NTD\n"))).toEqual(["parse.unexpected-property"]);
   });
 });

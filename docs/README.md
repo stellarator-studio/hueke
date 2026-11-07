@@ -1,6 +1,8 @@
-# Hueke core documentation
+# Hueke documentation
 
-Hueke core is a double-entry bookkeeping library. It reads ledger text, normalizes it into a model of accounts, commodities, transactions and assertions, checks it, and answers queries. It does no I/O of its own; the `hueke` command line wraps it for use on files.
+Hueke is a double-entry bookkeeping command line for plain-text ledgers. Its package provides two things: the `hueke` command, which reads ledger files and prints results, and the library the command is built on, for platforms that handle ledgers themselves, such as an editor plugin or a web page.
+
+These documents call the library Core. Core reads ledger text, normalizes it into a model of accounts, commodities, transactions and assertions, checks it, and answers queries. It does no I/O of its own.
 
 These documents are the specification. They are written and settled first; the code is built from them. Where the documents and the code disagree, the documents are right: a feature marked `implemented` that behaves otherwise has a bug.
 
@@ -22,14 +24,17 @@ Every feature carries one status.
 
 | Document | Covers |
 | --- | --- |
-| [architecture.md](architecture.md) | Modules, dependency direction, source layout, which document drives which code and tests, rules for the public API |
-| [core/values.md](core/values.md) | Amounts, numbers as written, arithmetic, prices and costs |
+| [architecture.md](architecture.md) | What the package provides, modules, dependency direction, source layout, which document drives which code and tests, rules for the public API |
+| [core/values.md](core/values.md) | Amounts, numbers as written, arithmetic in amounts and on values, prices and costs |
 | [core/commodities.md](core/commodities.md) | Commodities, aliases, declared and inferred precision, item mode |
 | [core/time.md](core/time.md) | Time values, time zones, weeks, the two time axes, comparing times, time predicates |
-| [core/accounts.md](core/accounts.md) | Accounts, the account hierarchy, account roots, combined income and expense, untyped accounts |
+| [core/accounts.md](core/accounts.md) | Accounts, the account hierarchy, account roots, account anchors and display names, obligation and pad settings, combined income and expense, untyped accounts |
+| [core/anchors.md](core/anchors.md) | Anchors, tags and scopes, primary tags, groups, refunds, looking records up by ID |
+| [core/entities.md](core/entities.md) | Entities, references and roles, display names |
 | [core/transactions.md](core/transactions.md) | Transactions, postings, breakdowns, balancing, omitted amounts, status and occurrence |
-| [core/balance.md](core/balance.md) | Balance assertions, `pad`, the reconciliation view |
-| [core/query.md](core/query.md) | Filtering, ordering, grouping and aggregation; the account tree, `balance` and `register` |
+| [core/balance.md](core/balance.md) | Balance assertions, `pad`, entities and obligations in Balances, the reconciliation view |
+| [core/obligations.md](core/obligations.md) | Obligation accounts, lending and repayment, the entities of an obligation, progress, settling, `obligations` |
+| [core/query.md](core/query.md) | Filtering, ordering, grouping and period labels, aggregation, listing breakdown lines; the account tree, `balance` and `register` |
 | [core/ledger.md](core/ledger.md) | The two models, loading, declarations and strict mode, normalization, IDs, source positions |
 | [core/modules.md](core/modules.md) | Modules, `include`, module order, logical paths and how written paths resolve |
 | [core/settings.md](core/settings.md) | Every ledger setting, its values and default, wrong or repeated settings |
@@ -42,15 +47,16 @@ Every feature carries one status.
 
 ## Reading order
 
-1. [architecture.md](architecture.md): the parts of Core and how data flows through them.
+1. [architecture.md](architecture.md): what the package provides, the parts of Core and how data flows through them.
 2. [dsl/README.md](dsl/README.md): what a ledger file looks like.
 3. [core/values.md](core/values.md), [core/commodities.md](core/commodities.md), [core/time.md](core/time.md), [core/accounts.md](core/accounts.md): amounts, commodities, time and accounts, which every record is built from.
 4. [core/transactions.md](core/transactions.md), [core/balance.md](core/balance.md): the records, transactions and Balance assertions.
-5. [core/query.md](core/query.md): getting results out of a ledger.
-6. [core/ledger.md](core/ledger.md), [core/modules.md](core/modules.md), [core/settings.md](core/settings.md): how a ledger is loaded from its files and configured.
-7. [core/diagnostics.md](core/diagnostics.md): every diagnostic code, for reference.
-8. [dsl/lexical.md](dsl/lexical.md), [dsl/records.md](dsl/records.md), [dsl/formatting.md](dsl/formatting.md): the exact syntax and the canonical form, before working on the parser or on formatting.
-9. [cli.md](cli.md): the `hueke` command line.
+5. [core/anchors.md](core/anchors.md), [core/entities.md](core/entities.md), [core/obligations.md](core/obligations.md): how records name each other and the people they deal with, and what is owed.
+6. [core/query.md](core/query.md): getting results out of a ledger.
+7. [core/ledger.md](core/ledger.md), [core/modules.md](core/modules.md), [core/settings.md](core/settings.md): how a ledger is loaded from its files and configured.
+8. [core/diagnostics.md](core/diagnostics.md): every diagnostic code, for reference.
+9. [dsl/lexical.md](dsl/lexical.md), [dsl/records.md](dsl/records.md), [dsl/formatting.md](dsl/formatting.md): the exact syntax and the canonical form, before working on the parser or on formatting.
+10. [cli.md](cli.md): the `hueke` command line.
 
 ## Conventions
 

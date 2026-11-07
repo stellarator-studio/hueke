@@ -1,6 +1,7 @@
 // Normalization step 6: `pad` balances, point by point (docs/core/balance.md, "Point-by-point expansion").
 
 import type {
+  Account,
   Amount,
   Balance,
   Id,
@@ -9,7 +10,7 @@ import type {
   Transaction,
 } from "../../data/model/types.js";
 import type { Diagnostic } from "../../data/source/source.js";
-import { within } from "../../data/model/account.js";
+import { obligationPlace, within } from "../../data/model/account.js";
 import {
   add,
   decimal,
@@ -20,7 +21,13 @@ import {
   type Rational,
 } from "../../data/values/decimal.js";
 import { diagnostic, type Code } from "../../data/source/diagnostics.js";
-import { balanceAt, show, withinHalfUnit } from "./shared.js";
+import {
+  balanceAt,
+  balanceBelongs,
+  show,
+  withinHalfUnit,
+  type ObligationEntities,
+} from "./shared.js";
 
 /** A posting a pad would generate: on which account, in which commodity. */
 interface Effect {
@@ -30,12 +37,15 @@ interface Effect {
 
 /**
  * Expands `pad` balances, given in source order. Returns the generated transactions, each with
- * the Balance it pads. `precision` gives each commodity's precision, declared or inferred.
+ * the Balance it pads. `precision` gives each commodity's precision, declared or inferred;
+ * `accounts` are the declared accounts, and `obligations` the entities of each obligation.
  */
 export function expandPads(
   balances: readonly Balance[],
   transactions: Transaction[],
   settings: LedgerSettings,
+  accounts: ReadonlyMap<Id, Account>,
+  obligations: ObligationEntities,
   precision: (commodity: Id) => number,
   out: Diagnostic[],
 ): { balance: Balance; transaction: Transaction }[] {
@@ -45,7 +55,15 @@ export function expandPads(
     .sort((a, b) =>
       a.effective.end < b.effective.end ? -1 : a.effective.end > b.effective.end ? 1 : 0,
     );
-  const padAccountOf = (b: Balance): Id | undefined => b.padAccount ?? settings.padAccount;
+  // The Balance's, then the account's (declared, or inherited from an obligation account), then
+  // the ledger's.
+  const padAccountOf = (b: Balance): Id | undefined => {
+    const place = obligationPlace(b.account, accounts);
+    const own =
+      accounts.get(b.account)?.padAccount ??
+      (place ? accounts.get(place.root)?.padAccount : undefined);
+    return b.padAccount ?? own ?? settings.padAccount;
+  };
   const report = (code: Code, message: string, b: Balance): void => {
     out.push(diagnostic(code, message, b.source, b.span));
   };
@@ -54,7 +72,20 @@ export function expandPads(
   const effects = new Map<Balance, Effect[]>();
   for (const b of pads) {
     const padAccount = padAccountOf(b);
-    if (b.pad && b.pad.commodity !== b.amount.commodity)
+    const place = obligationPlace(b.account, accounts);
+    if (place && !b.pad)
+      report(
+        "balance.pad-needs-amount",
+        `the pad of ${b.account} is on an obligation account or inside one and must write its padding`,
+        b,
+      );
+    else if (place?.kind === "root")
+      report(
+        "balance.ambiguous",
+        `${b.account} is an obligation account; a pad closes one obligation`,
+        b,
+      );
+    else if (b.pad && b.pad.commodity !== b.amount.commodity)
       report(
         "balance.pad-commodity",
         `the pad of ${b.account} asserts ${b.amount.commodity} but pads ${b.pad.commodity}`,
@@ -75,9 +106,24 @@ export function expandPads(
       (e) => e.commodity === b.amount.commodity && within(e.account, b.account),
     );
   const conflicted = new Set<Balance>();
+  // A pad in conflict both ways is reported once, as affecting the other pad.
   for (const a of effects.keys()) {
     const [, counter] = effects.get(a) ?? [];
-    if (counter && counter.commodity === a.amount.commodity && within(counter.account, a.account)) {
+    const other = [...effects.keys()].find(
+      (b) => a !== b && a.effective.end === b.effective.end && (affects(a, b) || affects(b, a)),
+    );
+    if (other) {
+      conflicted.add(a);
+      report(
+        "balance.pad-conflict",
+        `the pad of ${a.account} and the pad of ${other.account} at the same point affect each other`,
+        a,
+      );
+    } else if (
+      counter &&
+      counter.commodity === a.amount.commodity &&
+      within(counter.account, a.account)
+    ) {
       conflicted.add(a);
       report(
         "balance.pad-conflict",
@@ -85,16 +131,6 @@ export function expandPads(
         a,
       );
     }
-    const other = [...effects.keys()].find(
-      (b) => a !== b && a.effective.end === b.effective.end && (affects(a, b) || affects(b, a)),
-    );
-    if (!other) continue;
-    conflicted.add(a);
-    report(
-      "balance.pad-conflict",
-      `the pad of ${a.account} and the pad of ${other.account} at the same point affect each other`,
-      a,
-    );
   }
 
   const generated: Transaction[] = [];
@@ -104,7 +140,8 @@ export function expandPads(
     const padAccount = padAccountOf(b);
     if (!effects.has(b) || conflicted.has(b) || padAccount === undefined) continue;
     const commodity = b.amount.commodity;
-    const current = balanceAt(all(), b.account, commodity, b.effective);
+    const belongs = balanceBelongs(b, accounts, obligations);
+    const current = balanceAt(all(), b.account, commodity, b.effective, belongs);
     const asserted = rational(b.amount.value);
     let diff: Rational;
     if (b.pad) {
@@ -147,7 +184,8 @@ function padTransaction(b: Balance, padAccount: Id, diff: Amount, n: number): Tr
     status: "none",
     effective: b.effective,
     tags,
-    refs: [],
+    // The Balance's entity goes on the posting on the asserted account only.
+    refs: k === 1 && b.entity !== undefined ? [{ role: "person", entity: b.entity }] : [],
     meta: {},
     breakdown: [],
   });

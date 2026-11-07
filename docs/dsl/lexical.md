@@ -42,9 +42,9 @@ Each line has its leading whitespace removed and is split at the first `;` outsi
 
 | Kind | Keywords |
 | --- | --- |
-| Declarations | `option`, `account-root`, `commodity`, `account`, `include`; reserved: `entity`, `schedule`, `installment`, `rule`, `cap-group`, `module` |
+| Declarations | `option`, `account-root`, `commodity`, `account`, `entity`, `include`; reserved: `schedule`, `installment`, `rule`, `module` |
 | In date lines | `balance`, `pad` |
-| Properties | `item`, `precision`, `alias`, `primary`; reserved: `active`, `obligation`, `pad-account`, `allow`, `deny`, `statement`, `source`, `self`, `map`, `name`, `type`, `from`, `every`, `count`, `until`, `follows`, `skip`, `due`, `override`, `principal`, `method`, `rate`, `periodic-rate`, `first-period`, `rounding`, `absorb`, `fee`, `split`, `paid-by`, `share`, `into`, `cap`, `minimum` |
+| Properties | `item`, `precision`, `alias`, `primary`, `display-name`, `obligation`, `pad-account`; reserved: `type`, `active`, `allow`, `deny`, `statement`, `source`, `self`, `map`, `from`, `every`, `count`, `until`, `follows`, `skip`, `due`, `override`, `principal`, `method`, `rate`, `periodic-rate`, `first-period`, `rounding`, `absorb`, `fee`, `split`, `paid-by`, `share`, `into`, `cap`, `minimum`, `cap-group`, `fixed` |
 
 - An account root cannot be a keyword; otherwise a one-segment account would read as a declaration or property.
 
@@ -60,7 +60,8 @@ Date lines and declarations are top-level: each opens a block and ends the previ
 | Posting | Metadata, breakdown lines; reserved: `split`, `paid-by`. Until the next posting |
 | `balance` | Metadata |
 | `commodity` | `item`, `precision`, `alias`, metadata |
-| `account` | `primary`, metadata; reserved: `name`, `active`, `obligation`, `pad-account`, `allow`, `deny`, `statement`, `source`, `self`, `map` |
+| `account` | `display-name`, `obligation`, `pad-account`, `primary`, metadata; reserved: `active`, `allow`, `deny`, `statement`, `source`, `self`, `map` |
+| `entity` | `display-name`, metadata; reserved: `type` |
 | `option`, `account-root`, `include` | Nothing |
 
 - A transaction's whole-line metadata must stand before its first posting, or at the end of the header line; after a posting, it belongs to that posting.
@@ -68,7 +69,7 @@ Date lines and declarations are top-level: each opens a block and ends the previ
 - Reserved lines are read into the Raw model and then reported as `syntax.unsupported` (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax").
 - A line with no record to belong to is `parse.orphan-line`. A line before the first block, or metadata in a block that accepts none, is skipped. A breakdown line before its block's first posting drops the block.
 - A property the record does not accept is `parse.unexpected-property`, and so is a posting line under a Balance or under `option`, `account-root`, `include`, `commodity` or `account`. A property after the first posting is also `parse.unexpected-property`. The block is not loaded.
-- A single-valued property (`item`, `precision`, `primary`) written twice in one record is `parse.duplicate-property`. `alias` and metadata may repeat.
+- A property written twice in one record is `parse.duplicate-property`, unless it may repeat: `alias` and metadata; among reserved properties, `map` on an account, `share` on a transaction or a module, `from`, `every` and `override` on a schedule or an installment, and `active`, `cap` and `minimum` on a rule. On a rule, each `active` starts a new segment, and `rate`, `fixed` and `rounding` are once per segment.
 
 ### Whitespace
 
@@ -148,13 +149,13 @@ Status: `implemented`
 | Commodity code | A letter, then letters, digits, `_`, `-`, `.` | `NTD`, `camera-01`, `BRK.B` |
 | Entity | A letter or `_`, then letters, digits, `_`, `-` | `NAT`, `xx_breakfast` |
 | Role | As an entity | `person` |
-| Anchor | Letters, digits, `_`, `-`; no `/`, `.`, `:`; not `self`. A `/` after the name starts a period, which is not part of the anchor (see [README.md](README.md), "Reserved syntax") | `lunch-1011`, `t8f3k2q` |
+| Anchor | Letters, digits, `_`, `-`; no `/`, `.`, `:`; not `self`. A `/` after the name starts a period, which is not part of the anchor (see [README.md](README.md), "Reserved syntax") | `t_book`, `deposit-1011`, `t8f3k2q` |
 | Commodity alias | No whitespace or digits; none of `;` `"` `,` `%` `#` `^` `@` `*` `×` `[` `]` `{` `}` `=` `(` `)` `+` `/`; does not start with `-`, `.`, `'` | `NT$`, `$`, `dollars` |
 | Tag scope | Lowercase ASCII letters and `-` | `system` |
 | Metadata key | A letter, then letters, Unicode digits, `_`, `-` | `invoice_number` |
 | Time zone | An IANA name: ASCII letters, digits, `/`, `_`, `-`, `+` | `Asia/Taipei` |
 
-- An identifier that breaks its rule is `parse.syntax`.
+- An identifier that breaks its rule is `parse.syntax`, except an anchor: a `%`, `#`, `#scope:` or `^` joined to a name that breaks the anchor rule, such as `%lunch.1005`, is `anchor.invalid-name`. Either way the block is not loaded.
 
 ### Strings and values
 

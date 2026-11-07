@@ -1,7 +1,18 @@
 // docs/core/values.md
 import { describe, expect, it } from "vitest";
-import { balance, check, query } from "../../srcs/index.js";
-import { balanceOf, codes, ledger, rows } from "./ledger.js";
+import {
+  balance,
+  check,
+  compareValues,
+  Hueke,
+  multiplyValues,
+  negateValue,
+  parse,
+  query,
+  sumValues,
+} from "../../srcs/index.js";
+import type { ItemData, PostingData } from "../../srcs/index.js";
+import { balanceOf, codes, ledger, rows, SHARED } from "./ledger.js";
 
 describe("currency exchange", () => {
   const h = ledger(`
@@ -25,6 +36,7 @@ describe("prices and costs written with a sign", () => {
     ["@@ -32100 NTD", "price"],
     ["{-32.10 NTD}", "cost"],
     ["{{-32100 NTD}}", "cost"],
+    ["@ (10.70 - 42.80) NTD", "price"],
   ] as const)("warns about %s and uses it without the sign", (written, field) => {
     const h = ledger(`
 2026-10-12 * "Bought USD with NTD"
@@ -39,6 +51,27 @@ describe("prices and costs written with a sign", () => {
       commodity: "NTD",
     });
   });
+  it("ignores a price on a posting whose amount is omitted", () => {
+    // Text cannot write a price without an amount, so the parsed record is edited to omit it.
+    const data = parse(
+      "main.hueke",
+      `${SHARED}\n2026-10-12 * "Bought USD"\n    Bank:USDAccount  100 USD @ 32 NTD\n    Bank:Checking  -1 NTD @ 5 USD\n`,
+    );
+    const omit = (posting: PostingData): PostingData =>
+      Object.fromEntries(Object.entries(posting).filter(([k]) => k !== "amount")) as PostingData;
+    const items = data.items.map((i): ItemData =>
+      i.kind === "transaction"
+        ? { ...i, postings: i.postings.map((p, n) => (n === 1 ? omit(p) : p)) }
+        : i,
+    );
+    const h = new Hueke();
+    h.load("main.hueke", { ...data, items });
+    h.init("main.hueke");
+    expect(codes(h)).toEqual([]);
+    const [, checking] = h.transactions[0]?.postings ?? [];
+    expect(checking?.amount).toEqual({ value: "-3200", commodity: "NTD" });
+    expect(checking).not.toHaveProperty("price");
+  });
   it("warns about a pad price with a sign", () => {
     const h = ledger(`
 2026-10-01 * "Opening"
@@ -50,6 +83,39 @@ describe("prices and costs written with a sign", () => {
     expect(codes(h)).toEqual(["posting.signed-price"]);
     expect(balanceOf(h, "Bank:Checking", "2026-10-25")).toBe("12345");
     expect(balanceOf(h, "Expenses:ReconcileDiff", "2026-10-25", "USD")).toBe("-1.5");
+  });
+});
+
+describe("amounts", () => {
+  it("writes zero as 0, never -0", () => {
+    const h = ledger(`
+2026-10-12 * "Back and forth"
+    Assets:Cash        -0 NTD
+    Expenses:Food     100 NTD
+    Expenses:Food    -100 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions[0]?.postings[0]?.amount.value).toBe("0");
+    expect(balanceOf(h, "Expenses:Food", "2026-10-12")).toBe("0");
+  });
+  it("keeps totals per commodity, sorted by code", () => {
+    const h = ledger(`
+2026-10-12 * "Cash in three currencies"
+    Assets:Cash        20 USD
+    Assets:Cash      1000 NTD
+    Assets:Cash      2000 JPY
+    Equity:Opening    -20 USD
+    Equity:Opening  -1000 NTD
+    Equity:Opening  -2000 JPY
+`);
+    expect(codes(h)).toEqual([]);
+    const [row] = balance(h, query(h).accounts("Assets:Cash")).filter((r) => !r.subtotal);
+    expect(row?.amounts.map((a) => a.commodity)).toEqual(["JPY", "NTD", "USD"]);
+  });
+  it("rejects a plus sign", () => {
+    const h = ledger(`2026-10-12 * "X"\n    Expenses:Food  +12 NTD\n    Assets:Cash\n`);
+    expect(codes(h)).toEqual(["parse.invalid-number"]);
+    expect(h.transactions).toEqual([]);
   });
 });
 
@@ -122,22 +188,6 @@ describe("selling shares", () => {
   });
 });
 
-describe("dividends", () => {
-  const h = ledger(`
-2026-10-30 * "AAPL dividend" @apple
-    Bank:USDAccount      12 USD
-    Income:Dividends    -12 USD
-`);
-  it("is plain income", () => {
-    expect(codes(h)).toEqual([]);
-    expect(
-      rows(
-        balance(h, query(h).axis("accounting").within("2026-10").accounts("Income", "Expenses")),
-      ),
-    ).toEqual(["Income:Dividends -12 USD"]);
-  });
-});
-
 describe("digit groups and decimal marks", () => {
   it("the defaults", () => {
     const h = ledger(`
@@ -159,10 +209,8 @@ commodity GOLD
     Bank:HKDAccount    -15,00 HKD
 `);
     expect(codes(h)).toEqual(["parse.invalid-number"]);
-    expect(check(h).find((d) => d.code === "parse.invalid-number")?.message).toContain("15,00");
     expect(balanceOf(h, "Expenses:Housing", "2026-10-13", "HKD")).toBe("1500");
     expect(balanceOf(h, "Assets:Gold", "2026-10-13", "GOLD")).toBe("1.25");
-    expect(h.commodities.find((c) => c.id === "GOLD")?.precision).toBe(3);
     expect(balanceOf(h, "Bank:KRWAccount", "2026-10-13", "KRW")).toBe("-3250000");
   });
   it("a comma as the decimal mark", () => {
@@ -254,22 +302,16 @@ describe("arithmetic in amounts", () => {
       expect(h.transactions).toEqual([]);
     }
   });
-  it("works in prices and costs, not in breakdowns", () => {
+  it("works in prices and costs", () => {
     const h = ledger(`
 2026-10-12 * "Buy"
     Assets:Broker      3 AAPL {(450/3) USD} @ (300 / 2) USD
     Assets:Cash
-
-2026-10-13 * "Pizza"
-    Expenses:Food      600 NTD
-        - My share  = (600/3)
-    Assets:Cash
 `);
-    expect(codes(h)).toEqual(["breakdown.invalid-figure"]);
-    const [buy, pizza] = h.transactions;
+    expect(codes(h)).toEqual([]);
+    const [buy] = h.transactions;
     expect(buy?.postings[0]?.cost).toEqual({ value: "450", commodity: "USD" });
     expect(buy?.postings[0]?.price).toEqual({ value: "450", commodity: "USD" });
-    expect(pizza?.postings[0]?.breakdown).toEqual([{ name: "My share" }]);
   });
 });
 
@@ -286,5 +328,57 @@ describe("the code joined to the number", () => {
 `);
     expect(codes(h)).toEqual([]);
     expect(balanceOf(h, "Expenses:Food", "2026-10-13")).toBe("330");
+  });
+  it("negates an expression written after a minus", () => {
+    const h = ledger(
+      `2026-10-12 * "X"\n    Expenses:Food  50 USD\n    Assets:Cash  -(12.5 * 4)USD\n`,
+    );
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions[0]?.postings[1]?.amount).toEqual({ value: "-50", commodity: "USD" });
+  });
+});
+
+describe("value arithmetic", () => {
+  const h = ledger(`
+2026-10-12 * "Split three ways"
+    Expenses:Food      (1000/3) NTD
+    Expenses:Food      (1000/3) NTD
+    Expenses:Food      (1000/3) NTD
+    Bank:Checking      -1000 NTD
+`);
+  const values = query(h)
+    .accounts("Expenses:Food")
+    .postings()
+    .map((p) => p.amount.value);
+
+  it("sums values exactly, fractions included", () => {
+    expect(values).toEqual(["1000/3", "1000/3", "1000/3"]);
+    expect(sumValues(values)).toBe("1000");
+    expect(sumValues(["-12.5", "2.25"])).toBe("-10.25");
+    expect(sumValues([])).toBe("0");
+  });
+
+  it("multiplies, negates and compares", () => {
+    expect(multiplyValues("3", "1.10")).toBe("3.3");
+    expect(multiplyValues("1000/3", "3")).toBe("1000");
+    expect(negateValue("-1000/3")).toBe("1000/3");
+    expect(negateValue("0")).toBe("0");
+    expect(compareValues("2.50", "10")).toBeLessThan(0);
+    expect(compareValues("1000/3", "333.33")).toBeGreaterThan(0);
+    expect(compareValues("2/4", "0.5")).toBe(0);
+    expect(negateValue("12.5")).toBe("-12.5");
+  });
+
+  it("reads leading zeros and -0 as their values", () => {
+    expect(sumValues(["007", "-0"])).toBe("7");
+    expect(negateValue("-0/5")).toBe("0");
+    expect(sumValues(["-007.50"])).toBe("-7.5");
+  });
+
+  it.each(["1,000", "+5", "1/0", "", "abc", "1e3", ".5"])("throws on %j", (text) => {
+    expect(() => sumValues([text])).toThrow("not a value");
+    expect(() => multiplyValues(text, "1")).toThrow("not a value");
+    expect(() => negateValue(text)).toThrow("not a value");
+    expect(() => compareValues("1", text)).toThrow("not a value");
   });
 });

@@ -1,4 +1,4 @@
-// Grouping and aggregation (docs/core/query.md, "Grouping", "Aggregation").
+// Grouping and aggregation (docs/core/query.md, "Grouping", "Aggregation", "Period labels").
 
 import { timeOnAxis } from "../../data/model/axis.js";
 import { compareText } from "../../data/model/order.js";
@@ -12,8 +12,9 @@ import type {
   Weekday,
 } from "../../data/model/types.js";
 import { anchorKey } from "../../data/raw/anchor.js";
-import { eachDate, weekLabel } from "../../data/time/time.js";
+import { eachDate, timeInput, weekLabel } from "../../data/time/time.js";
 import { add, decimal, rational, ZERO, type Rational } from "../../data/values/decimal.js";
+import type { Hueke } from "../hueke.js";
 import type { TimeClause } from "./query.js";
 
 export type GroupKey =
@@ -45,7 +46,7 @@ export interface Hit {
   readonly postings: Posting[];
 }
 
-type Bucket = "day" | "week" | "month" | "quarter" | "year";
+export type Bucket = "day" | "week" | "month" | "quarter" | "year";
 
 export class GroupedQuery implements Grouped {
   constructor(
@@ -54,6 +55,8 @@ export class GroupedQuery implements Grouped {
     private readonly times: readonly TimeClause[],
     private readonly hits: readonly Hit[],
     private readonly keys: readonly GroupKey[],
+    /** The entities a posting is read with (docs/core/query.md, "Matched postings"). */
+    private readonly entities: (t: Transaction, p: Posting) => readonly Id[],
   ) {}
 
   sum(): Group<Amount[]>[] {
@@ -117,8 +120,8 @@ export class GroupedQuery implements Grouped {
       case "primaryTag":
         return [t.primaryTag ?? null];
       case "entity": {
-        const refs = p.refs.length > 0 ? p.refs : t.refs;
-        return refs.length > 0 ? refs.map((r) => r.entity) : [null];
+        const refs = this.entities(t, p);
+        return refs.length > 0 ? [...refs] : [null];
       }
       case "tag":
         return p.tags.length > 0
@@ -151,6 +154,16 @@ export class GroupedQuery implements Grouped {
   }
 }
 
+/** The label of the period a local date falls in, for one time key, as `groupBy` writes it. */
+export function periodLabel(ledger: Hueke, date: string, key: Bucket): string {
+  const { timezone, weekStart } = ledger.settings;
+  // Checked first, so that a time of day is also parse.invalid-time, not query.time-of-day.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
+    throw new Error(`parse.invalid-time: "${date}" is not a day`);
+  const time = timeInput(date, { timezone, weekStart });
+  return bucketOf(key, time.localDate, weekStart);
+}
+
 function bucketOf(k: Bucket, date: string, weekStart: Weekday): string {
   switch (k) {
     case "day":
@@ -172,7 +185,7 @@ function compareKeys(
   a: Readonly<Record<string, string | null>>,
   b: Readonly<Record<string, string | null>>,
 ): number {
-  for (const k of new Set(keys)) {
+  for (const k of keys) {
     const x = a[k] ?? null;
     const y = b[k] ?? null;
     if (x === y) continue;

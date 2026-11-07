@@ -13,7 +13,7 @@ A ledger file is plain UTF-8 text with the extension `.hueke`, holding records, 
 
 ## Concepts
 
-**Records** are transactions and Balance assertions; **declarations** are settings, account roots, commodities, accounts and includes. The parser turns one file into its Raw model (see [../core/ledger.md](../core/ledger.md), "Concepts"); what the records mean is described in the core documents (see [../README.md](../README.md), "Documents"). The details of the format are in [lexical.md](lexical.md), [records.md](records.md) and [formatting.md](formatting.md).
+**Records** are transactions and Balance assertions; **declarations** are settings, account roots, commodities, accounts, entities and includes. The parser turns one file into its Raw model (see [../core/ledger.md](../core/ledger.md), "Concepts"); what the records mean is described in the core documents (see [../README.md](../README.md), "Documents"). The details of the format are in [lexical.md](lexical.md), [records.md](records.md) and [formatting.md](formatting.md).
 
 ## Behavior
 
@@ -61,20 +61,22 @@ Status: `implemented`
 | `option` | A ledger setting | [../core/settings.md](../core/settings.md) |
 | `account-root` | An account root | [../core/accounts.md](../core/accounts.md), "Account roots" |
 | `commodity` | A commodity, with precision, item mode, aliases and metadata | [../core/commodities.md](../core/commodities.md) |
-| `account` | An account, with its primary commodity and metadata | [../core/accounts.md](../core/accounts.md) |
+| `account` | An account, with its anchor, display name, obligation and pad settings, primary commodity and metadata | [../core/accounts.md](../core/accounts.md) |
+| `entity` | An entity, with its display name and metadata; `type` is reserved | [../core/entities.md](../core/entities.md) |
 | `include` | Another module of the same ledger | [../core/modules.md](../core/modules.md) |
 | A transaction header | A transaction; one with no postings is valid | [../core/transactions.md](../core/transactions.md) |
 | `EFF[=ACC]` on a header, `[EFF]` on a posting | Effective and accounting times | [../core/time.md](../core/time.md), "Time axes" |
 | A header mark, a posting's `*` | Occurrence and status | [../core/transactions.md](../core/transactions.md), "Status and occurrence" |
-| `%anchor` | The transaction's or posting's ID | [../core/ledger.md](../core/ledger.md), "IDs" |
-| `#[scope:]anchor`, `^anchor`, `@entity` | Tags, primary tag, references, kept as written | [../core/transactions.md](../core/transactions.md), "Parts kept as written" |
+| `%anchor` | An anchor: the transaction's or posting's ID, or an account's anchor | [../core/anchors.md](../core/anchors.md) |
+| `#[scope:]anchor`, `^anchor` | Tags and the primary tag, resolved to the records their anchors name | [../core/anchors.md](../core/anchors.md) |
+| `@[role:]entity` | References to entities | [../core/entities.md](../core/entities.md) |
 | `@`, `@@`, `{…}`, `{{…}}` | A posting's price and cost, as totals | [../core/values.md](../core/values.md), "Prices and costs" |
 | `- ` lines | Breakdown lines | [../core/transactions.md](../core/transactions.md), "Breakdowns" |
 | `;; key: value` | Metadata | [lexical.md](lexical.md), "Comments and metadata" |
-| `balance` | A Balance assertion; with `pad`, also a generated transaction | [../core/balance.md](../core/balance.md) |
+| `balance` | A Balance assertion, optionally for one entity; with `pad`, also a generated transaction | [../core/balance.md](../core/balance.md) |
 
 ### Reserved syntax
 
 Status: `implemented`
 
-Syntax whose features are not supported yet is parsed and reported as `syntax.unsupported`; what it is, and what is not loaded, is listed in [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax". Its keywords are reserved (see [lexical.md](lexical.md), "Line classes"), so they cannot be account roots. A period may follow the anchor of a transaction header's `%anchor` or of a `#` tag, after `/`, as in `%rent/2026-11` or `#statement:card/2026-10`; on a posting's `%anchor` or a `^` primary tag it is `parse.syntax`. The period is a separate part, not part of the anchor's name, and it is kept as written. It is either a label, a year, month, day, week or quarter (`2026`, `2026-11`, `2026-11-05`, `2026-W45`, `2026-Q4`), or `n` and a period number from 1, without leading zeros (`n3`). A label shaped like a year, month, day or week that names no such time, such as `2026-13` or `2026-W54`, is `parse.invalid-time`, as for any time; anything else, such as `2026-Q5`, `n0`, `n01` or `t1`, is `parse.syntax`. Whether a week exists under the ledger's week start is not checked here.
+Syntax whose features are not supported yet is parsed and reported as `syntax.unsupported`; what it is, and what is not loaded, is listed in [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax". Its keywords are reserved (see [lexical.md](lexical.md), "Line classes"), so they cannot be account roots. A period may follow the anchor of a transaction header's `%anchor` or of a `#` tag, after `/`, as in `%rent/2026-11` or `#statement:card/2026-10`; on a posting's or an account's `%anchor`, or a `^` primary tag, it is `parse.syntax`. The period is a separate part, not part of the anchor's name, and it is kept as written. It is either a label, a year, month, day, week or quarter (`2026`, `2026-11`, `2026-11-05`, `2026-W45`, `2026-Q4`), or `n` and a period number from 1, without leading zeros (`n3`). A label shaped like a year, month, day or week that names no such time, such as `2026-13` or `2026-W54`, is `parse.invalid-time`, as for any time; anything else, such as `2026-Q5`, `n0`, `n01` or `t1`, is `parse.syntax`. Whether a week exists under the ledger's week start is not checked here.

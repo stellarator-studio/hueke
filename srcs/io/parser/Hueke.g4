@@ -28,7 +28,6 @@ declLine      : KW_OPTION (~NL)*                                 # optionDecl
               | KW_ACCOUNT WORD ANCHOR?                          # accountDecl
               | KW_ENTITY (WORD | NUMWORD | keyword)             # entityDecl
               | (KW_SCHEDULE | KW_INSTALLMENT | KW_RULE) ANCHOR (STAR | BANG | HASH | ANCHOR | STRING | ENTITY | PRIMARY | TAG)*   # generatorDecl
-              | KW_CAP_GROUP ANCHOR amount                       # capGroupDecl
               | KW_MODULE WORD WORD STRING?                      # moduleDecl
               | KW_INCLUDE (~NL)*                                # includeDecl
               ;
@@ -52,13 +51,13 @@ timeSpec      : NUMWORD (NUMWORD | WORD | LBRACK (WORD | NUMWORD) RBRACK)* ;   /
 amount        : (WORD | NUMWORD | keyword) (WORD | NUMWORD | keyword)? ;      // numbers and aliases are read after declarations are collected
 
 propKeyword   : KW_ITEM | KW_PRECISION | KW_ALIAS | KW_ACTIVE | KW_OBLIGATION | KW_PAD_ACCOUNT | KW_PRIMARY
-              | KW_ALLOW | KW_DENY | KW_STATEMENT | KW_SOURCE | KW_SELF | KW_MAP | KW_NAME | KW_TYPE
+              | KW_ALLOW | KW_DENY | KW_STATEMENT | KW_SOURCE | KW_SELF | KW_MAP | KW_DISPLAY_NAME | KW_TYPE
               | KW_FROM | KW_EVERY | KW_COUNT | KW_UNTIL | KW_FOLLOWS | KW_SKIP | KW_DUE | KW_OVERRIDE
               | KW_PRINCIPAL | KW_METHOD | KW_RATE | KW_PERIODIC_RATE | KW_FIRST_PERIOD | KW_ROUNDING
-              | KW_ABSORB | KW_FEE | KW_SHARE | KW_INTO | KW_CAP | KW_MINIMUM ;
+              | KW_ABSORB | KW_FEE | KW_SHARE | KW_INTO | KW_CAP | KW_MINIMUM | KW_CAP_GROUP | KW_FIXED ;
 keyword       : propKeyword | KW_SPLIT | KW_PAID_BY | KW_BALANCE | KW_PAD
               | KW_OPTION | KW_ACCOUNT_ROOT | KW_COMMODITY | KW_ACCOUNT | KW_ENTITY
-              | KW_SCHEDULE | KW_INSTALLMENT | KW_RULE | KW_CAP_GROUP | KW_MODULE | KW_INCLUDE ;
+              | KW_SCHEDULE | KW_INSTALLMENT | KW_RULE | KW_MODULE | KW_INCLUDE ;
 
 // ================= lexer =================
 
@@ -77,7 +76,6 @@ KW_ENTITY       : 'entity' ;
 KW_SCHEDULE     : 'schedule' ;
 KW_INSTALLMENT  : 'installment' ;
 KW_RULE         : 'rule' ;
-KW_CAP_GROUP    : 'cap-group' ;
 KW_MODULE       : 'module' ;
 KW_INCLUDE      : 'include' ;
 KW_BALANCE      : 'balance' ;
@@ -95,7 +93,7 @@ KW_STATEMENT    : 'statement' ;
 KW_SOURCE       : 'source' ;
 KW_SELF         : 'self' ;
 KW_MAP          : 'map' ;
-KW_NAME         : 'name' ;
+KW_DISPLAY_NAME : 'display-name' ;
 KW_TYPE         : 'type' ;
 KW_FROM         : 'from' ;
 KW_EVERY        : 'every' ;
@@ -119,6 +117,8 @@ KW_SHARE        : 'share' ;
 KW_INTO         : 'into' ;
 KW_CAP          : 'cap' ;
 KW_MINIMUM      : 'minimum' ;
+KW_CAP_GROUP    : 'cap-group' ;
+KW_FIXED        : 'fixed' ;
 
 // Symbols count only at the start of a token; followed by word characters they form one token
 ANCHOR        : '%' WORD_CHAR+ ;

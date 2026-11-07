@@ -1,5 +1,6 @@
 // Identifier rules (docs/dsl/lexical.md, "Identifiers"). Each check returns a message when the
-// text breaks its rule; the caller reports it as parse.syntax.
+// text breaks its rule; the caller reports it as parse.syntax,
+// or anchor.invalid-name for an anchor.
 
 import { HuekeLexer as L } from "./generated/HuekeLexer.js";
 
@@ -29,6 +30,9 @@ export function rootError(root: string): string | undefined {
 
 export const commodityError = (code: string): string | undefined =>
   COMMODITY.test(code) ? undefined : `"${code}" is not a commodity code`;
+
+export const entityError = (id: string): string | undefined =>
+  ENTITY.test(id) ? undefined : `"${id}" is not an entity`;
 
 /** `entity` or `role:entity`. */
 export function referenceError(text: string): string | undefined {

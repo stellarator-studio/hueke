@@ -1,6 +1,12 @@
 // docs/dsl/formatting.md
 import { describe, expect, it } from "vitest";
-import { parse, serialize, type Hueke, type ItemData } from "../../srcs/index.js";
+import {
+  parse,
+  serialize,
+  type Hueke,
+  type ItemData,
+  type TransactionData,
+} from "../../srcs/index.js";
 import { ledger, modules, SHARED } from "./ledger.js";
 
 const PRELUDE = SHARED.replace(
@@ -113,10 +119,16 @@ Expenses:Food  180 NTD
 `,
     ]);
   });
+  it("writes a total price", () => {
+    const text = `2026-10-12 * "Shares"\n    Assets:Brokerage   5 AAPL  @@  850 USD\n    Bank:USDAccount\n`;
+    expect(canonical(text)).toEqual([
+      `2026-10-12 * "Shares"\n    Assets:Brokerage  5 AAPL @@ 850 USD\n    Bank:USDAccount\n`,
+    ]);
+  });
   it("writes Balances and declarations", () => {
     const text = `option   pad-account   Expenses:ReconcileDiff
 account-root  Card   liability
-commodity   MILE  ;   airline
+commodity   MILE  ; airline
     precision   2
     alias  mi  suffix
 account   Bank:Savings
@@ -128,7 +140,7 @@ include   "a;b.hueke"
     expect(canonical(text)).toEqual([
       "option pad-account Expenses:ReconcileDiff\n",
       "account-root Card liability\n",
-      "commodity MILE  ;   airline\n    precision 2\n    alias mi suffix\n",
+      "commodity MILE  ; airline\n    precision 2\n    alias mi suffix\n",
       "account Bank:Savings\n    primary NTD\n",
       'include "a;b.hueke"\n',
       '2026-10-25 balance Bank:Checking 12,345 NTD pad 45 NTD -> Expenses:ReconcileDiff\n    ;; document: "statements/oct;1.pdf"\n',
@@ -151,7 +163,7 @@ include   "a;b.hueke"
       "2026-10-25=2026-10 balance Assets:Cash 500 NTD\n",
     ]);
   });
-  it("writes times of day as written, to the minute", () => {
+  it("writes times of day as written", () => {
     const text = `2026-10-12T09:30 "Coffee"
     Expenses:Food  90 NTD [2026-10-12T08:15[Asia/Tokyo]]
     Assets:Cash
@@ -183,12 +195,6 @@ include   "a;b.hueke"
         - Napkins
 `,
     ]);
-  });
-  it("drops quotes a breakdown name does not need, and keeps the ones it does", () => {
-    const text = `2026-10-12 * "Dinner"\n    Expenses:Food  200 NTD\n        -"x"  = 5\n        - "Rice; large"  = 50\n`;
-    const formatted = `2026-10-12 * "Dinner"\n    Expenses:Food  200 NTD\n        - x  = 5\n        - "Rice; large"  = 50\n`;
-    expect(canonical(text)).toEqual([formatted]);
-    expect(canonical(formatted)).toEqual([formatted]);
   });
   it("quotes a breakdown name only when it must", () => {
     const text = `2026-10-12 * "Dinner"
@@ -231,6 +237,11 @@ include   "a;b.hueke"
     const [same] = records(again, FORMATTED);
     expect(same && serialize(again, same)).toBe(FORMATTED);
   });
+  it("keeps a comment before the first property first", () => {
+    expect(
+      canonical("commodity MILE\n    ; frequent flyer\n    alias mi suffix\n    item\n"),
+    ).toEqual(["commodity MILE\n    ; frequent flyer\n    item\n    alias mi suffix\n"]);
+  });
   it("puts Metadata after the properties and keeps repeated properties in written order", () => {
     const text = `commodity MILE
     ;; source: airline
@@ -261,10 +272,63 @@ include   "a;b.hueke"
     expect(h.transactions[0]?.meta).toEqual({ title: '"Dune" by \\ Herbert' });
   });
 
+  it("quotes a value with leading or trailing whitespace", () => {
+    const text = `2026-10-12 "Book"
+    ;; memo: "  padded  "
+    Expenses:Other  300 NTD
+    Assets:Cash
+`;
+    expect(canonical(text)).toEqual([text]);
+    expect(ledger(text, { prelude: PRELUDE }).transactions[0]?.meta).toEqual({
+      memo: "  padded  ",
+    });
+  });
+  it("writes a breakdown figure it cannot read as written, trimmed", () => {
+    const text = `2026-10-12 * "Breakfast"
+    Expenses:Food  200 NTD
+        - Toast  =  15,00 \t
+    Assets:Cash
+`;
+    expect(canonical(text)).toEqual([
+      `2026-10-12 * "Breakfast"
+    Expenses:Food  200 NTD
+        - Toast  =  15,00
+    Assets:Cash
+`,
+    ]);
+  });
+  it("throws on an edited record it cannot write", () => {
+    // Text cannot hold these, so a parsed record is edited the way a platform edits Raw records.
+    const text = `2026-10-12 "Lunch"\n    Expenses:Food  180 NTD  ;; receipt: 7\n        - Rice  = 50\n    Assets:Cash\n`;
+    const h = ledger(text, { prelude: PRELUDE });
+    const [record] = records(h, text);
+    if (record?.kind !== "transaction") throw new Error("fixture");
+    const [food, cash] = record.postings;
+    if (!food || !cash) throw new Error("fixture");
+    const withFood = (posting: typeof food): TransactionData => ({
+      ...record,
+      postings: [posting, cash],
+    });
+    expect(serialize(h, withFood(food))).toBe(
+      `2026-10-12 "Lunch"\n    Expenses:Food  180 NTD  ;; receipt: 7\n        - Rice  = 50\n    Assets:Cash\n`,
+    );
+    const multiLine = withFood({
+      ...food,
+      trailer: { kind: "meta", key: "receipt", value: "7\n8" },
+    });
+    expect(() => serialize(h, multiLine)).toThrow("cannot serialize");
+    const noName = withFood({
+      ...food,
+      lines: food.lines.map((l) => (l.kind === "breakdown" ? { ...l, name: "" } : l)),
+    });
+    expect(() => serialize(h, noName)).toThrow("cannot serialize");
+  });
   it("throws on syntax not supported yet and on values it cannot read", () => {
     const text = `entity NAT
-account Bank:Savings %savings
+    type person
+account Bank:Savings
     primary NTD
+    active 2026-01
 2026-10-12
     Expenses:Food  2 NTD
         split @NAT @AMY
@@ -274,9 +338,29 @@ account Bank:Savings %savings
     Assets:Cash
 `;
     const h = ledger(text, { prelude: PRELUDE });
+    const [entity, account, split, comma] = records(h, text);
+    for (const r of [entity, account, split]) {
+      expect(r).toBeDefined();
+      if (r) expect(() => serialize(h, r)).toThrow("cannot serialize");
+    }
+    expect(comma).toBeDefined();
+    if (comma) expect(() => serialize(h, comma)).toThrow("15,00");
+  });
+  it("throws on a tag with a reserved scope or a period, and on a header anchor's period", () => {
+    const text = `2026-10-12 "Card" #statement:card
+    Expenses:Food  2 NTD
+    Assets:Cash
+2026-10-12 "Trip" #trip/2026-10
+    Expenses:Food  2 NTD
+    Assets:Cash
+2026-11-01 %rent/2026-11 "Rent"
+    Expenses:Rent  2 NTD
+    Assets:Cash
+`;
+    const h = ledger(text, { prelude: PRELUDE });
     const all = records(h, text);
-    expect(all).toHaveLength(4);
-    for (const r of all) expect(() => serialize(h, r)).toThrow();
+    expect(all).toHaveLength(3);
+    for (const r of all) expect(() => serialize(h, r)).toThrow("cannot serialize");
   });
 });
 
@@ -332,5 +416,62 @@ describe("serializing arithmetic", () => {
     Assets:Cash            -1,000.5 NTD
 `,
     ]);
+  });
+});
+
+describe("account, entity and Balance entity forms", () => {
+  it("puts account properties in order: display-name, obligation, pad-account, primary", () => {
+    const text = `account Assets:Receivable %receivable
+    ;; owner: me
+    primary NTD
+    pad-account Expenses:WriteOff
+    obligation receivable
+    display-name Money owed to me
+`;
+    const FORMATTED = `account Assets:Receivable %receivable
+    display-name Money owed to me
+    obligation receivable
+    pad-account Expenses:WriteOff
+    primary NTD
+    ;; owner: me
+`;
+    expect(canonical(text)).toEqual([FORMATTED]);
+    expect(canonical(FORMATTED)).toEqual([FORMATTED]);
+  });
+  it("writes an entity with its display name before its metadata", () => {
+    const text = `entity NAT\n    ;; phone: 0912\n    display-name Nat Chen\n`;
+    const FORMATTED = `entity NAT\n    display-name Nat Chen\n    ;; phone: 0912\n`;
+    expect(canonical(text)).toEqual([FORMATTED]);
+    expect(canonical(FORMATTED)).toEqual([FORMATTED]);
+  });
+  it("writes a Balance's entity after the account, without the person role", () => {
+    const text = `2026-10-31   balance  Bank:Checking   @person:acme  52000 NTD
+2026-10-20 balance Assets:Receivable:lunch-1011 @NAT 0 NTD pad -50 NTD -> Expenses:Discount
+`;
+    expect(canonical(text)).toEqual([
+      "2026-10-31 balance Bank:Checking @acme 52,000 NTD\n",
+      "2026-10-20 balance Assets:Receivable:lunch-1011 @NAT 0 NTD pad -50 NTD -> Expenses:Discount\n",
+    ]);
+  });
+  it("keeps the meaning of what it writes", () => {
+    const text = `entity acme
+    display-name ACME Corp
+account Bank:Checking %main-bank
+    primary NTD
+    display-name Main checking account
+
+2026-10-05 * "October salary" @acme
+    Bank:Checking     52000 NTD
+    Income:Salary    -52000 NTD
+
+2026-10-31 balance Bank:Checking @acme 52000 NTD
+`;
+    const h = ledger(text, { prelude: PRELUDE });
+    const again = ledger(canonical(text).join("\n"), { prelude: PRELUDE });
+    expect(meaning(again)).toEqual(meaning(h));
+    const strip = (x: unknown) =>
+      JSON.parse(JSON.stringify(x, (k, v: unknown) => (k === "span" ? undefined : v))) as unknown;
+    expect(strip(again.entities)).toEqual(strip(h.entities));
+    expect(strip(again.accounts)).toEqual(strip(h.accounts));
   });
 });

@@ -1,7 +1,7 @@
 // docs/core/commodities.md
 import { describe, expect, it } from "vitest";
 import { balance, check, query } from "../../srcs/index.js";
-import { balanceOf, codes, ledger, rows, SHARED } from "./ledger.js";
+import { balanceOf, codes, diagnostics, ledger, rows } from "./ledger.js";
 
 describe("commodities without precision", () => {
   it("an undeclared commodity", () => {
@@ -15,6 +15,7 @@ describe("commodities without precision", () => {
     Assets:Points     -3.25 POINT
 `);
     expect(codes(h, true)).toEqual(["name.inferred-commodity"]);
+    expect(codes(h)).toEqual([]);
     expect(h.commodities.find((c) => c.id === "POINT")).toMatchObject({
       item: false,
       precision: 2,
@@ -55,6 +56,32 @@ commodity MILE
     expect(codes(h)).toEqual(["txn.amount-not-inferable", "time.nonexistent-local-time"]);
     expect(h.commodities.find((c) => c.id === "POINT")?.precision).toBe(1);
   });
+  it("counts Balances and expressions, not prices, costs or filled-in amounts", () => {
+    const h = ledger(`
+2026-10-12 * "Points bought with miles"
+    Assets:Points      (1.5 * 2) POINT @ 1.2345 MILE
+    Assets:Miles
+
+2026-10-13 * "A share bought with points"
+    Assets:Shares      1 GOLD {0.12345 POINT}
+    Assets:Points
+
+2026-10-14 balance Assets:Miles -3.0000 MILE
+`);
+    expect(codes(h)).toEqual(["balance.mismatch"]);
+    // POINT: 1 place from the expression, none from the cost or the filled-in amount.
+    expect(h.commodities.find((c) => c.id === "POINT")?.precision).toBe(1);
+    // MILE: 4 places from the Balance, none from the price or the filled-in amount.
+    expect(h.commodities.find((c) => c.id === "MILE")?.precision).toBe(4);
+  });
+});
+
+describe("commodity declarations", () => {
+  it("keeps the metadata", () => {
+    const h = ledger("commodity MILE\n    ;; source: airline\n");
+    expect(codes(h)).toEqual([]);
+    expect(h.commodities.find((c) => c.id === "MILE")?.meta).toEqual({ source: "airline" });
+  });
 });
 
 describe("malformed commodity declarations", () => {
@@ -72,7 +99,7 @@ commodity MILE
       precision: 1,
       precisionWritten: false,
     });
-    expect(h.commodities.find((c) => c.id === "MILE")?.span).toBeUndefined();
+    expect(h.commodities.find((c) => c.id === "MILE")).not.toHaveProperty("span");
   });
   it.each(["alias NT$", "alias NT$ before", "alias NT$ prefix extra"])(
     "drops the declaration on %s",
@@ -105,6 +132,10 @@ describe("items", () => {
       "Assets:Equipment 0 camera-01",
     ]);
     expect(balanceOf(h, "Bank:Checking", "2026-12-01")).toBe("-5000");
+    expect(h.commodities.find((c) => c.id === "camera-01")).toMatchObject({
+      item: true,
+      precision: 0,
+    });
   });
   it("two of the same item", () => {
     const h = ledger(`${BUY}
@@ -123,9 +154,30 @@ describe("items", () => {
     Expenses:DisposalLoss     5000 NTD
 `);
     expect(codes(h)).toEqual(["item.invalid-balance"]);
-    const [d] = check(h).filter((x) => x.code === "item.invalid-balance");
+    const [d] = diagnostics(h, "item.invalid-balance");
     expect(d?.message).toContain("Assets:Equipment");
     expect(d?.message).toContain("2026-12-02");
+  });
+  it("checks item balances in effective-time order, once per account and item", () => {
+    const h = ledger(`${SELL}${BUY}
+2026-12-02 * "Sold twice more"
+    Bank:Checking            50000 NTD
+    Assets:Equipment            -1 camera-01 {30000 NTD}
+    Assets:Equipment            -1 camera-01 {30000 NTD}
+    Expenses:DisposalLoss    10000 NTD
+
+2026-12-03 * "And once more"
+    Bank:Checking            25000 NTD
+    Assets:Equipment            -1 camera-01 {30000 NTD}
+    Expenses:DisposalLoss     5000 NTD
+`);
+    expect(codes(h)).toEqual(["item.invalid-balance"]);
+    expect(diagnostics(h, "item.invalid-balance")[0]?.message).toContain("2026-12-02");
+  });
+  it("checks whole numbers on postings, not on Balances", () => {
+    // Within the tolerance of precision 0, so the Balance passes; its fraction is not reported.
+    const h = ledger(`${BUY}\n2026-10-13 balance Assets:Equipment 1.4 camera-01\n`);
+    expect(codes(h)).toEqual([]);
   });
   it("a fractional item amount", () => {
     const h = ledger(`
@@ -155,16 +207,66 @@ commodity NTD
     Expenses:Food     180NT$
     Assets:Cash      -180 NTD
 `;
-  // The shared declarations already declare NTD, so the case's NTD replaces it.
-  const prelude = SHARED.replace("commodity NTD\n    precision 0\n", "");
   it("aliases, a wrong side and a conflict", () => {
-    const h = ledger(`${ALIASES}commodity TWD\n    alias dollars suffix\n${ALIASED}`, { prelude });
-    expect(codes(h)).toEqual(["commodity.alias-conflict", "parse.invalid-number"]);
-    expect(check(h).find((d) => d.code === "commodity.alias-conflict")?.message).toContain("TWD");
-    expect(h.transactions).toEqual([]);
+    const text = `${ALIASES}commodity TWD\n    alias dollars suffix\n${ALIASED}`;
+    const h = ledger(text);
+    expect(codes(h)).toEqual([
+      "commodity.alias-conflict",
+      "parse.invalid-number",
+      "txn.unbalanced",
+    ]);
+    const [conflict] = diagnostics(h, "commodity.alias-conflict");
+    expect(conflict?.severity).toBe("warning");
+    expect(conflict?.message).toContain("TWD");
+    const twd = h.data
+      .get("main.hueke")
+      ?.items.find((i) => i.kind === "commodity" && i.args[0] === "TWD");
+    expect(twd?.span).toBeDefined();
+    expect(conflict?.span?.start).toBe(twd?.span?.start);
+    // The record loads, with -180dollars read in the commodity dollars.
+    expect(h.transactions.map((t) => t.description)).toEqual(["Lunch"]);
+    expect(balanceOf(h, "Assets:Cash", "2026-10-12", "dollars")).toBe("-180");
+    expect(balanceOf(h, "Expenses:Food", "2026-10-12")).toBe("180");
+    const aliases = (id: string) =>
+      h.commodities.find((c) => c.id === id)?.aliases.map((a) => a.text);
+    expect(aliases("NTD")).toEqual(["NT$", "dollars"]);
+    expect(aliases("TWD")).toEqual(["dollars"]);
+  });
+  it("a conflicting alias's text is a commodity of its own in strict mode", () => {
+    const h = ledger(
+      `option strict commodity\n${ALIASES}commodity TWD\n    alias dollars suffix\n${ALIASED}`,
+    );
+    const undeclared = diagnostics(h, "strict.undeclared").map((d) => d.message);
+    expect(undeclared).toHaveLength(1);
+    expect(undeclared[0]).toContain("dollars");
+  });
+  it("an alias equal to a declared code is a conflict, and the code is read as the code", () => {
+    const h = ledger(
+      `commodity TWD\n    alias NTD suffix\n\n2026-10-12 * "Lunch"\n    Expenses:Food  180 NTD\n    Assets:Cash\n`,
+    );
+    expect(codes(h)).toEqual(["commodity.alias-conflict"]);
+    expect(diagnostics(h, "commodity.alias-conflict")[0]?.severity).toBe("warning");
+    expect(balanceOf(h, "Expenses:Food", "2026-10-12")).toBe("180");
+    expect(balanceOf(h, "Expenses:Food", "2026-10-12", "TWD")).toBe("0");
+  });
+  it("an alias equal to its own commodity's code is a conflict", () => {
+    const h = ledger("commodity TWD\n    alias TWD suffix\n");
+    expect(codes(h)).toEqual(["commodity.alias-conflict"]);
+  });
+  it("an alias equal to a code that is only used is not a conflict", () => {
+    const h = ledger(`
+commodity TWD
+    alias KRW suffix
+
+2026-10-12 * "Lunch"
+    Expenses:Food  180 KRW
+    Assets:Cash
+`);
+    expect(codes(h, true)).toEqual([]);
+    expect(balanceOf(h, "Expenses:Food", "2026-10-12", "TWD")).toBe("180");
   });
   it("without the conflict", () => {
-    const h = ledger(`${ALIASES}${ALIASED}`, { prelude });
+    const h = ledger(`${ALIASES}${ALIASED}`);
     expect(codes(h)).toEqual(["parse.invalid-number"]);
     expect(balanceOf(h, "Expenses:Food", "2026-10-12")).toBe("180");
     expect(balanceOf(h, "Assets:Cash", "2026-10-12")).toBe("-180");

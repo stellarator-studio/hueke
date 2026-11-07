@@ -1,8 +1,8 @@
 // docs/core/ledger.md
 import { describe, expect, it } from "vitest";
-import { check, position } from "../../srcs/index.js";
-import type { Diagnostic, Hueke } from "../../srcs/index.js";
-import { balanceOf, codes, ledger, modules } from "./ledger.js";
+import { check, Hueke, parse, position } from "../../srcs/index.js";
+import type { Diagnostic } from "../../srcs/index.js";
+import { balanceOf, codes, descriptions, diagnostics, ledger, modules } from "./ledger.js";
 
 const LUNCH = `2026-10-12 * "Lunch"\n    Expenses:Food  180 NTD\n    Assets:Cash\n`;
 
@@ -16,14 +16,12 @@ describe("unsupported syntax", () => {
       "paid-by",
       '2026-10-12 "x"\n    Expenses:Food  2 NTD\n        paid-by @NAT\n    Assets:Cash\n',
     ],
-    ["balance @entity", "2026-10-12 balance Assets:Cash @NAT -180 NTD\n"],
     ["a shared root", "account-root Trip shared\n"],
-    ["an obligation account", "account Assets:Receivables\n    obligation receivable\n"],
     [
       "a statement cycle",
       "account Liabilities:Card\n    statement\n        from 2026-01-25\n        every 1 month\n",
     ],
-    ["entity", "entity NAT\n    type person\n"],
+    ["an entity type", "entity NAT\n    type person\n"],
     ["share", '2026-10-12 "x"\n    share @NAT @AMY\n    Expenses:Food  2 NTD\n    Assets:Cash\n'],
     [
       "into",
@@ -32,10 +30,13 @@ describe("unsupported syntax", () => {
     ["schedule", 'schedule %rent "Rent"\n'],
     ["installment", 'installment %phone "Phone"\n'],
     ["rule", "rule %tax\n"],
-    ["cap-group", "cap-group %food 3000 NTD\n"],
+    [
+      "a rule with segments, fixed and cap-group",
+      "rule %dining\n    active 2026-01..2026-06\n    rate 2%\n    cap 300 NTD per month\n" +
+        "    cap 1000 NTD per year\n    active 2026-07..\n    fixed 15 NTD\n    cap-group cashback\n" +
+        "    Income:Cashback  amount\n    Liabilities:Card\n",
+    ],
     ["module", 'module trip shared "trip.hueke"\n'],
-    ["an account name", 'account Assets:Wallet\n    name "Wallet"\n'],
-    ["an account pad-account", "account Assets:Wallet\n    pad-account Equity:Opening\n"],
     ["an account active", "account Assets:Wallet\n    active 2026-01-01\n"],
     ["an account allow", "account Assets:Wallet\n    allow NTD\n"],
     ["an account deny", "account Assets:Wallet\n    deny NTD\n"],
@@ -48,9 +49,35 @@ describe("unsupported syntax", () => {
     expect(h.transactions).toHaveLength(1);
     expect(balanceOf(h, "Assets:Cash", "2026-10-31")).toBe("-180");
   });
+  it.each([
+    ["installment", "#installment:phone"],
+    ["statement", "#statement:card"],
+    ["fulfills", "#fulfills:order"],
+    ["rule", "#rule:tax"],
+    ["shared", "#shared:trip:hotel"],
+  ])("a tag with the scope %s does not load its transaction", (_, tag) => {
+    for (const text of [
+      `2026-10-13 * "Dinner" ${tag}\n    Expenses:Food  300 NTD\n    Assets:Cash\n`,
+      `2026-10-13 * "Dinner"\n    Expenses:Food  300 NTD  ${tag}\n    Assets:Cash\n`,
+    ]) {
+      const h = ledger(`${text}\n${LUNCH}`);
+      expect(codes(h)).toEqual(["syntax.unsupported"]);
+      expect(h.transactions).toHaveLength(1);
+      expect(balanceOf(h, "Assets:Cash", "2026-10-31")).toBe("-180");
+    }
+  });
+  it.each([
+    ["on a header's anchor", '2026-10-13 * %rent/2026-11 "Rent"\n'],
+    ["on a tag", '2026-10-13 * "Trip" #trip/2026-10\n'],
+    ["on a scoped tag", '2026-10-13 * "Card" #statement:card/n3\n'],
+  ])("a period %s does not load the transaction", (_, header) => {
+    const h = ledger(`${header}    Expenses:Food  300 NTD\n    Assets:Cash\n\n${LUNCH}`);
+    expect(codes(h)).toEqual(["syntax.unsupported"]);
+    expect(h.transactions).toHaveLength(1);
+  });
   it("names what is not supported", () => {
-    const h = ledger("entity NAT\n");
-    expect(check(h)[0]?.message).toBe("entity is not supported yet");
+    const h = ledger('schedule %rent "Rent"\n');
+    expect(check(h)[0]?.message).toBe("schedule is not supported yet");
   });
 });
 
@@ -62,6 +89,7 @@ describe("a root that was never loaded", () => {
     expect(h.accounts).toEqual([]);
     expect(h.commodities).toEqual([]);
     expect(h.roots).toEqual([]);
+    expect(h.entities).toEqual([]);
     expect(h.settings).toEqual({
       timezone: "UTC",
       weekStart: "monday",
@@ -72,7 +100,66 @@ describe("a root that was never loaded", () => {
   });
 });
 
-describe("UNDECLARED strict mode", () => {
+describe("loading and initialization", () => {
+  const TEXT = `option timezone UTC\n${LUNCH}`;
+
+  it("throws on load after init, on a second init and on check before init", () => {
+    const h = new Hueke();
+    expect(() => check(h)).toThrow();
+    h.init("main.hueke");
+    expect(() => {
+      h.init("main.hueke");
+    }).toThrow();
+    expect(() => {
+      h.load("main.hueke", parse("main.hueke", TEXT));
+    }).toThrow();
+  });
+  it("replaces a module loaded again under the same path", () => {
+    const h = new Hueke();
+    h.load("main.hueke", parse("main.hueke", "option timezone UTC\n"));
+    h.load("main.hueke", parse("main.hueke", TEXT));
+    h.init("main.hueke");
+    expect(descriptions(h.transactions)).toEqual(["Lunch"]);
+  });
+  it("does not depend on the order of loading", () => {
+    const files = { "main.hueke": `${TEXT}include sub.hueke\n`, "sub.hueke": LUNCH };
+    const reversed = Object.fromEntries(Object.entries(files).reverse());
+    const ids = (h: Hueke) => h.transactions.map((t) => `${t.id} ${t.source ?? ""}`);
+    expect(ids(modules(reversed))).toEqual(ids(modules(files)));
+    expect(ids(modules(files))).toEqual(["~1 main.hueke", "~2 sub.hueke"]);
+  });
+});
+
+describe("source positions", () => {
+  it("gives a record a span over its whole block, and the module its line starts", () => {
+    const text =
+      '2026-10-12 * "Lunch"\n    Expenses:Food 180 NTD\n        - Rice  = 50\n    ; afterthought\n\n2026-10-13 "x"\n';
+    const data = parse("main.hueke", text);
+    const [first] = data.items;
+    expect(first && text.slice(first.span?.start, first.span?.end)).toBe(
+      '2026-10-12 * "Lunch"\n    Expenses:Food 180 NTD\n        - Rice  = 50\n    ; afterthought',
+    );
+    expect(data.lineStarts).toEqual([0, 21, 47, 68, 87, 88, 103]);
+  });
+  it("gives a derived record the span of the block it was written in", () => {
+    const text = `option timezone UTC\n${LUNCH}`;
+    const h = modules({ "main.hueke": text });
+    const [lunch] = h.transactions;
+    expect(lunch?.span && text.slice(lunch.span.start, lunch.span.end)).toBe(LUNCH.trimEnd());
+    expect(
+      lunch?.postings[1]?.span &&
+        text.slice(lunch.postings[1].span.start, lunch.postings[1].span.end),
+    ).toBe("Assets:Cash");
+  });
+  it("counts offsets and columns in UTF-16 code units", () => {
+    const text = '2026-10-12 "🍜 Ramen" #x\n';
+    const data = parse("main.hueke", text);
+    expect(data.items[0]?.span?.end).toBe(text.indexOf("#x") + 2);
+    expect(position(data, text.indexOf("#x"))).toEqual({ line: 1, column: text.indexOf("#x") + 1 });
+  });
+});
+
+describe("strict mode", () => {
   const UNDECLARED = `
 2026-10-12 * "Lunch" @NAT
     Expenses:Food     180 NTD
@@ -82,27 +169,31 @@ describe("UNDECLARED strict mode", () => {
     Expenses:Other     1 POINT
     Assets:Points     -1 POINT
 `;
-  const undeclared = (h: ReturnType<typeof ledger>): string[] =>
-    check(h)
-      .filter((d) => d.code === "strict.undeclared")
-      .map((d) => d.message);
+  const undeclared = (h: Hueke): string[] =>
+    diagnostics(h, "strict.undeclared").map((d) => d.message);
 
-  it("general mode", () => {
+  it("normal mode", () => {
     expect(codes(ledger(UNDECLARED), true)).toEqual(["name.inferred-commodity"]);
   });
   it("every kind", () => {
     const h = ledger(`option strict account, commodity, entity\n${UNDECLARED}`);
     expect(codes(h, true).every((c) => c === "strict.undeclared")).toBe(true);
     const messages = undeclared(h).join("\n");
-    for (const name of ["Expenses:Food", "Expenses:Other", "Assets:Points", "POINT"])
+    for (const name of ["Expenses:Food", "Expenses:Other", "Assets:Points", "POINT", "NAT", "KEN"])
       expect(messages).toContain(name);
     expect(messages).not.toContain("Assets:Cash");
   });
-  it("Hueke(strict) is strict mode for every kind", () => {
-    const h = ledger(UNDECLARED, { strict: true });
+  it("strict mode given when creating the ledger is strict mode for every kind", () => {
+    const h = ledger(`option strict account\n${UNDECLARED}`, { strict: true });
+    expect(h.settings.strict).toEqual(["account", "commodity", "entity"]);
     expect(undeclared(h)).toEqual(
       undeclared(ledger(`option strict account, commodity, entity\n${UNDECLARED}`)),
     );
+  });
+  it("entities only", () => {
+    const h = ledger(`option strict entity\n\nentity NAT\n${UNDECLARED}`);
+    expect(codes(h)).toEqual(["strict.undeclared"]);
+    expect(undeclared(h)[0]).toContain("KEN");
   });
   it("commodities only", () => {
     const h = ledger(`option strict commodity\n${UNDECLARED}`);
@@ -112,32 +203,32 @@ describe("UNDECLARED strict mode", () => {
 });
 
 describe("duplicate declarations", () => {
+  /** The start offset of the n-th item of the root module. */
+  const startOf = (h: Hueke, index: number): number => {
+    const start = h.data.get("main.hueke")?.items.at(index)?.span?.start;
+    if (start === undefined) throw new Error(`no item ${String(index)}`);
+    return start;
+  };
   /** The 1-based line of the n-th item of the root module, as the message names it. */
   const lineOf = (h: Hueke, index: number): string => {
     const data = h.data.get("main.hueke");
-    const start = data?.items.at(index)?.span?.start ?? -1;
-    return `main.hueke:${String(data ? position(data, start).line : 0)}`;
+    return `main.hueke:${String(data ? position(data, startOf(h, index)).line : 0)}`;
   };
-  const duplicates = (h: Hueke): Diagnostic[] =>
-    check(h).filter((d) => d.code === "declaration.duplicate");
+  const duplicates = (h: Hueke): Diagnostic[] => diagnostics(h, "declaration.duplicate");
 
   it.each([
     ["normal mode", ""],
     ["strict account", "option strict account\n"],
     ["strict commodity", "option strict commodity\n"],
   ])("keeps the first account root and reports the later one in %s", (_, strict) => {
-    const h = ledger(`${strict}account-root Card asset\naccount-root Card liability\n`);
+    const h = ledger(`${strict}account-root Bank asset\naccount-root Bank liability\n`);
     expect(codes(h, true)).toEqual(["declaration.duplicate"]);
-    expect(h.roots.find((r) => r.name === "Card")?.type).toBe("asset");
+    expect(h.roots.find((r) => r.name === "Bank")?.type).toBe("asset");
     const [d] = duplicates(h);
     expect(d?.severity).toBe("error");
     expect(d?.source).toBe("main.hueke");
-    expect(d?.span?.start).toBe(h.data.get("main.hueke")?.items.at(-1)?.span?.start);
+    expect(d?.span?.start).toBe(startOf(h, -1));
     expect(d?.message).toContain(lineOf(h, -2));
-  });
-  it("redeclares a built-in root once without a diagnostic", () => {
-    const h = ledger("option strict account\naccount-root Assets liability\n");
-    expect(codes(h, true)).toEqual([]);
   });
   it("reports a built-in root declared twice", () => {
     const h = ledger("account-root Assets liability\naccount-root Assets asset\n");
@@ -148,10 +239,11 @@ describe("duplicate declarations", () => {
     ["normal mode", ""],
     ["strict commodity", "option strict commodity\n"],
   ])("keeps the first commodity in %s", (_, strict) => {
-    const h = ledger(`${strict}commodity MILE\n    precision 0\ncommodity MILE\n    precision 2\n`);
+    const h = ledger(`${strict}commodity NTD\n    precision 0\ncommodity NTD\n    precision 2\n`);
     expect(codes(h, true)).toEqual(["declaration.duplicate"]);
-    expect(h.commodities.filter((c) => c.id === "MILE")).toHaveLength(1);
-    expect(h.commodities.find((c) => c.id === "MILE")?.precision).toBe(0);
+    expect(h.commodities.filter((c) => c.id === "NTD")).toHaveLength(1);
+    expect(h.commodities.find((c) => c.id === "NTD")?.precision).toBe(0);
+    expect(duplicates(h)[0]?.span?.start).toBe(startOf(h, -1));
     expect(duplicates(h)[0]?.message).toContain(lineOf(h, -2));
   });
   it.each([
@@ -165,6 +257,18 @@ describe("duplicate declarations", () => {
     expect(h.accounts.find((a) => a.id === "Bank:Checking")?.primaryCommodity).toBe("NTD");
     expect(duplicates(h)[0]?.message).toContain(lineOf(h, -2));
   });
+  it.each([
+    ["normal mode", ""],
+    ["strict entity", "option strict entity\n"],
+  ])("keeps the first entity in %s", (_, strict) => {
+    const h = ledger(
+      `${strict}entity NAT\n    display-name Nat\nentity NAT\n    display-name Nathan\n`,
+    );
+    expect(codes(h, true)).toEqual(["declaration.duplicate"]);
+    expect(h.entities).toHaveLength(1);
+    expect(h.entities[0]?.displayName).toBe("Nat");
+    expect(duplicates(h)[0]?.message).toContain(lineOf(h, -2));
+  });
   it("reports each later declaration", () => {
     const h = ledger("commodity MILE\ncommodity MILE\ncommodity MILE\n");
     const ds = duplicates(h);
@@ -175,84 +279,23 @@ describe("duplicate declarations", () => {
     const h = ledger("commodity MILE\ncommodity MILE\n", { strict: true });
     expect(codes(h, true)).toEqual(["declaration.duplicate"]);
   });
-
-  describe("examples", () => {
-    it("account-root Bank asset, then account-root Bank liability", () => {
-      const h = ledger("account-root Bank asset\naccount-root Bank liability\n");
-      expect(h.roots.find((r) => r.name === "Bank")?.type).toBe("asset");
-      expect(codes(h, true)).toEqual(["declaration.duplicate"]);
-      const [d] = duplicates(h);
-      expect(d?.span?.start).toBe(h.data.get("main.hueke")?.items.at(-1)?.span?.start);
-      expect(d?.message).toContain(lineOf(h, -2));
-    });
-    it("commodity NTD with precision 0, then commodity NTD with precision 2", () => {
-      const h = ledger("commodity NTD\n    precision 0\ncommodity NTD\n    precision 2\n");
-      expect(h.commodities.find((c) => c.id === "NTD")?.precision).toBe(0);
-      expect(codes(h, true)).toEqual(["declaration.duplicate"]);
-      const [d] = duplicates(h);
-      expect(d?.span?.start).toBe(h.data.get("main.hueke")?.items.at(-1)?.span?.start);
-      expect(d?.message).toContain(lineOf(h, -2));
-    });
-  });
-});
-
-describe("declarations in included modules", () => {
-  const TZ = "option timezone Asia/Taipei\n";
-  const ignored = (h: Hueke): Diagnostic[] =>
-    check(h).filter((d) => d.code === "module.ignored-declaration");
-
-  it("are kept in the Raw model, never take effect, and are each reported", () => {
-    const h = modules({
-      "main.hueke": `${TZ}include sub.hueke\n`,
-      "sub.hueke":
-        "option timezone Asia/Tokyo\naccount-root Card liability\ncommodity MILE\n    precision 2\naccount Card:Visa\n    primary USD\n",
-    });
-    expect(codes(h)).toEqual(Array(4).fill("module.ignored-declaration"));
-    for (const d of ignored(h)) {
-      expect(d.severity).toBe("warning");
-      expect(d.source).toBe("sub.hueke");
-    }
-    expect(h.data.get("sub.hueke")?.items.map((i) => i.kind)).toEqual([
-      "option",
-      "account-root",
-      "commodity",
-      "account",
-    ]);
-    expect(h.roots.some((r) => r.name === "Card")).toBe(false);
-    expect(h.commodities.some((c) => c.id === "MILE")).toBe(false);
-    expect(h.accounts.some((a) => a.id === "Card:Visa")).toBe(false);
-    expect(h.settings.timezone).toBe("Asia/Taipei");
-  });
-  it("are never duplicates of the root's or of each other", () => {
-    const h = modules({
-      "main.hueke": `${TZ}commodity MILE\n    precision 0\ninclude a.hueke\ninclude b.hueke\n`,
-      "a.hueke": "commodity MILE\n    precision 2\ninclude c.hueke\n",
-      "b.hueke": "commodity MILE\n    precision 3\n",
-      "c.hueke": "commodity MILE\n    precision 4\n",
-    });
-    expect(codes(h)).toEqual(Array(3).fill("module.ignored-declaration"));
-    expect(ignored(h).map((d) => d.source)).toEqual(["a.hueke", "c.hueke", "b.hueke"]);
-    expect(h.commodities.find((c) => c.id === "MILE")?.precision).toBe(0);
-  });
-  it("where a declaration stands in the root does not matter", () => {
-    const h = modules({
-      "main.hueke": `${TZ}include sub.hueke\n${LUNCH}\ncommodity NTD\n    precision 0\n`,
-      "sub.hueke": "commodity NTD\n    precision 2\n",
-    });
-    expect(codes(h)).toEqual(["module.ignored-declaration"]);
-    expect(h.commodities.find((c) => c.id === "NTD")?.precision).toBe(0);
-  });
-  it("records in included modules still load", () => {
-    const h = modules({
-      "main.hueke": `${TZ}account Assets:Cash\n    primary NTD\ninclude sub.hueke\n`,
-      "sub.hueke": `commodity NTD\n    precision 0\n${LUNCH}`,
-    });
-    expect(codes(h)).toEqual(["module.ignored-declaration"]);
-    expect(h.transactions).toHaveLength(1);
-  });
 });
 
 describe("objects used without a declaration", () => {
+  it("lists entities declared first, then those used, in the order of first use", () => {
+    const h = ledger(`
+2026-10-12 * "Lunch" @NAT
+    Expenses:Food     180 NTD  @AMY
+    Assets:Cash      -180 NTD
+
+entity KEN
+
+2026-10-01 * "Earlier, written later" @BOB
+    Expenses:Food     100 NTD
+    Assets:Cash      -100 NTD
+`);
+    expect(h.entities.map((e) => e.id)).toEqual(["KEN", "NAT", "AMY", "BOB"]);
+  });
   it("are created in the order of their first use in the source", () => {
     const h = ledger(`
 2026-10-20 * "Written first, later in time"
@@ -283,5 +326,91 @@ describe("objects used without a declaration", () => {
       "commodity MILE is not declared",
       "Gifts",
     ]);
+  });
+});
+
+describe("IDs", () => {
+  it("numbers transactions without an anchor in source order and postings within their transaction", () => {
+    const h = ledger(`
+2026-10-12 * "Lunch"
+    Expenses:Food     180 NTD
+    Assets:Cash      -180 NTD
+
+2026-10-01 * %rent "Rent"
+    Expenses:Housing  20000 NTD  %rent-cost
+    Assets:Cash      -20000 NTD
+
+2026-10-05 * "Coffee"
+    Expenses:Food      90 NTD
+    Assets:Cash       -90 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions.map((t) => [t.id, t.postings.map((p) => p.id)])).toEqual([
+      ["rent", ["rent-cost", "rent.2"]],
+      ["~2", ["~2.1", "~2.2"]],
+      ["~1", ["~1.1", "~1.2"]],
+    ]);
+  });
+  it("numbers the transactions pad generates in expansion order", () => {
+    const h = ledger(`
+2026-10-25 balance Bank:Checking 100 NTD pad -> Equity:Opening
+2026-10-31 balance Bank:Checking 300 NTD pad -> Equity:Opening
+`);
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions.map((t) => [t.id, t.postings.map((p) => p.id)])).toEqual([
+      ["~balance.1", ["~balance.1.1", "~balance.1.2"]],
+      ["~balance.2", ["~balance.2.1", "~balance.2.2"]],
+    ]);
+  });
+  it("gives a number to a transaction dropped while loading", () => {
+    const h = ledger(`
+2026-10-01 * "Not inferable"
+    Expenses:Food
+    Assets:Cash
+
+2026-10-02 * "Card payment" #statement:card
+    Liabilities:Card     900 NTD
+    Bank:Checking       -900 NTD
+
+2026-10-03 * "Lunch"
+    Expenses:Food     180 NTD
+    Assets:Cash      -180 NTD
+`);
+    expect(codes(h).sort()).toEqual(["syntax.unsupported", "txn.amount-not-inferable"]);
+    expect(h.transactions.map((t) => t.id)).toEqual(["~3"]);
+  });
+  it("gives no number to a block that could not be parsed", () => {
+    const h = ledger(`
+2026-10-01 * "Broken
+    Liabilities:Card     900 NTD
+    Bank:Checking       -900 NTD
+
+2026-10-03 * "Lunch"
+    Expenses:Food     180 NTD
+    Assets:Cash      -180 NTD
+`);
+    expect(codes(h)).toEqual(["parse.unterminated-string"]);
+    expect(h.transactions.map((t) => t.id)).toEqual(["~1"]);
+  });
+
+  it("an anchor defined more than once is no record's ID", () => {
+    const h = ledger(`
+2026-10-03 * "Before"
+    Expenses:Other     100 NTD
+    Assets:Cash       -100 NTD
+
+2026-10-04 * %t_x "First"
+    Expenses:Other     200 NTD  %p_x
+    Assets:Cash       -200 NTD  %t_x
+
+2026-10-05 * "After"
+    Expenses:Other     300 NTD
+    Assets:Cash       -300 NTD
+`);
+    expect(codes(h)).toEqual(["anchor.duplicate"]);
+    const [, first] = h.transactions;
+    expect(first?.id).toBe("~2");
+    expect(first?.postings.map((p) => p.id)).toEqual(["p_x", "~2.2"]);
+    expect(h.transactions.map((t) => t.id)).toEqual(["~1", "~2", "~3"]);
   });
 });

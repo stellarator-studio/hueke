@@ -1,6 +1,6 @@
 # Values
 
-An **amount** is an exact decimal value in one commodity (see [commodities.md](commodities.md)). Core never converts between commodities by itself; the only links between commodities are the prices and costs written on postings. This document covers amounts, how numbers are read, arithmetic in amounts, and prices and costs.
+An **amount** is an exact decimal value in one commodity (see [commodities.md](commodities.md)). Core never converts between commodities by itself; the only links between commodities are the prices and costs written on postings. This document covers amounts, how numbers are read, arithmetic in amounts and on values, and prices and costs.
 
 ## Features
 
@@ -48,6 +48,9 @@ Status: `implemented`
 - The value is exact, a fraction if need be: `(1000/3)` is 1000/3, and three postings of `(1000/3) NTD` add up to exactly 1000 NTD.
 - An expression's decimal places, for inferred precision and `posting.excess-precision`, are the most decimal places among the numbers written in it: `(10/4)` has none, `(0.25 * 2)` has two.
 - An expression that cannot be read, or that divides by zero, is `parse.invalid-number`.
+- Values the API returned are computed with the same exact arithmetic (see "API"). A presentation that works figures out of them, such as a running balance (see [query.md](query.md), "Ordering") or a breakdown's total from its quantity and unit price, uses it, never floating-point numbers.
+- Results are written as an amount's `value` is (see "Concepts"): a decimal without trailing zeros, or a reduced fraction. `"1000/3"` added three times is `"1000"`.
+- A value given may also have leading or trailing zeros, `-0`, or an unreduced fraction, such as `"1.10"`, `"007"` or `"2/4"`. Other text, such as a group mark, a `+` sign or a zero denominator, is a misuse of the API: the call throws.
 
 ### Prices and costs
 
@@ -57,7 +60,15 @@ A posting's `price` is the trade price; its `cost` is the cost of the lot held. 
 
 - A price is written as a unit price (`@`) or a total (`@@`), a cost as a unit cost (`{…}`) or a total (`{{…}}`). Both are stored as totals: a unit price or cost is multiplied by the posting's quantity during normalization.
 - Prices and costs are written without a sign (see [../dsl/records.md](../dsl/records.md), "Amounts") and are always positive, even when the quantity is negative. One whose written value is negative, such as `@ -170 USD` or `@ (10 - 20) USD`, is `posting.signed-price` (warning) and is used without the sign. The same holds for the price of a pad (see [balance.md](balance.md)).
-- A price or cost on a posting whose amount is omitted is ignored.
+- A price or cost on a posting whose amount is omitted is ignored. Ledger text cannot write one (see [../dsl/records.md](../dsl/records.md), "Postings"); only a Raw record changed through the API can hold one.
+
+## API
+
+- `sumValues(values)` returns the exact sum of any number of values; with none, `"0"`.
+- `multiplyValues(a, b)` returns the exact product of two values.
+- `negateValue(value)` returns the value with its sign changed; zero stays `"0"`.
+- `compareValues(a, b)` returns a negative number, zero or a positive number as `a` is below, equal to or above `b`.
+- Each throws when a value given is not one (see "Arithmetic").
 
 ## Examples
 
@@ -74,3 +85,13 @@ A posting's `price` is the trade price; its `cost` is the cost of the lot held. 
 | `option decimal-mark ,` and `option group-mark ,` | `option.invalid-number-format`; `12.50 CHF` reads as 12.5 |
 | `option decimal-mark ,` alone, then `1.500,25 EUR` | 1500.25 EUR: the group mark becomes `.` |
 | `Bank:USDAccount   1000 USD @ -32.10 NTD` | `posting.signed-price`; the price is 32100 NTD |
+
+Arithmetic on values the API returned:
+
+| Call | Result |
+| --- | --- |
+| `sumValues(["1000/3", "1000/3", "1000/3"])` | `"1000"` |
+| `sumValues(["-12.5", "2.25"])` | `"-10.25"` |
+| `multiplyValues("3", "1.10")` | `"3.3"` |
+| `negateValue("-1000/3")` | `"1000/3"` |
+| `compareValues("2.50", "10")` | A negative number |

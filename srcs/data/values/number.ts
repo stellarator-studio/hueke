@@ -13,13 +13,9 @@ export interface NumberFormat {
 export interface AliasTable {
   readonly prefix: ReadonlyMap<string, Id>;
   readonly suffix: ReadonlyMap<string, Id>;
-  /** Aliases that conflict; an amount using one is not loaded. */
-  readonly conflicted: ReadonlySet<string>;
 }
 
 export class NumberError extends Error {}
-/** The amount uses a conflicting alias: the record is dropped without another diagnostic. */
-export class ConflictedAlias extends Error {}
 
 export interface ParsedNumber {
   readonly value: Decimal;
@@ -90,11 +86,10 @@ export function parseAmount(text: string, format: NumberFormat, aliases: AliasTa
   if (!/^[\d(]/.test(body)) {
     // A prefix alias: the longest one that matches.
     let best: string | undefined;
-    for (const alias of [...aliases.prefix.keys(), ...aliases.conflicted])
+    for (const alias of aliases.prefix.keys())
       if (body.startsWith(alias) && (best === undefined || alias.length > best.length))
         best = alias;
     if (best === undefined) throw new NumberError(`"${text}" is not an amount`);
-    if (aliases.conflicted.has(best)) throw new ConflictedAlias(best);
     const commodity = aliases.prefix.get(best);
     if (commodity === undefined) throw new NumberError(`"${best}" is a suffix alias`);
     return sign(parseBody(body.slice(best.length).trim(), format), commodity);
@@ -105,7 +100,6 @@ export function parseAmount(text: string, format: NumberFormat, aliases: AliasTa
     : /^[\d.,']+/.exec(body)?.[0];
   const unit = body.slice(numberText?.length ?? 0).trim();
   if (!numberText || unit === "") throw new NumberError(`"${text}" has no commodity`);
-  if (aliases.conflicted.has(unit)) throw new ConflictedAlias(unit);
   const suffix = aliases.suffix.get(unit);
   let commodity: Id;
   if (suffix !== undefined) commodity = suffix;

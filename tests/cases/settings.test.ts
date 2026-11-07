@@ -1,7 +1,7 @@
 // docs/core/settings.md
 import { describe, expect, it } from "vitest";
-import { check, position } from "../../srcs/index.js";
-import { balanceOf, codes, ledger, modules } from "./ledger.js";
+import { check, position, query } from "../../srcs/index.js";
+import { balanceOf, codes, diagnostics, ledger } from "./ledger.js";
 
 const messages = (h: ReturnType<typeof ledger>): string =>
   check(h)
@@ -18,8 +18,8 @@ describe("ledger settings", () => {
       decimalMark: ".",
       groupMark: ",",
     });
-    expect("padAccount" in h.settings).toBe(false);
-    expect("incomeExpenseRoot" in h.settings).toBe(false);
+    expect(h.settings).not.toHaveProperty("padAccount");
+    expect(h.settings).not.toHaveProperty("incomeExpenseRoot");
   });
 
   it("reads every setting written in the root module", () => {
@@ -48,16 +48,28 @@ describe("ledger settings", () => {
     expect(codes(h, true)).not.toContain("option.missing-timezone");
   });
 
-  it("names the merged income and expense root IncomeExpenses by default", () => {
-    const h = ledger("option income-expense on\n");
+  it("keeps pad-account as written without checking it", () => {
+    const h = ledger("option pad-account nothing here\n");
     expect(codes(h, true)).toEqual([]);
-    expect(h.settings.incomeExpenseRoot).toBe("IncomeExpenses");
+    expect(h.settings.padAccount).toBe("nothing here");
   });
 
-  it("accepts none as the group mark", () => {
-    const h = ledger("option group-mark none\n");
-    expect(h.settings.groupMark).toBeNull();
-    expect(codes(h, true)).toEqual([]);
+  it("lets a pad use a pad-account with an unknown root, reported only on the posting", () => {
+    const h = ledger(`option pad-account Nowhere:Else
+
+2026-10-12 * "Lunch"
+    Expenses:Food     180 NTD
+    Assets:Cash      -180 NTD
+
+2026-10-31 balance Assets:Cash 0 NTD pad
+`);
+    expect(codes(h, true)).toEqual(["name.unknown-root"]);
+    expect(
+      query(h)
+        .tags("system:balance")
+        .postings()
+        .map((p) => `${p.account} ${p.amount.value}`),
+    ).toEqual(["Assets:Cash 180", "Nowhere:Else -180"]);
   });
 
   it("applies a setting wherever it stands in the root module", () => {
@@ -74,56 +86,18 @@ describe("ledger settings", () => {
     expect(h.settings.strict).toEqual(["account", "commodity", "entity"]);
   });
 
-  it("turns on every strict kind when strict mode is given at creation", () => {
-    const h = ledger("option strict account\n", { strict: true });
-    expect(h.settings.strict).toEqual(["account", "commodity", "entity"]);
-  });
-});
+  it("leaves the kinds strict does not name in normal mode", () => {
+    const h = ledger(`option strict account, entity
 
-describe("settings in included modules", () => {
-  it("has no effect and warns, whether or not the root writes the same setting", () => {
-    const h = modules({
-      "main.hueke": "option timezone Asia/Taipei\ninclude extra.hueke\n",
-      "extra.hueke": "option timezone Asia/Tokyo\noption week-start sunday\n",
-    });
-    expect(h.settings.timezone).toBe("Asia/Taipei");
-    expect(h.settings.weekStart).toBe("monday");
-    const ignored = check(h).filter((d) => d.code === "module.ignored-declaration");
-    expect(ignored.map((d) => d.severity)).toEqual(["warning", "warning"]);
-    expect(ignored.map((d) => d.source)).toEqual(["extra.hueke", "extra.hueke"]);
-    expect(codes(h, true)).not.toContain("option.duplicate");
-  });
+account Expenses:Food
+account Assets:Cash
 
-  it("is ignored at any depth", () => {
-    const h = modules({
-      "main.hueke": "option timezone Asia/Taipei\ninclude a.hueke\n",
-      "a.hueke": "include b.hueke\n",
-      "b.hueke": "option decimal-mark ,\noption group-mark .\n",
-    });
-    expect(h.settings.decimalMark).toBe(".");
-    expect(h.settings.groupMark).toBe(",");
-    expect(codes(h, true)).toEqual(["module.ignored-declaration", "module.ignored-declaration"]);
-  });
-
-  it("does not give the ledger a time zone", () => {
-    const h = modules({
-      "main.hueke": "include extra.hueke\n",
-      "extra.hueke": "option timezone Asia/Tokyo\n",
-    });
-    expect(h.settings.timezone).toBe("UTC");
-    expect(codes(h, true).sort()).toEqual(
-      ["module.ignored-declaration", "option.missing-timezone"].sort(),
-    );
-  });
-
-  it("never makes a setting in two included modules a duplicate", () => {
-    const h = modules({
-      "main.hueke": "option timezone Asia/Taipei\ninclude a.hueke\ninclude b.hueke\n",
-      "a.hueke": "option week-start sunday\n",
-      "b.hueke": "option week-start friday\n",
-    });
-    expect(h.settings.weekStart).toBe("monday");
-    expect(codes(h, true)).toEqual(["module.ignored-declaration", "module.ignored-declaration"]);
+2026-10-12 * "Lunch"
+    Expenses:Food     180 TWD
+    Assets:Cash      -180 TWD
+`);
+    expect(h.settings.strict).toEqual(["account", "entity"]);
+    expect(codes(h, true)).toEqual(["name.inferred-commodity"]);
   });
 });
 
@@ -136,7 +110,7 @@ describe("wrong ledger settings", () => {
 
   it("ignores an unknown setting's line", () => {
     const h = ledger("option currency NTD\n");
-    expect(check(h).find((d) => d.code === "option.unknown")?.severity).toBe("error");
+    expect(diagnostics(h, "option.unknown")[0]?.severity).toBe("error");
     expect(h.settings.timezone).toBe("Asia/Taipei");
   });
 
@@ -144,7 +118,7 @@ describe("wrong ledger settings", () => {
     it("falls back to UTC for a repeated timezone", () => {
       const h = ledger("option timezone Asia/Tokyo\n");
       expect(h.settings.timezone).toBe("UTC");
-      expect(check(h).find((d) => d.code === "option.duplicate")?.severity).toBe("error");
+      expect(diagnostics(h, "option.duplicate")[0]?.severity).toBe("error");
     });
 
     it("falls back to the creation option for a repeated timezone", () => {
@@ -156,7 +130,7 @@ describe("wrong ledger settings", () => {
     it("is reported on each writing after the first", () => {
       const text = "option week-start sunday\noption week-start friday\noption week-start sunday\n";
       const h = ledger(text, { prelude: "" });
-      const duplicates = check(h).filter((d) => d.code === "option.duplicate");
+      const duplicates = diagnostics(h, "option.duplicate");
       expect(duplicates.map((d) => d.span?.start)).toEqual([
         text.indexOf("option week-start friday"),
         text.lastIndexOf("option week-start sunday"),
@@ -173,7 +147,7 @@ describe("wrong ledger settings", () => {
 
     it("ignores even identical writings", () => {
       const h = ledger("option pad-account Equity:Opening\noption pad-account Equity:Opening\n");
-      expect("padAccount" in h.settings).toBe(false);
+      expect(h.settings).not.toHaveProperty("padAccount");
       expect(codes(h, true)).toEqual(["option.duplicate"]);
     });
   });
@@ -195,7 +169,7 @@ describe("wrong ledger settings", () => {
       (name) => {
         const h = ledger(`option income-expense on ${name}\n`);
         expect(codes(h, true)).toEqual(["option.invalid-value"]);
-        expect("incomeExpenseRoot" in h.settings).toBe(false);
+        expect(h.settings).not.toHaveProperty("incomeExpenseRoot");
       },
     );
     it("rejects a merged root name with ;", () => {
@@ -203,12 +177,20 @@ describe("wrong ledger settings", () => {
       expect(codes(h, true)).toEqual(["option.invalid-value"]);
     });
 
-    it("leaves income and expense apart when income-expense does not start with on", () => {
-      const h = ledger("option income-expense Flow\n");
-      expect(codes(h, true)).toEqual(["option.invalid-value"]);
-      expect("incomeExpenseRoot" in h.settings).toBe(false);
-    });
+    it.each(["Flow", "yes"])(
+      "leaves income and expense apart when income-expense does not start with on: %s",
+      (value) => {
+        const h = ledger(`option income-expense ${value}\n`);
+        expect(codes(h, true)).toEqual(["option.invalid-value"]);
+        expect(h.settings).not.toHaveProperty("incomeExpenseRoot");
+      },
+    );
 
+    it("uses no strict kinds for an empty value", () => {
+      const h = ledger("option strict\n");
+      expect(codes(h, true)).toEqual(["option.invalid-value"]);
+      expect(h.settings.strict).toEqual([]);
+    });
     it.each(["account,", "account,,commodity"])(
       "uses no strict kinds for an empty kind: %s",
       (value) => {
@@ -268,6 +250,22 @@ describe("wrong ledger settings", () => {
       expect(h.settings.groupMark).toBeNull();
     });
 
+    it("rejects a group mark in a number when the group mark is none", () => {
+      const h = ledger(`option group-mark none
+
+2026-10-12 * "Rent"
+    Expenses:Housing     1,000 NTD
+    Bank:Checking
+
+2026-10-13 * "Deposit"
+    Expenses:Housing     1000 NTD
+    Bank:Checking       -1000 NTD
+`);
+      expect(codes(h)).toEqual(["parse.invalid-number"]);
+      expect(h.transactions.map((t) => t.description)).toEqual(["Deposit"]);
+      expect(balanceOf(h, "Expenses:Housing", "2026-10-31")).toBe("1000");
+    });
+
     it("treats an invalid decimal mark as not written", () => {
       const h = ledger(
         [
@@ -285,7 +283,7 @@ describe("wrong ledger settings", () => {
         { prelude: "", timezone: "UTC" },
       );
       expect(codes(h)).toEqual(["option.invalid-value"]);
-      const invalid = check(h).find((d) => d.code === "option.invalid-value");
+      const invalid = diagnostics(h, "option.invalid-value")[0];
       const data = h.data.get("main.hueke");
       expect(data && invalid?.span && position(data, invalid.span.start).line).toBe(1);
       expect(h.settings.decimalMark).toBe(",");
@@ -294,12 +292,10 @@ describe("wrong ledger settings", () => {
     });
 
     it("treats a decimal mark written twice as not written", () => {
-      const h = ledger("option decimal-mark ,\noption decimal-mark ,\noption group-mark ,\n");
-      const found = codes(h, true);
-      expect(found).toContain("option.duplicate");
-      expect(found).not.toContain("option.invalid-number-format");
-      expect(h.settings.decimalMark).toBe(".");
-      expect(h.settings.groupMark).toBe(",");
+      const h = ledger("option decimal-mark .\noption decimal-mark .\noption group-mark .\n");
+      expect(codes(h, true)).toEqual(["option.duplicate"]);
+      expect(h.settings.decimalMark).toBe(",");
+      expect(h.settings.groupMark).toBe(".");
     });
   });
 
@@ -324,35 +320,5 @@ describe("wrong ledger settings", () => {
       expect(h.settings.decimalMark).toBe(".");
       expect(h.settings.groupMark).toBe(",");
     });
-  });
-});
-
-describe("the default time zone", () => {
-  it("warns and uses UTC when the ledger writes no timezone and no creation option gives one", () => {
-    const h = ledger("", { prelude: "" });
-    const missing = check(h).filter((d) => d.code === "option.missing-timezone");
-    expect(missing.map((d) => d.severity)).toEqual(["warning"]);
-    expect(h.settings.timezone).toBe("UTC");
-  });
-
-  it("uses the creation option when the ledger writes none", () => {
-    const h = ledger("", { prelude: "", timezone: "Europe/Paris" });
-    expect(codes(h, true)).toEqual([]);
-    expect(h.settings.timezone).toBe("Europe/Paris");
-  });
-
-  it("prefers the ledger's timezone to the creation option", () => {
-    const h = ledger("", { timezone: "Europe/Paris" });
-    expect(h.settings.timezone).toBe("Asia/Taipei");
-  });
-
-  it("does not report a missing time zone for a repeated timezone", () => {
-    const h = ledger("option timezone Asia/Tokyo\n");
-    expect(codes(h, true)).not.toContain("option.missing-timezone");
-  });
-
-  it("does not report a missing time zone for an invalid timezone", () => {
-    const h = ledger("option timezone Nowhere\n", { prelude: "" });
-    expect(codes(h, true)).not.toContain("option.missing-timezone");
   });
 });

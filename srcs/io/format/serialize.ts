@@ -18,7 +18,6 @@ import type {
   TransactionData,
 } from "../../data/raw/model.js";
 import {
-  ConflictedAlias,
   NumberError,
   parseAmount,
   parseFigureValue,
@@ -39,7 +38,8 @@ const CHILD = "        ";
 /** Properties in their canonical order; others belong to features not supported yet. */
 const PROPERTY_ORDER: Partial<Record<DeclarationData["kind"], readonly string[]>> = {
   commodity: ["item", "precision", "alias"],
-  account: ["primary"],
+  account: ["display-name", "obligation", "pad-account", "primary"],
+  entity: ["display-name"],
 };
 
 /** Thrown when a record has a part the canonical form does not cover or a value it cannot read. */
@@ -105,9 +105,10 @@ class Writer {
   }
 
   balance(b: BalanceData): string[] {
-    if (b.entity !== undefined) throw new Unwritable("balance @entity");
     const time = b.accounting === undefined ? b.time : `${b.time}=${b.accounting}`;
-    const parts = [time, "balance", b.account, this.amount(b.amount)];
+    const parts = [time, "balance", b.account];
+    if (b.entity !== undefined) parts.push(reference(b.entity));
+    parts.push(this.amount(b.amount));
     if (b.pad) {
       parts.push("pad");
       if (b.pad.amount !== undefined) parts.push(this.amount(b.pad.amount));
@@ -130,11 +131,11 @@ class Writer {
         head = `commodity ${d.args[0] ?? ""}`;
         break;
       case "account":
+      case "entity":
         for (const line of d.lines)
-          if (line.kind === "property" && !PROPERTY_ORDER.account?.includes(line.key))
-            throw new Unwritable(`account ${line.key}`);
-        if (d.anchor) throw new Unwritable("an account's %anchor");
-        head = `account ${d.args[0] ?? ""}`;
+          if (line.kind === "property" && !PROPERTY_ORDER[d.kind]?.includes(line.key))
+            throw new Unwritable(`${d.kind} ${line.key}`);
+        head = `${d.kind} ${d.args[0] ?? ""}${d.anchor ? ` %${anchorText(d.anchor)}` : ""}`;
         break;
       case "include":
         head = `include ${includePath(d.args[0] ?? "")}`;
@@ -200,13 +201,8 @@ class Writer {
 
   /** `180 NTD`: the number in the ledger's marks, or the expression as written, then the code. */
   private amount(text: string): string {
-    try {
-      const a = parseAmount(text, this.format, this.aliases);
-      return `${a.expression ?? number(a.value, a.decimals, this.format)} ${a.commodity}`;
-    } catch (e) {
-      if (e instanceof ConflictedAlias) throw new Unwritable(`alias ${e.message} is in conflict`);
-      throw e;
-    }
+    const a = parseAmount(text, this.format, this.aliases);
+    return `${a.expression ?? number(a.value, a.decimals, this.format)} ${a.commodity}`;
   }
 
   private price(p: PriceData): string {
@@ -227,7 +223,7 @@ class Writer {
       if (total !== undefined) out.push("=", this.figureValue(total));
       return out.join(" ");
     } catch (e) {
-      if (e instanceof NumberError || e instanceof ConflictedAlias) return text.trim();
+      if (e instanceof NumberError) return text.trim();
       throw e;
     }
   }
@@ -244,7 +240,7 @@ class Writer {
   }
 }
 
-/** Aliases as initialization resolved them: one in conflict is not usable. */
+/** Aliases as initialization resolved them: one in conflict is not loaded. */
 function aliasTable(commodities: readonly Commodity[]): AliasTable {
   const owners = new Map<string, { id: Id; position: "prefix" | "suffix" }[]>();
   for (const c of commodities)
@@ -253,13 +249,12 @@ function aliasTable(commodities: readonly Commodity[]): AliasTable {
   const codes = new Set(commodities.map((c) => c.id));
   const prefix = new Map<string, Id>();
   const suffix = new Map<string, Id>();
-  const conflicted = new Set<string>();
   for (const [text, list] of owners) {
     const [first] = list;
-    if (!first || list.length > 1 || codes.has(text)) conflicted.add(text);
-    else (first.position === "prefix" ? prefix : suffix).set(text, first.id);
+    if (first && list.length === 1 && !codes.has(text))
+      (first.position === "prefix" ? prefix : suffix).set(text, first.id);
   }
-  return { prefix, suffix, conflicted };
+  return { prefix, suffix };
 }
 
 /** A decimal value in the ledger's marks, with group marks and the decimal places written. */
@@ -338,9 +333,14 @@ function quote(text: string): string {
   return `"${text.replace(/["\\]/g, "\\$&")}"`;
 }
 
+/** Scopes whose features are not supported yet (docs/core/diagnostics.md, "Unsupported syntax"). */
+const RESERVED_SCOPES = new Set(["installment", "statement", "fulfills", "rule", "shared"]);
+
+/** A module or a period after an anchor is unsupported syntax, which has no canonical form. */
 function anchorText(ref: AnchorRef): string {
-  const name = ref.module === undefined ? ref.name : `${ref.module}:${ref.name}`;
-  return ref.period === undefined ? name : `${name}/${ref.period}`;
+  if (ref.module !== undefined) throw new Unwritable(`the module of #shared:${ref.module}:`);
+  if (ref.period !== undefined) throw new Unwritable(`the period after ${ref.name}`);
+  return ref.name;
 }
 
 /** `@NAT`, never `@person:NAT`. */
@@ -350,5 +350,7 @@ function reference(text: string): string {
 
 /** `#travel`, never `#tag:travel`. */
 function tag(t: TagData): string {
+  if (t.scope !== undefined && RESERVED_SCOPES.has(t.scope))
+    throw new Unwritable(`the tag scope ${t.scope}`);
   return `#${t.scope === undefined || t.scope === "tag" ? "" : `${t.scope}:`}${anchorText(t.ref)}`;
 }

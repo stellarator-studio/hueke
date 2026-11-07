@@ -42,7 +42,7 @@ Status: `implemented`
 
 - An alias may replace the code in any amount: a `prefix` alias before the number, a `suffix` alias after it. How it is written is described in [../dsl/records.md](../dsl/records.md), "Amounts".
 - An alias on the wrong side (`180NT$` for a prefix alias) is `parse.invalid-number`.
-- An alias must not equal the code of a declared commodity, its own included, nor another alias, its own included. Such an alias is `commodity.alias-conflict`, reported on each declaration after the first that writes it, and is not used by any of them: when two commodities declare the same alias, the first loses it too. Records that use it are not loaded. A code that is only used, not declared, does not conflict.
+- An alias must not equal the code of a declared commodity, its own included, nor another alias, its own included. Such an alias is `commodity.alias-conflict` (warning), reported on each declaration after the first that writes it, and is not loaded for any of them: when two commodities declare the same alias, the first loses it too. Amounts are then read as if the alias had never been declared: with `alias NTD suffix` on `TWD` and `NTD` declared, `180 NTD` is 180 NTD; with `dollars` declared by two commodities, `180dollars` is in the commodity `dollars`. A code that is only used, not declared, does not conflict.
 - Output always uses the code.
 
 ### Precision
@@ -89,7 +89,7 @@ Item mode is for things counted one by one: a camera, a book lent to a friend. O
 | --- | --- |
 | `commodity NTD` with `alias NT$ prefix` and `alias dollars suffix`, then `NT$180` and `-180dollars` | 180 NTD and −180 NTD |
 | The same, then `180NT$` | `parse.invalid-number` |
-| A second commodity `TWD` with `alias dollars suffix` | `commodity.alias-conflict` naming TWD; records using `dollars` are not loaded |
+| A second commodity `TWD` with `alias dollars suffix` | `commodity.alias-conflict` naming TWD; `-180dollars` is read as −180 in the commodity `dollars`, and the record loads |
 | `commodity MILE` with `precision x` | `parse.syntax`; `MILE` is not declared, and its precision is inferred as for an undeclared commodity |
 
 ```hueke

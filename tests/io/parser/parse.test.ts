@@ -85,7 +85,8 @@ describe("parse: records", () => {
     });
     expect(b?.cost).toEqual({ kind: "total", amount: "30000 NTD" });
     expect(c?.amount).toBe("NT$ 180");
-    expect(d && "amount" in d).toBe(false);
+    expect(d).toBeDefined();
+    expect(d).not.toHaveProperty("amount");
   });
 
   it("reads a balance with pad", () => {
@@ -137,7 +138,7 @@ describe("parse: records", () => {
   it("reads template postings with slots", () => {
     const { items, diagnostics } = parse(
       "main.hueke",
-      'rule %cashback "Rewards"\n    from 2026-01-01\n    rate 1%\n    Assets:Rewards  amount\n    Income:Rewards  -amount\n',
+      'rule %cashback "Rewards"\n    active 2026-01-01..\n    rate 1%\n    Assets:Rewards  amount\n    Income:Rewards  -amount\n',
     );
     expect(diagnostics).toEqual([]);
     const rule = items[0] as DeclarationData;
@@ -145,6 +146,70 @@ describe("parse: records", () => {
       { name: "amount", negated: false },
       { name: "amount", negated: true },
     ]);
+  });
+});
+
+describe("parse: rule properties", () => {
+  const rule = (body: string) =>
+    parse(
+      "main.hueke",
+      `rule %cashback\n${body}    Income:Cashback  amount\n    Liabilities:Card\n`,
+    );
+
+  it("starts a segment at each active", () => {
+    const { items, diagnostics } = parse(
+      "main.hueke",
+      "rule %cashback\n    active 2026-01..2026-06\n    rate 1%\n    cap 300 NTD per month\n" +
+        "    cap 3000 NTD per year\n    active 2026-07..\n    fixed 15 NTD\n    rounding down\n" +
+        "    cap-group main\n    Income:Cashback  amount\n    Liabilities:Card\n",
+    );
+    expect(diagnostics).toEqual([]);
+    expect((items[0] as DeclarationData).lines.map((l) => l.kind === "property" && l.key)).toEqual([
+      "active",
+      "rate",
+      "cap",
+      "cap",
+      "active",
+      "fixed",
+      "rounding",
+      "cap-group",
+    ]);
+  });
+
+  it.each([
+    ["rate in one segment", "    active 2026..\n    rate 1%\n    rate 2%\n"],
+    ["follows across segments", "    follows card\n    active 2026..\n    follows card\n"],
+    ["cap-group", "    cap-group a\n    active 2026..\n    cap-group b\n"],
+    ["every", "    every 1 month\n    active 2026..\n    every 1 month\n"],
+  ])("rejects %s written twice", (_, body) => {
+    expect(rule(body).diagnostics.map((d) => d.code)).toEqual(["parse.duplicate-property"]);
+  });
+
+  it.each([
+    [
+      "rate in each segment",
+      "    active 2026-01..2026-06\n    rate 1%\n    active 2026-07..\n    rate 2%\n",
+    ],
+    [
+      "rounding in each segment",
+      "    active 2026..\n    rounding down\n    active 2027..\n    rounding down\n",
+    ],
+    ["minimum", "    minimum 100 NTD per posting\n    minimum 1000 NTD per month\n"],
+  ])("accepts %s", (_, body) => {
+    expect(rule(body).diagnostics).toEqual([]);
+  });
+
+  it("does not take from", () => {
+    expect(rule("    from 2026-01-01\n").diagnostics.map((d) => d.code)).toEqual([
+      "parse.unexpected-property",
+    ]);
+  });
+
+  it("reserves fixed and cap-group as keywords", () => {
+    for (const root of ["fixed", "cap-group"])
+      expect(
+        parse("main.hueke", `account-root ${root} asset\n`).diagnostics.map((d) => d.code),
+      ).toEqual(["parse.syntax"]);
   });
 });
 
@@ -169,34 +234,6 @@ describe("parse: notes", () => {
     expect(food?.trailer).toEqual({ kind: "meta", key: "note", value: "with colleagues" });
     expect(food?.lines.map((l) => l.kind)).toEqual(["breakdown", "note", "note"]);
     expect(cash?.lines).toEqual([]);
-  });
-
-  it("reads quoted Metadata values and rejects two on a line", () => {
-    const text =
-      '2026-10-13 * "Dinner"\n    Expenses:Food 300 NTD  ;; a: 1 ; b: 2\n    Assets:Cash -300 NTD\n\n' +
-      '2026-10-14 * "Breakfast"\n    Expenses:Food 80 NTD  ;; memo: "extra egg ; no scallions"\n    Assets:Cash -80 NTD\n';
-    const data = parse("main.hueke", text);
-    expect(data.diagnostics.map((d) => d.code)).toEqual(["parse.syntax"]);
-    expect(data.items).toHaveLength(1);
-    const [t] = data.items as TransactionData[];
-    expect(t?.postings[0]?.trailer).toEqual({
-      kind: "meta",
-      key: "memo",
-      value: "extra egg ; no scallions",
-    });
-  });
-
-  it("keeps file comments and rejects Metadata before the first record", () => {
-    const data = parse("main.hueke", '; About this file\n;; owner: NAT\n\n2026-10-12 "Lunch"\n');
-    expect(data.comments.map((c) => c.note.text)).toEqual(["About this file"]);
-    expect(data.diagnostics.map((d) => d.code)).toEqual(["parse.orphan-line"]);
-    expect(data.items).toHaveLength(1);
-  });
-
-  it("rejects ;; without key: value", () => {
-    expect(
-      codes('2026-10-15 * "Late snack"\n    ;; anything\n    Expenses:Food 120 NTD\n'),
-    ).toEqual(["parse.syntax"]);
   });
 
   it("continues Metadata on lines indented past its key", () => {
@@ -301,103 +338,12 @@ describe("parse: notes", () => {
   });
 });
 
-describe("parse: errors stay within a block", () => {
-  it("broken blocks do not affect others", () => {
-    const data = parse(
-      "main.hueke",
-      "    Assets:Cash    -50 NTD\n\n" +
-        '2026-10-12 * "Lunch"\n    Expenses:Food     180 NTD\n    Assets:Cash    -180 NTD\n\n' +
-        '2026-10-13 * "Dinner\n    Expenses:Food     300 NTD\n    Assets:Cash    -300 NTD\n\n' +
-        "2026-10-14 balance Assets:Cash\n\n" +
-        '2026-10-15 * "Breakfast"\n    Expenses:Food      80 NTD\n    Assets:Cash     -80 NTD\n',
-    );
-    expect(data.diagnostics.map((d) => d.code)).toEqual([
-      "parse.orphan-line",
-      "parse.unterminated-string",
-      "parse.syntax",
-    ]);
-    expect((data.items as TransactionData[]).map((t) => t.description)).toEqual([
-      "Lunch",
-      "Breakfast",
-    ]);
-  });
-
-  it("token order", () => {
-    expect(
-      codes(
-        '2026-10-11 * "Lunch" %lunch-1011\n    Expenses:Food  600 NTD\n\n' +
-          '2026-10-12 * "Paid on behalf"\n    Assets:Receivables:lunch-1012   400 NTD  @NAT %lunch-1012\n\n' +
-          '2026-10-21 * "Ramen in Tokyo"\n    Liabilities:CreditCard       -260 NTD #foreign [2026-10-23]\n',
-      ),
-    ).toEqual(["parse.token-order", "parse.token-order", "parse.token-order"]);
-  });
-
+describe("parse: names", () => {
   it("names a module only after #shared:", () => {
+    // Under any other scope, the colon is part of the anchor's name, which an anchor cannot hold.
     expect(codes('2026-10-18 "Hotel" #refund:trip:hotel\n    Expenses:Travel  100 NTD\n')).toEqual([
-      "parse.syntax",
+      "anchor.invalid-name",
     ]);
-  });
-
-  it("status marks", () => {
-    expect(codes('2026-10-14 "Withdrawal"\n    ! Assets:Cash      1000 NTD\n')).toEqual([
-      "parse.syntax",
-    ]);
-    expect(codes('2026-10-15 * ! "Two marks"\n')).toEqual(["parse.token-order"]);
-    expect(codes('2026-10-14 * "Taxi" # travel\n    Expenses:Transport 300 NTD\n')).toEqual([
-      "parse.token-order",
-    ]);
-    expect(codes('schedule %gym * "Gym membership"\n    from 2026-01-05\n')).toEqual([
-      "parse.syntax",
-    ]);
-    const [cancelled, tagged] = transactions('2026-10-12 # "Lunch"\n2026-10-13 #travel\n');
-    expect(cancelled?.mark).toBe("#");
-    expect(tagged).toMatchObject({ tags: [{ ref: { name: "travel" } }] });
-    expect(tagged?.mark).toBeUndefined();
-  });
-
-  it("an account name cannot contain spaces", () => {
-    expect(
-      codes('2026-10-12 * "Coffee"\n    Expenses:Coffee Shop 150 NTD\n    Assets:Cash -150 NTD\n'),
-    ).toEqual(["parse.syntax"]);
-  });
-
-  it("properties written twice or in the wrong place", () => {
-    expect(
-      codes(
-        "commodity KRW\n    precision 0\n    precision 2\n\n" +
-          "account Assets:Won\n    precision 0\n\n" +
-          "commodity guitar-01\n    item\n    precision 0\n",
-      ),
-    ).toEqual([
-      "parse.duplicate-property",
-      "parse.unexpected-property",
-      "parse.unexpected-property",
-    ]);
-  });
-
-  it("invalid times", () => {
-    expect(
-      codes(
-        '2026-02-30 * "a"\n    Expenses:Other 100 NTD\n\n2026-13 * "b"\n\n2026-10-12T25:00 * "c"\n\n' +
-          '2026-10-12 * "d"\n    Expenses:Other 100 NTD [2026-W54]\n',
-      ),
-    ).toEqual([
-      "parse.invalid-time",
-      "parse.invalid-time",
-      "parse.invalid-time",
-      "parse.invalid-time",
-    ]);
-  });
-
-  it("gives every item a span over its whole block and the module its line starts", () => {
-    const text =
-      '2026-10-12 * "Lunch"\n    Expenses:Food 180 NTD\n    ; afterthought\n\n2026-10-13 "x"\n';
-    const data = parse("main.hueke", text);
-    const [first] = data.items;
-    expect(first && text.slice(first.span?.start, first.span?.end)).toBe(
-      '2026-10-12 * "Lunch"\n    Expenses:Food 180 NTD\n    ; afterthought',
-    );
-    expect(data.lineStarts).toEqual([0, 21, 47, 66, 67, 82]);
   });
 });
 
@@ -408,10 +354,10 @@ describe("parse: parenthesized amounts", () => {
         "    Expenses:Food  -((100 + 50) * 2)NTD @ (1 / 2) USD\n" +
         "    Assets:Cash  NT$ (1 + 2)\n",
     );
-    expect(t?.postings.map((p) => [p.amount, p.price?.amount])).toEqual([
-      ["-((100 + 50) * 2)NTD", "(1 / 2) USD"],
-      ["NT$ (1 + 2)", undefined],
-    ]);
+    const [food, cash] = t?.postings ?? [];
+    expect([food?.amount, food?.price?.amount]).toEqual(["-((100 + 50) * 2)NTD", "(1 / 2) USD"]);
+    expect(cash?.amount).toBe("NT$ (1 + 2)");
+    expect(cash).not.toHaveProperty("price");
   });
   it("does not join an unclosed parenthesis", () => {
     expect(codes('2026-10-12 * "X"\n    Expenses:Food  (1 + 2 NTD\n')).toEqual(["parse.syntax"]);

@@ -1,7 +1,15 @@
 // Normalization step 7: checks that only flag problems and never change what is computed. They run
 // on the first check() call (docs/core/ledger.md, "Normalization").
 
-import type { Balance, Commodity, Id, Posting, Transaction } from "../../data/model/types.js";
+import type {
+  Account,
+  Balance,
+  Commodity,
+  Id,
+  Posting,
+  Transaction,
+} from "../../data/model/types.js";
+import { obligationPlace } from "../../data/model/account.js";
 import type { Diagnostic, SourcePath } from "../../data/source/source.js";
 import { compareTime } from "../../data/time/time.js";
 import {
@@ -11,6 +19,7 @@ import {
   decimal,
   isInteger,
   mul,
+  neg,
   rational,
   sub,
   tenToMinus,
@@ -18,12 +27,22 @@ import {
   type Rational,
 } from "../../data/values/decimal.js";
 import { diagnostic } from "../../data/source/diagnostics.js";
-import { balanceAt, show, unclearedBetween, weightOf, withinHalfUnit } from "./shared.js";
+import {
+  balanceAt,
+  balanceBelongs,
+  show,
+  unclearedBetween,
+  weightOf,
+  withinHalfUnit,
+  type ObligationEntities,
+} from "./shared.js";
 
 export interface ValidationInput {
   readonly transactions: readonly Transaction[];
   readonly balances: readonly Balance[];
   readonly commodities: ReadonlyMap<Id, Commodity>;
+  readonly accounts: ReadonlyMap<Id, Account>;
+  readonly obligations: ObligationEntities;
   readonly decimals: ReadonlyMap<Posting, number>;
 }
 
@@ -62,6 +81,8 @@ export function validate(input: ValidationInput): Diagnostic[] {
 
   itemBalances(transactions, commodities, out);
   hardBalances(input, out);
+  obligationPostings(input, out);
+  refunds(input, out);
   return out;
 }
 
@@ -140,16 +161,18 @@ function hardBalances(input: ValidationInput, out: Diagnostic[]): void {
   );
   const previous = new Map<string, Balance>();
   for (const b of ordered) {
-    const key = `${b.account}\u0000${b.amount.commodity}`;
+    // A Balance with an entity follows only those with the same entity.
+    const key = `${b.account}\u0000${b.amount.commodity}\u0000${b.entity ?? ""}`;
     const before = previous.get(key);
     previous.set(key, b);
     if (b.mode !== "hard") continue;
     const commodity = b.amount.commodity;
-    const recorded = balanceAt(transactions, b.account, commodity, b.effective);
+    const belongs = balanceBelongs(b, input.accounts, input.obligations);
+    const recorded = balanceAt(transactions, b.account, commodity, b.effective, belongs);
     const asserted = rational(b.amount.value);
     if (withinHalfUnit(sub(recorded, asserted), commodities.get(commodity)?.precision ?? 0))
       continue;
-    const uncleared = unclearedBetween(transactions, b, before)
+    const uncleared = unclearedBetween(transactions, b, before, belongs)
       .map((p) => `${p.effective.localDate} ${p.amount.value}`)
       .join(", ");
     out.push(
@@ -159,6 +182,163 @@ function hardBalances(input: ValidationInput, out: Diagnostic[]): void {
           (uncleared ? `; not cleared: ${uncleared}` : ""),
         b.source,
         b.span,
+      ),
+    );
+  }
+}
+
+/** Postings outside any obligation, obligations without an entity, mixed commodities. */
+function obligationPostings(input: ValidationInput, out: Diagnostic[]): void {
+  const { transactions, accounts, obligations } = input;
+  const seen = new Map<Id, { commodities: Set<Id>; linked: boolean; unlinked?: Posting }>();
+  const sources = new Map<Posting, SourcePath | undefined>();
+  // Where a record is written: generated postings are not written anywhere.
+  for (const b of input.balances)
+    if (obligationPlace(b.account, accounts)?.kind === "nested")
+      out.push(
+        diagnostic(
+          "obligation.nested",
+          `${b.account} is inside an obligation; an obligation has no sub-accounts`,
+          b.source,
+          b.span,
+        ),
+      );
+  for (const t of transactions)
+    for (const p of t.postings) {
+      const place = obligationPlace(p.account, accounts);
+      if (!place) continue;
+      if (place.kind === "root" && t.origin)
+        out.push(
+          diagnostic(
+            "obligation.root-posting",
+            `${p.account} is an obligation account; post to one of its obligations`,
+            t.source,
+            p.span,
+          ),
+        );
+      if (place.kind === "nested" && t.origin)
+        out.push(
+          diagnostic(
+            "obligation.nested",
+            `${p.account} is inside the obligation ${place.obligation}; use a reference to say who it is with`,
+            t.source,
+            p.span,
+          ),
+        );
+      if (place.kind !== "obligation" || t.occurrence !== "occurred") continue;
+      let entry = seen.get(place.obligation);
+      if (!entry) {
+        entry = { commodities: new Set(), linked: false };
+        seen.set(place.obligation, entry);
+        sources.set(p, t.source);
+        if ((obligations.get(place.obligation) ?? []).length === 0)
+          out.push(
+            diagnostic(
+              "obligation.missing-entity",
+              `no posting of ${place.obligation} names anyone it is with`,
+              t.source,
+              p.span,
+            ),
+          );
+      }
+      if (entry.commodities.size > 0 && !entry.commodities.has(p.amount.commodity))
+        if (!entry.unlinked) {
+          entry.unlinked = p;
+          sources.set(p, t.source);
+        }
+      entry.commodities.add(p.amount.commodity);
+      if (p.price ?? p.cost) entry.linked = true;
+    }
+  for (const [obligation, e] of seen)
+    if (e.unlinked && !e.linked)
+      out.push(
+        diagnostic(
+          "obligation.unlinked-commodity",
+          `${obligation} has postings in ${[...e.commodities].join(", ")} and none has a price or a cost`,
+          sources.get(e.unlinked),
+          e.unlinked.span,
+        ),
+      );
+}
+
+/**
+ * Refunds beyond the original amount, per income and expense account and commodity
+ * (docs/core/anchors.md, "Refunds"); once per refunded transaction.
+ */
+function refunds(input: ValidationInput, out: Diagnostic[]): void {
+  const { transactions, accounts, commodities } = input;
+  const byId = new Map(transactions.map((t) => [t.id, t]));
+  const pnl = (account: Id): boolean => {
+    const type = accounts.get(account)?.type;
+    return type === "income" || type === "expense";
+  };
+  const net = (t: Transaction): Map<string, Rational> => {
+    const totals = new Map<string, Rational>();
+    for (const p of t.postings) {
+      if (!pnl(p.account)) continue;
+      const key = `${p.account}\u0000${p.amount.commodity}`;
+      totals.set(key, add(totals.get(key) ?? ZERO, rational(p.amount.value)));
+    }
+    return totals;
+  };
+  const state = new Map<
+    Id,
+    { original: Map<string, Rational>; refunded: Map<string, Rational>; first?: Transaction }
+  >();
+  const exceeds = (original: Rational, refunded: Rational, key: string): boolean => {
+    if (original.n === 0n) return false;
+    // Refunds go the other way from the original.
+    const back = original.n > 0n ? neg(refunded) : refunded;
+    const precision = commodities.get(key.split("\u0000")[1] ?? "")?.precision ?? 0;
+    return cmp(sub(back, abs(original)), mul(rational("0.5"), tenToMinus(precision))) > 0;
+  };
+  for (const t of transactions) {
+    if (t.occurrence !== "occurred") continue;
+    const targets = new Set(
+      t.tags
+        .filter((tag) => tag.scope === "refund" && tag.target !== undefined)
+        .map((tag) => tag.target as Id),
+    );
+    for (const target of targets) {
+      const original = byId.get(target);
+      if (!original) continue;
+      let s = state.get(target);
+      if (!s) {
+        s = { original: net(original), refunded: new Map() };
+        state.set(target, s);
+      }
+      for (const [key, value] of net(t)) {
+        if (!s.original.has(key)) continue;
+        s.refunded.set(key, add(s.refunded.get(key) ?? ZERO, value));
+      }
+      const current = s;
+      if (
+        !current.first &&
+        [...current.refunded].some(([key, r]) => exceeds(current.original.get(key) ?? ZERO, r, key))
+      )
+        current.first = t;
+    }
+  }
+  // In the order of the refunds that exceed.
+  const position = new Map(transactions.map((t, i) => [t, i]));
+  const exceeded = [...state].flatMap(([target, s]) =>
+    s.first ? [{ target, s, first: s.first }] : [],
+  );
+  exceeded.sort((a, b) => (position.get(a.first) ?? 0) - (position.get(b.first) ?? 0));
+  for (const { target, s, first } of exceeded) {
+    const parts = [...s.refunded]
+      .filter(([key, r]) => exceeds(s.original.get(key) ?? ZERO, r, key))
+      .map(([key, r]) => {
+        const [account = "", commodity = ""] = key.split("\u0000");
+        const original = s.original.get(key) ?? ZERO;
+        return `${account} original ${show(abs(original), commodity)}, refunded ${show(abs(r), commodity)}`;
+      });
+    out.push(
+      diagnostic(
+        "refund.exceeds",
+        `the refunds of ${target} exceed it: ${parts.join("; ")}`,
+        first.source,
+        first.span,
       ),
     );
   }

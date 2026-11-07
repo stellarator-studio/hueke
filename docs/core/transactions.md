@@ -8,7 +8,7 @@ A **transaction** records one event; its **postings** change the balances of acc
 | --- | --- |
 | Transactions | `implemented` |
 | Order of transactions | `implemented` |
-| Parts kept as written | `implemented` |
+| Tags, references and anchors | `implemented` |
 | Status and occurrence | `implemented` |
 | Balancing | `implemented` |
 | Filling in an omitted amount | `implemented` |
@@ -36,7 +36,8 @@ Each transaction has an **occurrence** (did it happen?) and each posting a **sta
 | `occurrence` | `occurred` (default), `planned` or `cancelled`. |
 | `status` | `none` (default) or `cleared`: the default for its postings. |
 | `primaryTag` | The name after `^`, if any: what the transaction is mainly about. |
-| `tags` | Its tags, each a scope and an anchor; the scope is `tag` unless written. |
+| `primaryTarget` | The ID of the record the primary tag names, if one defines it (see [anchors.md](anchors.md)). |
+| `tags` | Its tags, each a scope and an anchor; the scope is `tag` unless written. A tag also has a `target` when a record defines its anchor (see [anchors.md](anchors.md), "Concepts"). |
 | `refs` | Its entity references, each a role and an entity; the role is `person` unless written. |
 | `meta` | Its metadata: a map from key to string. |
 | `postings` | Its postings, in written order. |
@@ -89,18 +90,19 @@ Status: `implemented`
 - Sorting uses the actual UTC moment. After filtering by date, a record from another time zone may come before one with an earlier local date.
 - Every list of transactions or postings that the API returns uses the same rule.
 
-### Parts kept as written
+### Tags, references and anchors
 
 Status: `implemented`
 
-These parts are read and kept; no rule uses them beyond what is listed here.
+| Written | Kept in | Described in |
+| --- | --- | --- |
+| `%anchor` | The record's ID (see [ledger.md](ledger.md), "IDs") | [anchors.md](anchors.md), "Anchors" |
+| `^anchor` (primary tag) | `primaryTag`, `primaryTarget` | [anchors.md](anchors.md), "Primary tags" |
+| `#tag`, `#scope:anchor` | `tags` | [anchors.md](anchors.md), "Resolving tags", "Scopes" |
+| `@entity`, `@role:entity` | `refs` | [entities.md](entities.md), "References and roles" |
 
-| Written | Kept in |
-| --- | --- |
-| `^anchor` (primary tag) | `primaryTag`; queries can filter and group by it |
-| `#tag`, `#scope:anchor` | `tags`; queries can filter and group by them |
-| `@entity`, `@role:entity` | `refs`; queries can filter and group by them |
-| `%anchor` | The record's ID (see [ledger.md](ledger.md), "IDs") |
+- Queries can filter and group by tags, the primary tag and references (see [query.md](query.md)).
+- A tag or a reference skipped for an error is not in the derived record; its Raw record still has it.
 
 ### Status and occurrence
 
@@ -157,8 +159,8 @@ A breakdown line is a note for display, such as one item on a receipt. It need n
 - Every part except the name is optional, and only what is written is kept. A commodity is never taken from the posting: a figure written without one has none.
 - Numbers are read with the ledger's marks (see [values.md](values.md), "Numbers as written"). Expressions are not allowed. Decimal places are not checked against precision.
 - A commodity written in a breakdown is not a use of it: it creates no commodity, is never `strict.undeclared` or `name.inferred-commodity`, and does not affect inferred precision. An alias is read as its commodity's code; any other code is kept as written.
-- A figure that cannot be read, such as a number that does not fit the marks, an expression, parts out of order, or an alias that is in conflict or on the wrong side, is `breakdown.invalid-figure` (warning). The line keeps its name and drops all its figures; the transaction loads.
-- The commodities written on the unit price, on the total and on the posting's amount must all be the same; only those written are compared, so an omitted posting amount does not take part. The posting's amount counts, not its price or cost: under `1200 JPY @@ 260 NTD`, a breakdown in JPY agrees. A difference is `breakdown.commodity-mismatch` (error); the line is kept as written and the transaction loads.
+- A figure that cannot be read, such as a number that does not fit the marks, an expression, parts out of order, or an alias on the wrong side, is `breakdown.invalid-figure` (warning). The line keeps its name and drops all its figures; the transaction loads.
+- The commodities written on a line's unit price and total must be the same, and must be one written on the posting: its amount's, its price's or its cost's. Only commodities written are compared: a line with none written always agrees, and under an omitted amount only the line's own two are compared. Each line chooses on its own: under `1200 JPY @@ 260 NTD`, one line may be in JPY and the next in NTD, but one line may not hold both. A difference is `breakdown.commodity-mismatch` (error); the line is kept as written and the transaction loads.
 
 ### System-generated transactions
 
@@ -202,6 +204,10 @@ The `Expenses:Food` posting has five breakdown lines: "Bubble tea" with quantity
 | --- | --- |
 | `- Ramen  1 * 1200 JPY` | `breakdown.commodity-mismatch`; the line is kept as written and the transaction loads |
 | `- Ramen  = 1200 JPY`, under `Expenses:Food 1200 JPY @@ 260 NTD` | No diagnostic: the posting's amount is in JPY |
+| `- Ramen  = 260 NTD`, under `Expenses:Food 1200 JPY @@ 260 NTD` | No diagnostic: the posting's price is in NTD |
+| `- Ramen  = 1000 JPY` and `- Tea  = 43 NTD`, both under `Expenses:Food 1200 JPY @@ 260 NTD` | No diagnostic: each line chooses its commodity on its own |
+| `- Ramen  1 * 1000 JPY = 217 NTD`, under `Expenses:Food 1200 JPY @@ 260 NTD` | `breakdown.commodity-mismatch`: one line holds both |
+| `- Ramen  = 260 USD`, under `Expenses:Food 1200 JPY @@ 260 NTD` | `breakdown.commodity-mismatch`: USD is not written on the posting |
 | `- Toast  1 * 65 NTD = 65 USD` | `breakdown.commodity-mismatch` |
 | `- Toast  = (130/2)` | `breakdown.invalid-figure`; the line keeps the name `Toast` and has no figures |
 | `- Points  = 40 POINT`, under a posting whose amount is omitted, with `option strict commodity` and `POINT` not declared | No diagnostic, and no commodity `POINT` is created |

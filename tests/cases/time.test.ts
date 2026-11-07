@@ -1,7 +1,16 @@
 // docs/core/time.md
 import { describe, expect, it } from "vitest";
-import { balance, check, query, reconcile } from "../../srcs/index.js";
-import { balanceOf, codes, descriptions, ledger, rows, SHARED } from "./ledger.js";
+import { balance, query, reconcile, timeOnAxis } from "../../srcs/index.js";
+import {
+  balanceOf,
+  codes,
+  descriptions,
+  diagnostics,
+  ledger,
+  modules,
+  rows,
+  SHARED,
+} from "./ledger.js";
 
 const pnl = (h: ReturnType<typeof ledger>, period: string): string[] =>
   rows(balance(h, query(h).axis("accounting").within(period).accounts("Income", "Expenses")));
@@ -25,11 +34,6 @@ describe("time values", () => {
     expect(codes(h)).toEqual([]);
     const accounting = h.transactions[0]?.accounting;
     expect(accounting).toMatchObject({ literal: written, precision, localDate, localEnd });
-    expect(accounting).not.toHaveProperty("exact");
-  });
-  it("reads a time of day as a point", () => {
-    const time = at("2026-10-12T09:30").transactions[0]?.effective;
-    expect(time).toMatchObject({ start: "2026-10-12T01:30Z", end: "2026-10-12T01:30Z" });
   });
   it.each([
     ["2026-10-12T09:30:15"],
@@ -62,7 +66,6 @@ describe("examples of time values", () => {
   it.each([
     ["2026-10-12", "2026-10-12", "2026-10-11T16:00Z", "2026-10-12T16:00Z"],
     ["2026-10", "2026-10-01", "2026-09-30T16:00Z", "2026-10-31T16:00Z"],
-    ["2026-10-21T00:30[Asia/Tokyo]", "2026-10-21", "2026-10-20T15:30Z", "2026-10-20T15:30Z"],
   ])("Asia/Taipei: %s", (written, localDate, start, end) => {
     const h = ledger(`${written} * "Note"\n`);
     expect(codes(h)).toEqual([]);
@@ -70,6 +73,7 @@ describe("examples of time values", () => {
   });
   it("no time zone at all", () => {
     const h = ledger(LUNCH("2026-10-12"), { prelude: noTimezone });
+    expect(diagnostics(h, "option.missing-timezone").map((d) => d.severity)).toEqual(["warning"]);
     expect(codes(h)).toEqual(["option.missing-timezone"]);
     expect(h.transactions[0]?.effective).toMatchObject({
       localDate: "2026-10-12",
@@ -91,6 +95,31 @@ describe("examples of time values", () => {
     const h = ledger(LUNCH("2026-10-12"), { timezone: "Asia/Tokyo" });
     expect(codes(h)).toEqual([]);
     expect(h.transactions[0]?.effective.start).toBe("2026-10-11T16:00Z");
+  });
+  it("a repeated timezone uses UTC without reporting a missing one", () => {
+    const h = ledger("option timezone Asia/Tokyo\n");
+    expect(h.settings.timezone).toBe("UTC");
+    expect(codes(h, true)).toEqual(["option.duplicate"]);
+  });
+  it("a timezone in an included module does not count", () => {
+    const h = modules({
+      "main.hueke": "include extra.hueke\n",
+      "extra.hueke": "option timezone Asia/Tokyo\n",
+    });
+    expect(h.settings.timezone).toBe("UTC");
+    expect(codes(h, true).sort()).toEqual(
+      ["module.ignored-declaration", "option.missing-timezone"].sort(),
+    );
+  });
+  it("an unknown zone given when creating the ledger makes times without a zone invalid", () => {
+    const h = ledger(LUNCH("2026-10-12"), { prelude: noTimezone, timezone: "Mars/Olympus" });
+    expect(codes(h)).toEqual(["parse.invalid-time"]);
+    expect(h.transactions).toEqual([]);
+    expect(
+      codes(
+        ledger(LUNCH("2026-10-12[Asia/Tokyo]"), { prelude: noTimezone, timezone: "Mars/Olympus" }),
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -191,6 +220,26 @@ describe("a posting's effective time", () => {
     expect(codes(h)).toEqual(["posting.invalid-effective"]);
     expect(h.transactions).toEqual([]);
   });
+  it("reports an inherited time on the transaction and an own time on the posting, saying which", () => {
+    const inherited = ledger(
+      `2026-10 * "Fee"\n    Expenses:Housing  1 NTD\n    Bank:Checking  -1 NTD\n`,
+    );
+    const [onTransaction] = diagnostics(inherited, "posting.invalid-effective");
+    expect(onTransaction?.span?.start).toBe(
+      inherited.data.get("main.hueke")?.items.at(-1)?.span?.start,
+    );
+    expect(onTransaction?.message).toContain("transaction's time 2026-10");
+    const own = ledger(
+      `2026-10-12 * "T"\n    Bank:Checking  -1 NTD [2026-10]\n    Assets:Cash  1 NTD\n`,
+    );
+    const [onPosting] = diagnostics(own, "posting.invalid-effective");
+    const item = own.data.get("main.hueke")?.items.at(-1);
+    const posting = item?.kind === "transaction" ? item.postings[0] : undefined;
+    expect(posting?.span).toBeDefined();
+    expect(onPosting?.span?.start).toBe(posting?.span?.start);
+    expect(onPosting?.message).toContain("[2026-10]");
+    expect(onPosting?.message).not.toContain("transaction's time");
+  });
   it("accepts the month as the accounting time", () => {
     const h = ledger(`
 2026-10-01=2026-10 * "October building fee"
@@ -240,6 +289,39 @@ ${written} * "Transfer"
     const h = ledger(`2026-10 * "October review"\n`);
     expect(codes(h)).toEqual([]);
     expect(descriptions(h.transactions)).toEqual(["October review"]);
+  });
+});
+
+describe("time axes", () => {
+  const h = ledger(`
+2026-10-12=2026-10 * "Transfer"
+    Bank:Checking  -100 NTD [2026-10-14]
+    Assets:Cash     100 NTD
+`);
+  const [transfer] = h.transactions;
+  const literal = (axis: "accounting" | "effective" | "txn-effective") =>
+    transfer?.postings.map((p) => timeOnAxis(transfer, p, axis).literal);
+
+  it("gives each posting its time on each axis", () => {
+    expect(codes(h)).toEqual([]);
+    expect(literal("accounting")).toEqual(["2026-10", "2026-10"]);
+    expect(literal("effective")).toEqual(["2026-10-14", "2026-10-12"]);
+    expect(literal("txn-effective")).toEqual(["2026-10-12", "2026-10-12"]);
+  });
+  it("ignores the postings' own times on txn-effective", () => {
+    expect(descriptions(query(h).axis("txn-effective").within("2026-10-12"))).toEqual(["Transfer"]);
+    expect(descriptions(query(h).axis("txn-effective").within("2026-10-14"))).toEqual([]);
+    expect(descriptions(query(h).within("2026-10-14"))).toEqual(["Transfer"]);
+  });
+  it("ignores the own effective time written on an income or expense posting", () => {
+    const g = ledger(`
+2026-10-12 * "Lunch"
+    Expenses:Food  180 NTD [2026-10-14]
+    Assets:Cash
+`);
+    expect(codes(g)).toEqual(["posting.pnl-effective"]);
+    expect(g.transactions[0]?.postings[0]?.effective.literal).toBe("2026-10-12");
+    expect(balanceOf(g, "Expenses:Food", "2026-10-12")).toBe("180");
   });
 });
 
@@ -376,6 +458,9 @@ describe("times given to the API", () => {
     ["2026-10-12[Mars/Base]", "parse.invalid-time"],
     ["2026-W53", "time.nonexistent-week"],
     ["2026-10-12+08:00", "parse.invalid-time"],
+    ["2026-Q4", "parse.invalid-time"],
+    ["2026-11-01T01:30[America/New_York]", "time.ambiguous-local-time"],
+    ["2026-10-12T09:00+09:00", "time.offset-mismatch"],
   ])("rejects %s", (text, code) => {
     expect(() => query(h).within(text)).toThrow(code);
     expect(() => reconcile(h, { account: "Assets:Cash", at: text })).toThrow(code);
@@ -398,13 +483,6 @@ describe("times given to the API", () => {
     const text = "2026-03-08T02:30[America/New_York]";
     expect(() => query(h).within(text)).toThrow("time.nonexistent-local-time");
     expect(() => query(h).within(text)).not.toThrow("query.time-of-day");
-  });
-  it("never reports a rejected time in check", () => {
-    const h2 = at("2026-10-12");
-    expect(() => query(h2).within("2026-13")).toThrow("parse.invalid-time");
-    expect(() => query(h2).within("2026-10-12T09:00")).toThrow("query.time-of-day");
-    expect(() => query(h2).within("2026-W53")).toThrow("time.nonexistent-week");
-    expect(codes(h2, true)).toEqual([]);
   });
   it("tells a zone name with T and a digit from a time of day", () => {
     expect(() => query(h).within("2026-10-12[Etc/GMT0]")).not.toThrow();
@@ -444,7 +522,6 @@ describe("a UTC offset picks a repeated local time", () => {
   it("is ambiguous without one", () => {
     const h = at("2026-11-01T01:30[America/New_York]");
     expect(codes(h)).toEqual(["time.ambiguous-local-time"]);
-    expect(check(h)[0]?.message).toContain("-04:00 or -05:00");
   });
   it("rejects an offset the zone does not have then", () => {
     for (const time of ["2026-11-01T01:30-03:00[America/New_York]", "2026-10-12T09:00+09:00"]) {
