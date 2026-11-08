@@ -12,6 +12,7 @@ An **anchor** names a record: it is the record's ID, and other records refer to 
 | Primary tags | `implemented` |
 | Groups | `implemented` |
 | Refunds | `implemented` |
+| `refunds` | `implemented` |
 | Looking up by ID | `implemented` |
 
 ## Concepts
@@ -32,6 +33,20 @@ An **anchor** names a record: it is the record's ID, and other records refer to 
 **Primary tag**: at most one per transaction, written `^name`. Its scope is always `tag`. The transaction's `primaryTag` holds the anchor's name and `primaryTarget` the ID of the record that defines it, when one does.
 
 **Group**: the records that carry a tag, or a primary tag. They are its **members**. The record the anchor names is not a member.
+
+**Refund progress** (one row of `refunds`): one refunded record, measured on one account in one commodity (see "Refunds").
+
+| Field | Meaning |
+| --- | --- |
+| `target` | The ID of the refunded transaction or posting. |
+| `account` | The account measured. |
+| `commodity` | The commodity. |
+| `original` | The original amount, made positive. |
+| `refunded` | The refunded amount, counted in the opposite direction from the original: positive when money came back. When the original net is zero there is no direction, and it is counted as for an income: the net of the refund postings as written. |
+| `remaining` | `original − refunded`. Negative when more was refunded than the original. |
+| `full` | Whether `remaining` is zero, within the tolerance of [balance.md](balance.md), "Balance assertions". |
+| `exceeds` | Whether the refunded amount exceeds the original amount by more than that tolerance, the condition of `refund.exceeds`. Never when the original amount is zero. |
+| `refunds` | The IDs of the `occurred` refund transactions that name the target, in transaction order. |
 
 ## Behavior
 
@@ -64,12 +79,12 @@ Scopes are defined by Core; a ledger cannot add any.
 | Scope | Written on | Its anchor names | Rule |
 | --- | --- | --- | --- |
 | `tag` (default) | Transaction, posting | Any record, or none | None |
-| `refund` | Transaction | An `occurred` transaction | See "Refunds" |
+| `refund` | Transaction | An `occurred` transaction, or a posting of one | See "Refunds" |
 | `system` | Transaction, posting | Nothing | Only on generated transactions, such as `system:balance` (see [transactions.md](transactions.md), "System-generated transactions") |
 
 - A scope that Core does not define, such as `#category:camera`, is `tag.unknown-scope` (error).
 - A tag written where its scope may not stand, such as `#refund:x` on a posting, is `tag.wrong-level` (error). Only where a tag is written counts: a transaction's tags are also a posting's tags, and are not checked again there.
-- A tag whose anchor does not name the record its scope needs is `tag.wrong-target` (error). For `refund`, this includes an anchor no record defines, and one that names a posting, an account, or a `planned` or `cancelled` transaction.
+- A tag whose anchor does not name the record its scope needs is `tag.wrong-target` (error). For `refund`, this includes an anchor no record defines, and one that names an account, a `planned` or `cancelled` transaction or a posting of one, or a posting of the transaction the tag is written on.
 - A `system` tag written in a ledger is `tag.reserved-scope` (error).
 - In all four cases the tag is skipped: it is not in the derived record's tags, and the record loads. The Raw record keeps it, as written (see [ledger.md](ledger.md), "Concepts"). The diagnostic is reported on the record the tag is written on: the transaction for a tag on its header, the posting for a tag on a posting line.
 - The scopes `installment`, `statement`, `fulfills`, `rule` and `shared` are reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
@@ -97,12 +112,21 @@ Status: `implemented`
 
 Status: `implemented`
 
-A **refund** is money that actually comes back. It is a new transaction tagged `#refund:<anchor>`, naming the original transaction; the original is never changed. A mistake is not a refund: it is corrected by cancelling the wrong transaction (see [transactions.md](transactions.md), "Status and occurrence").
+A **refund** is money that actually comes back. It is a new transaction tagged `#refund:<anchor>`, naming the original: a transaction, or one posting of it. The original is never changed. A mistake is not a refund: it is corrected by cancelling the wrong transaction (see [transactions.md](transactions.md), "Status and occurrence").
 
 - The refund counts with its own postings and its own times, like any transaction. A transaction may be refunded more than once.
-- **Refunded amount.** Refunds are measured on the original's income and expense postings, per account and commodity. The **original amount** is the original transaction's net amount on that account in that commodity. The **refunded amount** is the net of every `occurred` refund transaction's postings on the same account and commodity, counted in the opposite direction. Other accounts, such as the bank the money comes back to, and other commodities are not measured.
-- When, on some account and commodity, the refunded amount exceeds the original amount by more than the tolerance of [balance.md](balance.md), "Balance assertions", that is `refund.exceeds` (warning). It is a warning about the anchor, so it is reported once per refunded transaction, however many accounts or commodities exceed, on the refund transaction that first makes one exceed, in transaction order. The message names the anchor and, for each account and commodity that exceeds, the original amount and the refunded amount over every `occurred` refund in the ledger, not only those up to the refund it is reported on. A refund beyond the original is allowed, since a shop may add compensation; nothing is changed.
+- **Refunded amount.** When the anchor names a transaction, refunds are measured on its income and expense postings, per account and commodity, and the **original amount** is the transaction's net amount on that account in that commodity. When the anchor names a posting, they are measured on that posting alone, whatever the type of its account, and the original amount is the posting's amount, on its account in its commodity. This refunds money that was set aside rather than spent, such as a stock subscription kept in a receivable. The **refunded amount** is the net of every `occurred` refund transaction's postings on the same account and commodity, counted in the opposite direction. Other accounts, such as the bank the money comes back to, and other commodities are not measured.
+- When, on some account and commodity, the refunded amount exceeds the original amount by more than the tolerance of [balance.md](balance.md), "Balance assertions", that is `refund.exceeds` (warning). It is a warning about the anchor, so it is reported once per refunded transaction or posting, however many accounts or commodities exceed, on the refund transaction that first makes one exceed, in transaction order. The message names the anchor and, for each account and commodity that exceeds, the original amount and the refunded amount over every `occurred` refund in the ledger, not only those up to the refund it is reported on. A refund beyond the original is allowed, since a shop may add compensation; nothing is changed.
 - A fee kept by the shop is a third posting in the refund. The refunded amount is still what was taken off the original's account, so it is not counted as short.
+
+### `refunds`
+
+Status: `implemented`
+
+- It takes the IDs of refunded records, optional; without them, every refunded record. A **refunded record** is a transaction or posting named by a refund tag, on a transaction of any occurrence; only `occurred` refunds are counted, so one named only by `planned` or `cancelled` refunds has nothing refunded. An ID that names no refunded record gives no rows.
+- It returns one row per refunded record, account and commodity measured (see "Refunds"). A refunded transaction with no income or expense postings gives no rows.
+- Rows follow the refunded records in transaction order, a posting right after its transaction, postings in their order; within one record, the order in which the measured postings first name each account and commodity.
+- It counts every `occurred` refund in the ledger; it has no time limit.
 
 ### Looking up by ID
 
@@ -117,6 +141,7 @@ Status: `implemented`
 ## API
 
 - Records are looked up with the query clause `ids`, and members of a group with `tags` and `primaryTag` (see [query.md](query.md), "API").
+- `refunds(ledger, { ids })` returns the rows of "`refunds`". The argument is optional. It throws before initialization.
 - `anchorKey` is described in [ledger.md](ledger.md), "API".
 
 ## Examples
@@ -171,7 +196,7 @@ No diagnostics. The flight's tag `trip-1018` is anchored: its `target` is `trip-
 | `2026-10-05 * %lunch.1005 "Lunch"` with postings | `anchor.invalid-name`; the block is not loaded |
 
 ```hueke
-2026-10-11 * "Hotel deposit"
+2026-10-11 ! "Hotel deposit"
     Expenses:Lodging     1000 NTD  %deposit-1011
     Bank:Checking       -1000 NTD
 
@@ -196,7 +221,7 @@ No diagnostics. The flight's tag `trip-1018` is anchored: its `target` is `trip-
     Expenses:ReconcileDiff    -10 NTD
 ```
 
-`check` reports `tag.unknown-scope` for `#category:camera`; `tag.wrong-level` for `#refund:t_self` on the 2026-10-15 posting; `tag.wrong-target` for `#refund:deposit-1011`, which names a posting; `tag.self-reference` for 2026-10-17; `tag.reserved-scope` for `#system:balance`. Every transaction loads, without the faulty tag.
+`check` reports `tag.unknown-scope` for `#category:camera`; `tag.wrong-level` for `#refund:t_self` on the 2026-10-15 posting; `tag.wrong-target` for `#refund:deposit-1011`, which names a posting of a `planned` transaction; `tag.self-reference` for 2026-10-17; `tag.reserved-scope` for `#system:balance`. Every transaction loads, without the faulty tag.
 
 **Refunds**
 
@@ -252,3 +277,26 @@ No diagnostics: the refunded amount on `Expenses:Furniture` is 5000 NTD, equal t
 ```
 
 One `refund.exceeds` (warning), on the 2026-10-20 transaction: `t_gift`, `Expenses:Other`, original 500 NTD, refunded 600 NTD. `Expenses:Other` totals −100 NTD.
+
+`refunds(ledger)` gives one row: `target` `t_gift`, `Expenses:Other`, `original` 500 NTD, `refunded` 600 NTD, `remaining` −100 NTD, `full` false, `exceeds` true, `refunds` the two refund transactions.
+
+```hueke
+account Assets:Receivable
+    obligation receivable
+
+2026-10-05 * %t_lottery "Stock lottery" @broker
+    Assets:Receivable:lottery-1005    50000 NTD  %p_subscription @broker
+    Expenses:Fees                        20 NTD
+    Bank:Checking                    -50020 NTD
+
+2026-10-08 * "Lottery not won" #refund:p_subscription
+    Assets:Receivable:lottery-1005   -50000 NTD
+    Bank:Checking                     50000 NTD
+```
+
+No diagnostics. The refund names the posting, so it is measured on `Assets:Receivable:lottery-1005` alone: original 50000 NTD, refunded 50000 NTD; `refunds(ledger)` gives that one row, `full` true. `Expenses:Fees` is not measured. The refund's posting is also a repayment, so the obligation `lottery-1005` is settled. Naming the transaction instead, `#refund:t_lottery`, measures only `Expenses:Fees`, original 20 NTD, refunded 0 NTD.
+
+| Ledger text | `check` |
+| --- | --- |
+| The same, and a third transaction `2026-10-09 * "Refunded twice" #refund:p_subscription` with `Assets:Receivable:lottery-1005 -50000 NTD` and `Bank:Checking 50000 NTD` | One `refund.exceeds` on 2026-10-09: `p_subscription`, `Assets:Receivable:lottery-1005`, original 50000 NTD, refunded 100000 NTD; the obligation is also over-repaid, `remaining` −50000 NTD |
+| `2026-10-06 * "Own posting" #refund:p_own` with `Assets:Cash 30 NTD %p_own` and `Expenses:Food -30 NTD` | `tag.wrong-target`: the anchor names a posting of the transaction the tag is written on |
