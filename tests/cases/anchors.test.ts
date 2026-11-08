@@ -1,7 +1,16 @@
 // docs/core/anchors.md
 import { describe, expect, it } from "vitest";
-import { balance, check, parse, position, query } from "../../srcs/index.js";
-import type { AccountTreeRow, Hueke } from "../../srcs/index.js";
+import {
+  balance,
+  check,
+  Hueke,
+  obligations,
+  parse,
+  position,
+  query,
+  refunds,
+} from "../../srcs/index.js";
+import type { AccountTreeRow } from "../../srcs/index.js";
 import { balanceOf, codes, descriptions, diagnostics, ledger, modules, rows } from "./ledger.js";
 
 /** Every account tree row, subtotals included, as "account [subtotal] value commodity". */
@@ -296,7 +305,7 @@ describe("anchors", () => {
 
 describe("scopes", () => {
   const h = ledger(`
-2026-10-11 * "Hotel deposit"
+2026-10-11 ! "Hotel deposit"
     Expenses:Lodging     1000 NTD  %deposit-1011
     Bank:Checking       -1000 NTD
 
@@ -653,6 +662,188 @@ describe("refunds", () => {
     expect(transaction(h, "Refunded too much")?.span).toBeDefined();
     expect(d?.span?.start).toBe(transaction(h, "Refunded too much")?.span?.start);
     expect(d?.message).toContain("refunded 700 NTD");
+  });
+
+  describe("a refund naming a posting", () => {
+    const LOTTERY = `
+account Assets:Receivable
+    obligation receivable
+
+2026-10-05 * %t_lottery "Stock lottery" @broker
+    Assets:Receivable:lottery-1005    50000 NTD  %p_subscription @broker
+    Expenses:Fees                        20 NTD
+    Bank:Checking                    -50020 NTD
+
+2026-10-08 * "Lottery not won" #refund:p_subscription
+    Assets:Receivable:lottery-1005   -50000 NTD
+    Bank:Checking                     50000 NTD
+`;
+    const h = ledger(LOTTERY);
+
+    it("is measured on that posting alone, whatever its account type", () => {
+      expect(codes(h)).toEqual([]);
+    });
+    it("naming the transaction instead measures only its expense postings", () => {
+      const whole = ledger(LOTTERY.replace("#refund:p_subscription", "#refund:t_lottery"));
+      expect(codes(whole)).toEqual([]);
+      expect(
+        refunds(whole).map(
+          (r) => `${r.account} ${r.original.value}/${r.refunded.value}/${r.remaining.value}`,
+        ),
+      ).toEqual(["Expenses:Fees 20/0/20"]);
+    });
+    it("settles the receivable it refunds", () => {
+      const [r] = obligations(h, { all: true });
+      expect(r?.account).toBe("Assets:Receivable:lottery-1005");
+      expect(r?.settled).toBe(true);
+      expect(r?.remaining).toEqual({ value: "0", commodity: "NTD" });
+    });
+    it("is a member of the posting's refund tag", () => {
+      expect(descriptions(query(h).tags("refund:p_subscription"))).toEqual(["Lottery not won"]);
+    });
+    it("refunded twice: one warning, and the obligation is over-repaid", () => {
+      const g = ledger(`${LOTTERY}
+2026-10-09 * "Refunded twice" #refund:p_subscription
+    Assets:Receivable:lottery-1005   -50000 NTD
+    Bank:Checking                     50000 NTD
+`);
+      expect(codes(g)).toEqual(["refund.exceeds"]);
+      const [d] = diagnostics(g, "refund.exceeds");
+      expect(transaction(g, "Refunded twice")?.span).toBeDefined();
+      expect(d?.span?.start).toBe(transaction(g, "Refunded twice")?.span?.start);
+      for (const part of [
+        "p_subscription",
+        "Assets:Receivable:lottery-1005",
+        "original 50000 NTD",
+        "refunded 100000 NTD",
+      ])
+        expect(d?.message).toContain(part);
+      const [r] = obligations(g, { all: true });
+      expect(r?.remaining).toEqual({ value: "-50000", commodity: "NTD" });
+    });
+    it("does not measure the other postings of the original transaction", () => {
+      const g = ledger(`${LOTTERY}
+2026-10-09 * "Fee refunded with compensation" #refund:p_subscription
+    Expenses:Fees     -100 NTD
+    Bank:Checking      100 NTD
+`);
+      expect(codes(g)).toEqual([]);
+    });
+    it("a posting of the transaction the tag is written on: wrong target", () => {
+      const g = ledger(`
+2026-10-06 * "Own posting" #refund:p_own
+    Assets:Cash        30 NTD  %p_own
+    Expenses:Food     -30 NTD
+`);
+      expect(codes(g)).toEqual(["tag.wrong-target"]);
+      expect(transaction(g, "Own posting")?.tags).toEqual([]);
+    });
+    it("a posting of a planned transaction: wrong target", () => {
+      const g = ledger(`
+2026-10-03 ! "Planned deposit"
+    Expenses:Lodging     1000 NTD  %p_planned
+    Bank:Checking       -1000 NTD
+
+2026-10-10 * "Refund" #refund:p_planned
+    Bank:Checking        1000 NTD
+    Expenses:Lodging    -1000 NTD
+`);
+      expect(codes(g)).toEqual(["tag.wrong-target"]);
+    });
+  });
+});
+
+describe("the refunds function", () => {
+  const h = ledger(`
+2026-10-03 * %t_gift "Gift"
+    Expenses:Other     500 NTD
+    Assets:Cash       -500 NTD
+
+2026-10-04 * %t_trip "Trip" #travel
+    Expenses:Lodging     1000 NTD
+    Expenses:Food         400 NTD  %p_food
+    Bank:Checking       -1400 NTD
+
+2026-10-05 * %t_sale "Sold a lamp"
+    Assets:Cash        500 NTD
+    Income:Sales      -500 NTD
+
+2026-10-10 * %r_gift1 "Partly refunded" #refund:t_gift
+    Assets:Cash        300 NTD
+    Expenses:Other    -300 NTD
+
+2026-10-11 * %r_trip "Lodging back" #refund:t_trip
+    Bank:Checking      1000 NTD
+    Expenses:Lodging  -1000 NTD
+
+2026-10-12 * %r_sale "Lamp returned" #refund:t_sale
+    Assets:Cash       -200 NTD
+    Income:Sales       200 NTD
+
+2026-10-13 ! "Planned refund" #refund:t_gift
+    Assets:Cash        200 NTD
+    Expenses:Other    -200 NTD
+
+2026-10-14 * %r_food "Food back" #refund:p_food
+    Bank:Checking        50 NTD
+    Expenses:Food       -50 NTD
+
+2026-10-20 * %r_gift2 "Shop added compensation" #refund:t_gift
+    Assets:Cash        300 NTD
+    Expenses:Other    -300 NTD
+`);
+  const line = (r: ReturnType<typeof refunds>[number]): string =>
+    `${r.target} ${r.account} ${r.original.value}/${r.refunded.value}/${r.remaining.value}` +
+    `${r.full ? " full" : ""}${r.exceeds ? " exceeds" : ""} [${r.refunds.join(",")}]`;
+
+  it("lists every refunded record in transaction order, a posting after its transaction", () => {
+    expect(codes(h)).toEqual(["refund.exceeds"]);
+    expect(refunds(h).map(line)).toEqual([
+      "t_gift Expenses:Other 500/600/-100 exceeds [r_gift1,r_gift2]",
+      "t_trip Expenses:Lodging 1000/1000/0 full [r_trip]",
+      "t_trip Expenses:Food 400/0/400 [r_trip]",
+      "p_food Expenses:Food 400/50/350 [r_food]",
+      "t_sale Income:Sales 500/200/300 [r_sale]",
+    ]);
+  });
+  it("gives amounts in the record's commodity", () => {
+    const [r] = refunds(h, { ids: ["t_gift"] });
+    expect(r?.original).toEqual({ value: "500", commodity: "NTD" });
+    expect(r?.remaining).toEqual({ value: "-100", commodity: "NTD" });
+  });
+  it("takes the IDs of refunded records; other IDs give no rows", () => {
+    expect(refunds(h, { ids: ["p_food", "t_sale"] }).map((r) => r.target)).toEqual([
+      "p_food",
+      "t_sale",
+    ]);
+    expect(refunds(h, { ids: ["r_gift1", "nowhere"] })).toEqual([]);
+  });
+  it("a record named only by a planned refund is listed with nothing refunded", () => {
+    const g = ledger(`
+2026-10-03 * %t_book "Bookstore"
+    Expenses:Other     500 NTD
+    Assets:Cash       -500 NTD
+
+2026-10-20 ! "Refund to come" #refund:t_book
+    Assets:Cash        500 NTD
+    Expenses:Other    -500 NTD
+`);
+    expect(refunds(g).map(line)).toEqual(["t_book Expenses:Other 500/0/500 []"]);
+  });
+  it("full and exceeds follow the tolerance", () => {
+    const within = ledger(`
+2026-10-03 * %t_usd "Online order"
+    Expenses:Other     10.00 USD
+    Bank:Checking     -10.00 USD
+
+2026-10-10 * "Refund" #refund:t_usd
+    Bank:Checking      10.004 USD
+    Expenses:Other    -10.004 USD
+`);
+    expect(refunds(within).map((r) => [r.full, r.exceeds])).toEqual([[true, false]]);
+  });
+  it("throws before initialization", () => {
+    expect(() => refunds(new Hueke())).toThrow();
   });
 });
 

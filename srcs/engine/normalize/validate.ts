@@ -19,7 +19,6 @@ import {
   decimal,
   isInteger,
   mul,
-  neg,
   rational,
   sub,
   tenToMinus,
@@ -30,11 +29,14 @@ import { diagnostic } from "../../data/source/diagnostics.js";
 import {
   balanceAt,
   balanceBelongs,
+  measureRefunds,
+  refundExceeds,
   show,
   unclearedBetween,
   weightOf,
   withinHalfUnit,
   type ObligationEntities,
+  type RefundMeasure,
 } from "./shared.js";
 
 export interface ValidationInput {
@@ -262,83 +264,42 @@ function obligationPostings(input: ValidationInput, out: Diagnostic[]): void {
 }
 
 /**
- * Refunds beyond the original amount, per income and expense account and commodity
- * (docs/core/anchors.md, "Refunds"); once per refunded transaction.
+ * Refunds beyond the original amount (docs/core/anchors.md, "Refunds"): per income and expense
+ * account and commodity of a refunded transaction, or on the account and commodity of a refunded
+ * posting alone; once per refunded transaction or posting.
  */
 function refunds(input: ValidationInput, out: Diagnostic[]): void {
   const { transactions, accounts, commodities } = input;
-  const byId = new Map(transactions.map((t) => [t.id, t]));
-  const pnl = (account: Id): boolean => {
-    const type = accounts.get(account)?.type;
-    return type === "income" || type === "expense";
-  };
-  const net = (t: Transaction): Map<string, Rational> => {
-    const totals = new Map<string, Rational>();
-    for (const p of t.postings) {
-      if (!pnl(p.account)) continue;
-      const key = `${p.account}\u0000${p.amount.commodity}`;
-      totals.set(key, add(totals.get(key) ?? ZERO, rational(p.amount.value)));
-    }
-    return totals;
-  };
-  const state = new Map<
-    Id,
-    { original: Map<string, Rational>; refunded: Map<string, Rational>; first?: Transaction }
-  >();
-  const exceeds = (original: Rational, refunded: Rational, key: string): boolean => {
-    if (original.n === 0n) return false;
-    // Refunds go the other way from the original.
-    const back = original.n > 0n ? neg(refunded) : refunded;
+  const exceeds = (m: RefundMeasure, key: string): boolean => {
     const precision = commodities.get(key.split("\u0000")[1] ?? "")?.precision ?? 0;
-    return cmp(sub(back, abs(original)), mul(rational("0.5"), tenToMinus(precision))) > 0;
+    return refundExceeds(m.original.get(key) ?? ZERO, m.refunded.get(key) ?? ZERO, precision);
   };
-  for (const t of transactions) {
-    if (t.occurrence !== "occurred") continue;
-    const targets = new Set(
-      t.tags
-        .filter((tag) => tag.scope === "refund" && tag.target !== undefined)
-        .map((tag) => tag.target as Id),
-    );
-    for (const target of targets) {
-      const original = byId.get(target);
-      if (!original) continue;
-      let s = state.get(target);
-      if (!s) {
-        s = { original: net(original), refunded: new Map() };
-        state.set(target, s);
-      }
-      for (const [key, value] of net(t)) {
-        if (!s.original.has(key)) continue;
-        s.refunded.set(key, add(s.refunded.get(key) ?? ZERO, value));
-      }
-      const current = s;
-      if (
-        !current.first &&
-        [...current.refunded].some(([key, r]) => exceeds(current.original.get(key) ?? ZERO, r, key))
-      )
-        current.first = t;
-    }
-  }
+  const first = new Map<RefundMeasure, Transaction>();
+  const measures = measureRefunds(transactions, accounts, (m, refund) => {
+    if (!first.has(m) && [...m.refunded.keys()].some((key) => exceeds(m, key)))
+      first.set(m, refund);
+  });
   // In the order of the refunds that exceed.
   const position = new Map(transactions.map((t, i) => [t, i]));
-  const exceeded = [...state].flatMap(([target, s]) =>
-    s.first ? [{ target, s, first: s.first }] : [],
-  );
+  const exceeded = [...measures].flatMap(([target, m]) => {
+    const t = first.get(m);
+    return t ? [{ target, m, first: t }] : [];
+  });
   exceeded.sort((a, b) => (position.get(a.first) ?? 0) - (position.get(b.first) ?? 0));
-  for (const { target, s, first } of exceeded) {
-    const parts = [...s.refunded]
-      .filter(([key, r]) => exceeds(s.original.get(key) ?? ZERO, r, key))
+  for (const { target, m, first: t } of exceeded) {
+    const parts = [...m.refunded]
+      .filter(([key]) => exceeds(m, key))
       .map(([key, r]) => {
         const [account = "", commodity = ""] = key.split("\u0000");
-        const original = s.original.get(key) ?? ZERO;
+        const original = m.original.get(key) ?? ZERO;
         return `${account} original ${show(abs(original), commodity)}, refunded ${show(abs(r), commodity)}`;
       });
     out.push(
       diagnostic(
         "refund.exceeds",
         `the refunds of ${target} exceed it: ${parts.join("; ")}`,
-        first.source,
-        first.span,
+        t.source,
+        t.span,
       ),
     );
   }
