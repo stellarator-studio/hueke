@@ -21,6 +21,7 @@ import {
   mul,
   neg,
   rational,
+  sub,
   tenToMinus,
   ZERO,
   type Rational,
@@ -191,3 +192,86 @@ export function unclearedBetween(
   }
   return out;
 }
+
+/** The key of one account and commodity measured for a refund. */
+export const refundLineKey = (account: Id, commodity: Id): string => `${account}\u0000${commodity}`;
+
+/** One refunded record, measured (docs/core/anchors.md, "Refunds"). */
+export interface RefundMeasure {
+  /**
+   * The original's signed net per measured account and commodity (`refundLineKey`), in the order
+   * the measured postings first name them.
+   */
+  readonly original: Map<string, Rational>;
+  /** The signed net of the occurred refunds on each of those accounts and commodities. */
+  readonly refunded: Map<string, Rational>;
+  /** The occurred refund transactions that name the record, in transaction order. */
+  readonly refunds: Transaction[];
+}
+
+/**
+ * Every record a refund tag names, by its ID, measured over the occurred refunds in transaction
+ * order: a transaction on its income and expense postings, a posting on itself. A record named
+ * only by planned or cancelled refunds has nothing refunded. `added` runs after each
+ * refund is counted, for the diagnostic that names the refund which first exceeds.
+ */
+export function measureRefunds(
+  transactions: readonly Transaction[],
+  accounts: ReadonlyMap<Id, Account>,
+  added?: (measure: RefundMeasure, refund: Transaction) => void,
+): Map<Id, RefundMeasure> {
+  const byId = new Map(transactions.map((t) => [t.id, t]));
+  const postingById = new Map(transactions.flatMap((t) => t.postings.map((p) => [p.id, p])));
+  const pnl = (account: Id): boolean => {
+    const type = accounts.get(account)?.type;
+    return type === "income" || type === "expense";
+  };
+  const net = (postings: readonly Posting[]): Map<string, Rational> => {
+    const totals = new Map<string, Rational>();
+    for (const p of postings) {
+      const key = refundLineKey(p.account, p.amount.commodity);
+      totals.set(key, add(totals.get(key) ?? ZERO, rational(p.amount.value)));
+    }
+    return totals;
+  };
+  const measures = new Map<Id, RefundMeasure>();
+  for (const t of transactions) {
+    const targets = new Set(
+      t.tags.flatMap((tag) => (tag.scope === "refund" && tag.target ? [tag.target] : [])),
+    );
+    for (const target of targets) {
+      let m = measures.get(target);
+      if (!m) {
+        const original = byId.get(target);
+        const posting = postingById.get(target);
+        const measured = original
+          ? original.postings.filter((p) => pnl(p.account))
+          : posting && [posting];
+        if (!measured) continue;
+        m = { original: net(measured), refunded: new Map(), refunds: [] };
+        measures.set(target, m);
+      }
+      if (t.occurrence !== "occurred") continue;
+      m.refunds.push(t);
+      for (const [key, value] of net(t.postings))
+        if (m.original.has(key)) m.refunded.set(key, add(m.refunded.get(key) ?? ZERO, value));
+      added?.(m, t);
+    }
+  }
+  return measures;
+}
+
+/** A refunded net counted in the opposite direction from the original's. */
+export const refundedBack = (original: Rational, refunded: Rational): Rational =>
+  original.n > 0n ? neg(refunded) : refunded;
+
+/**
+ * Whether the refunds exceed the original by more than the tolerance of Balance assertions; never
+ * when the original is zero.
+ */
+export const refundExceeds = (original: Rational, refunded: Rational, precision: number): boolean =>
+  original.n !== 0n &&
+  cmp(
+    sub(refundedBack(original, refunded), abs(original)),
+    mul(rational("0.5"), tenToMinus(precision)),
+  ) > 0;

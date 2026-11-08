@@ -60,7 +60,7 @@ export function duplicateAnchors(
 /** A record that defines an anchor. */
 type Definer =
   | { readonly kind: "transaction"; readonly transaction: Transaction }
-  | { readonly kind: "posting"; readonly posting: Posting }
+  | { readonly kind: "posting"; readonly posting: Posting; readonly transaction: Transaction }
   | { readonly kind: "account"; readonly account: Account };
 
 const idOf = (d: Definer): Id =>
@@ -82,7 +82,7 @@ export function resolveTags(
       definers.set(t.id, { kind: "transaction", transaction: t });
     for (const p of t.postings)
       if (p.origin?.anchor && p.id === anchorKey(p.origin.anchor))
-        definers.set(p.id, { kind: "posting", posting: p });
+        definers.set(p.id, { kind: "posting", posting: p, transaction: t });
   }
   for (const a of accounts)
     if (a.anchor !== undefined) definers.set(a.anchor, { kind: "account", account: a });
@@ -155,14 +155,25 @@ function resolve(
       report("tag.self-reference", `${text} names the ${level} it is written on`);
       continue;
     }
-    if (
-      scope === "refund" &&
-      !(definer?.kind === "transaction" && definer.transaction.occurrence === "occurred")
-    ) {
-      report("tag.wrong-target", `${text} must name an occurred transaction`);
+    if (scope === "refund" && !refundable(definer, self)) {
+      report(
+        "tag.wrong-target",
+        `${text} must name an occurred transaction, or a posting of another occurred transaction`,
+      );
       continue;
     }
     tags.push({ scope, ref: w.ref, ...(definer && { target: idOf(definer) }) });
   }
   return tags;
+}
+
+/**
+ * Whether a refund tag written on the transaction `self` may name `definer`: an occurred
+ * transaction, or a posting of an occurred transaction other than `self`.
+ */
+function refundable(definer: Definer | undefined, self: Id): boolean {
+  if (definer?.kind === "transaction") return definer.transaction.occurrence === "occurred";
+  if (definer?.kind === "posting")
+    return definer.transaction.occurrence === "occurred" && definer.transaction.id !== self;
+  return false;
 }
