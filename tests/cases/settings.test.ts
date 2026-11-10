@@ -1,6 +1,7 @@
 // docs/core/settings.md
 import { describe, expect, it } from "vitest";
-import { check, position, query } from "../../srcs/index.js";
+import { check, Hueke, parse, position, query, setOption } from "../../srcs/index.js";
+import type { TextPatch } from "../../srcs/index.js";
 import { balanceOf, codes, diagnostics, ledger } from "./ledger.js";
 
 const messages = (h: ReturnType<typeof ledger>): string =>
@@ -52,6 +53,23 @@ describe("ledger settings", () => {
     const h = ledger("option pad-account nothing here\n");
     expect(codes(h, true)).toEqual([]);
     expect(h.settings.padAccount).toBe("nothing here");
+  });
+
+  it("reads a quoted value as a string", () => {
+    const h = ledger('option timezone "Asia/Taipei"\n', { prelude: "" });
+    expect(codes(h, true)).toEqual([]);
+    expect(h.settings.timezone).toBe("Asia/Taipei");
+  });
+
+  it("trims the spaces around a value", () => {
+    const h = ledger("option week-start   sunday  \n");
+    expect(codes(h, true)).toEqual([]);
+    expect(h.settings.weekStart).toBe("sunday");
+  });
+
+  it("keeps the spacing inside a value as written", () => {
+    const h = ledger("option pad-account nothing   here\n");
+    expect(h.settings.padAccount).toBe("nothing   here");
   });
 
   it("lets a pad use a pad-account with an unknown root, reported only on the posting", () => {
@@ -320,5 +338,262 @@ describe("wrong ledger settings", () => {
       expect(h.settings.decimalMark).toBe(".");
       expect(h.settings.groupMark).toBe(",");
     });
+  });
+});
+
+describe("changing settings", () => {
+  /** A ledger of main.hueke alone, or with the other files given, without the shared declarations. */
+  const open = (text: string, others: Record<string, string> = {}): Hueke => {
+    const h = new Hueke();
+    h.load("main.hueke", parse("main.hueke", text));
+    for (const [path, other] of Object.entries(others)) h.load(path, parse(path, other));
+    h.init("main.hueke");
+    return h;
+  };
+
+  /** The text after the patches, checking each `expect` and applying them from the last to the first. */
+  const apply = (text: string, patches: readonly TextPatch[]): string => {
+    let out = text;
+    for (const p of [...patches].reverse()) {
+      expect(p.source).toBe("main.hueke");
+      expect(text.slice(p.start, p.end)).toBe(p.expect);
+      out = out.slice(0, p.start) + p.text + out.slice(p.end);
+    }
+    return out;
+  };
+
+  const changed = (text: string, name: string, value?: string): string =>
+    apply(text, setOption(open(text), name, value));
+
+  it("writes a setting written once again with the new value, in one patch", () => {
+    const text = "option week-start monday\n";
+    const patches = setOption(open(text), "week-start", "sunday");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.expect).toBe("option week-start monday");
+    expect(apply(text, patches)).toBe("option week-start sunday\n");
+  });
+
+  it("keeps the comment on the line of the setting", () => {
+    expect(changed("option timezone Asia/Tokyo  ; office\n", "timezone", "Asia/Taipei")).toBe(
+      "option timezone Asia/Taipei  ; office\n",
+    );
+  });
+
+  it("gives the first writing the new value and removes the others", () => {
+    expect(
+      changed("option timezone UTC\noption timezone Asia/Tokyo\n", "timezone", "Asia/Taipei"),
+    ).toBe("option timezone Asia/Taipei\n");
+  });
+
+  it("inserts a setting not written right after the last option block", () => {
+    const text = "option timezone Asia/Taipei\ncommodity NTD\n";
+    const patches = setOption(open(text), "week-start", "sunday");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.start).toBe(patches[0]?.end);
+    expect(patches[0]?.expect).toBe("");
+    expect(apply(text, patches)).toBe(
+      "option timezone Asia/Taipei\noption week-start sunday\ncommodity NTD\n",
+    );
+  });
+
+  it("inserts it before the first block, after the comments at the top, when no option is written", () => {
+    expect(changed("; my ledger\n\ncommodity NTD\n", "week-start", "sunday")).toBe(
+      "; my ledger\n\noption week-start sunday\n\ncommodity NTD\n",
+    );
+  });
+
+  it("inserts it at the end of a module with no block", () => {
+    expect(changed("", "week-start", "sunday")).toBe("option week-start sunday\n");
+    expect(changed("; only a comment\n", "week-start", "sunday")).toBe(
+      "; only a comment\noption week-start sunday\n",
+    );
+  });
+
+  it("removes a setting with its line break, so the default takes effect again", () => {
+    const text = "option week-start sunday\ncommodity NTD\n";
+    const result = changed(text, "week-start");
+    expect(result).toBe("commodity NTD\n");
+    expect(open(result).settings.weekStart).toBe("monday");
+  });
+
+  it("removes every writing of a setting written twice", () => {
+    const text = "option week-start sunday\ncommodity NTD\noption week-start friday\n";
+    const patches = setOption(open(text), "week-start");
+    expect(patches).toHaveLength(2);
+    expect(apply(text, patches)).toBe("commodity NTD\n");
+  });
+
+  it("gives no patch to remove a setting not written", () => {
+    expect(setOption(open("commodity NTD\n"), "week-start")).toEqual([]);
+  });
+
+  it("gives no patch when the module already reads as it would after the change", () => {
+    expect(setOption(open("option week-start sunday\n"), "week-start", "sunday")).toEqual([]);
+  });
+
+  it("changes only the root module, even when an included module writes the setting", () => {
+    const text = "include accounts.hueke\n";
+    const h = open(text, { "accounts.hueke": "option week-start sunday\n" });
+    const patches = setOption(h, "week-start", "friday");
+    expect(patches.every((p) => p.source === "main.hueke")).toBe(true);
+    expect(apply(text, patches)).toBe("option week-start friday\n\ninclude accounts.hueke\n");
+  });
+
+  it("returns patches sorted by start that do not overlap", () => {
+    const text =
+      "option timezone UTC\noption week-start sunday\noption timezone Asia/Tokyo\ncommodity NTD\noption timezone Europe/Paris\n";
+    const patches = setOption(open(text), "timezone", "Asia/Taipei");
+    expect(patches).toHaveLength(3);
+    for (let i = 1; i < patches.length; i++) {
+      const [before, after] = [patches[i - 1], patches[i]];
+      expect(before && after && before.end <= after.start).toBe(true);
+    }
+    expect(apply(text, patches)).toBe(
+      "option timezone Asia/Taipei\noption week-start sunday\ncommodity NTD\n",
+    );
+  });
+
+  it("gives the new value once the changed module is loaded again", () => {
+    const text = "option week-start monday\ncommodity NTD\n";
+    const h = open(changed(text, "week-start", "sunday"));
+    expect(h.settings.weekStart).toBe("sunday");
+    expect(check(h).map((d) => d.code)).toEqual(["option.missing-timezone"]);
+  });
+
+  it("writes the value as given", () => {
+    expect(changed("commodity NTD\n", "strict", "account, entity")).toBe(
+      "option strict account, entity\n\ncommodity NTD\n",
+    );
+  });
+
+  it.each([
+    ["a name that is not a setting", "currency", "NTD"],
+    ["an invalid value", "week-start", "funday"],
+    ["a value with a comment", "pad-account", "Expenses:Fees ; fees"],
+    ["an empty value", "timezone", ""],
+    ["a value with a line break", "pad-account", "Expenses:Fees\nExpenses:Food"],
+    ["a value with a carriage return", "pad-account", "Expenses:Fees\rExpenses:Food"],
+    ["a value with leading whitespace", "week-start", " sunday"],
+    ["a value with trailing whitespace", "week-start", "sunday "],
+  ])("throws on %s", (_, name, value) => {
+    const h = open("option week-start monday\n");
+    expect(() => setOption(h, name, value)).toThrow();
+  });
+
+  it("throws before initialization and when the root module was never loaded", () => {
+    const h = new Hueke();
+    h.load("main.hueke", parse("main.hueke", "option week-start monday\n"));
+    expect(() => setOption(h, "week-start", "sunday")).toThrow();
+    const missing = new Hueke();
+    missing.init("main.hueke");
+    expect(() => setOption(missing, "week-start", "sunday")).toThrow();
+  });
+
+  it("writes an income-expense root already taken, reported by check once loaded again", () => {
+    const text = "account-root Flow asset\n";
+    const result = changed(text, "income-expense", "on Flow");
+    expect(result).toBe("option income-expense on Flow\n\naccount-root Flow asset\n");
+    expect(check(open(result)).map((d) => d.code)).toContain("option.invalid-root");
+  });
+
+  it("writes a decimal-mark equal to the group-mark, reported by check once loaded again", () => {
+    const text = "option group-mark .\n";
+    const result = changed(text, "decimal-mark", ".");
+    expect(result).toBe("option group-mark .\noption decimal-mark .\n");
+    expect(check(open(result)).map((d) => d.code)).toContain("option.invalid-number-format");
+  });
+
+  it("keeps the comments on lines the block owns", () => {
+    expect(
+      changed("option timezone UTC\n    ; office\ncommodity NTD\n", "timezone", "Asia/Taipei"),
+    ).toBe("option timezone Asia/Taipei\n    ; office\ncommodity NTD\n");
+  });
+
+  it("rewrites a writing with the same value that is not in canonical form", () => {
+    const text = "option  week-start   sunday\n";
+    const patches = setOption(open(text), "week-start", "sunday");
+    expect(patches).toHaveLength(1);
+    expect(apply(text, patches)).toBe("option week-start sunday\n");
+  });
+
+  it("throws on a value with a tab", () => {
+    const h = open("option week-start monday\n");
+    expect(() => setOption(h, "pad-account", "Expenses:A\tB")).toThrow();
+  });
+
+  it.each([
+    ["pad-account", "Expenses:A  B", "padAccount"],
+    ["income-expense", "on  Flow", "incomeExpenseRoot"],
+  ] as const)("writes %s %s with its spaces in a row as given", (name, value, field) => {
+    const result = changed("commodity NTD\n", name, value);
+    expect(result).toBe(`option ${name} ${value}\n\ncommodity NTD\n`);
+    const again = open(result);
+    expect(check(again).map((d) => d.code)).not.toContain("option.invalid-value");
+    expect(again.settings[field]).toBe(name === "income-expense" ? "Flow" : value);
+  });
+
+  describe("in a file whose line breaks are all \\r\\n", () => {
+    it("inserts after the last option block with \\r\\n", () => {
+      expect(changed("option timezone UTC\r\ncommodity NTD\r\n", "week-start", "sunday")).toBe(
+        "option timezone UTC\r\noption week-start sunday\r\ncommodity NTD\r\n",
+      );
+    });
+
+    it("inserts before the first block, followed by a blank line, with \\r\\n", () => {
+      expect(changed("; my ledger\r\n\r\ncommodity NTD\r\n", "week-start", "sunday")).toBe(
+        "; my ledger\r\n\r\noption week-start sunday\r\n\r\ncommodity NTD\r\n",
+      );
+    });
+
+    it("keeps a comment line the block owns and its \\r\\n when the value changes", () => {
+      expect(
+        changed(
+          "option timezone UTC\r\n    ; office\r\ncommodity NTD\r\n",
+          "timezone",
+          "Asia/Taipei",
+        ),
+      ).toBe("option timezone Asia/Taipei\r\n    ; office\r\ncommodity NTD\r\n");
+    });
+
+    it("removes a block with its \\r\\n", () => {
+      expect(
+        changed(
+          "option timezone UTC\r\noption week-start sunday\r\ncommodity NTD\r\n",
+          "week-start",
+        ),
+      ).toBe("option timezone UTC\r\ncommodity NTD\r\n");
+    });
+  });
+
+  it("uses \\n in a file that mixes \\n and \\r\\n", () => {
+    expect(changed("commodity NTD\r\naccount Assets:Cash\n", "week-start", "sunday")).toBe(
+      "option week-start sunday\n\ncommodity NTD\r\naccount Assets:Cash\n",
+    );
+  });
+
+  describe("in a file without a final line break", () => {
+    it("changes the last line", () => {
+      expect(changed("option week-start monday", "week-start", "sunday")).toBe(
+        "option week-start sunday",
+      );
+    });
+
+    it("removes the last line", () => {
+      const result = changed("commodity NTD\noption week-start sunday", "week-start");
+      expect(result).toBe("commodity NTD\n");
+      expect(open(result).settings.weekStart).toBe("monday");
+    });
+
+    it("inserts after the last option block", () => {
+      expect(changed("option timezone UTC", "week-start", "sunday")).toBe(
+        "option timezone UTC\noption week-start sunday",
+      );
+    });
+  });
+
+  it("leaves the ledger the patches came from unchanged", () => {
+    const h = open("option week-start monday\n");
+    setOption(h, "week-start", "sunday");
+    expect(h.settings.weekStart).toBe("monday");
   });
 });

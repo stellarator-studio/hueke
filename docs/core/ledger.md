@@ -12,7 +12,7 @@ Core never sees files. The platform parses each file into a **module** and loads
 | Normalization | `implemented` |
 | IDs | `implemented` |
 | Source positions | `implemented` |
-| Text patches | `specified` |
+| Text patches | `implemented` |
 
 ## Concepts
 
@@ -26,7 +26,7 @@ A **module** is the parsed text of one file, identified by a **logical path** (s
 | Derived model | The result of normalization: inheritance, name resolution, expansion and derivation applied; generated records exist only here. | Queries, validation, views |
 
 - The Raw model is plain immutable data. A module's Raw model holds its records in written order, the comments before its first record, the start offset of each line, and the parse diagnostics.
-- A module's Raw model also holds its `text`, exactly as parsed, so that text patches can name what they replace. [specified]
+- A module's Raw model also holds its `text`, exactly as parsed, so that text patches can name what they replace.
 - Each derived record points back to its Raw record through `origin`. Rules that depend on what was written, such as `posting.pnl-effective`, look at `origin`, not at derived values.
 
 **Ledger**
@@ -148,12 +148,12 @@ Status: `implemented`
 
 ### Text patches
 
-Status: `specified`
+Status: `implemented`
 
 Core never writes files. A function that changes a ledger's text, such as `setOption` (see [settings.md](settings.md), "Changing settings"), returns text patches, and the platform applies them.
 
 - The patches of one call refer to the text the module was parsed from. They never overlap and are sorted by `start`.
-- Before applying, the platform compares each patch's `expect` with its file's current text at that range. When any one differs, the file has changed since it was parsed: the platform applies none of them, and parses and loads the file again before asking again.
+- Before applying, the platform compares the file's current text with the module's `text`. When they differ, the file has changed since it was parsed: the platform applies none of the patches, and parses and loads the file again before asking again. Comparing each patch's `expect` with the text at its range is not enough: an insertion expects nothing, so a change elsewhere in the file would go unnoticed and the insertion would land in the wrong place.
 - Applied from the last to the first, each patch's offsets stay valid.
 - The ledger the patches came from does not change. To see the result, the platform parses and loads the changed module and initializes a new ledger.
 

@@ -147,6 +147,26 @@ include   "a;b.hueke"
     ]);
   });
   it.each([
+    [
+      "without quotes when it needs none",
+      'option timezone "Asia/Taipei"\n',
+      "option timezone Asia/Taipei\n",
+    ],
+    [
+      "with its inner spacing",
+      "option pad-account   Expenses:A  B  \n",
+      "option pad-account Expenses:A  B\n",
+    ],
+    [
+      "quoted when it holds a ;",
+      'option pad-account "Expenses:A;B"\n',
+      'option pad-account "Expenses:A;B"\n',
+    ],
+  ])("writes an option's value %s", (_, text, written) => {
+    expect(canonical(text)).toEqual([written]);
+    expect(canonical(written)).toEqual([written]);
+  });
+  it.each([
     ["a path with a space", 'include "a b.hueke"\n', "a b.hueke"],
     ["a path with brackets", 'include "a[1].hueke"\n', "a[1].hueke"],
     ["a plain path", "include 2026/10.hueke\n", "2026/10.hueke"],

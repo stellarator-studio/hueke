@@ -212,7 +212,7 @@ export function parse(path: SourcePath, text: string): ModuleData {
   const builder = new Builder(path, text, tokens, lineStarts, lineErrors, diagnostics);
   builder.build(tree);
   diagnostics.sort((a, b) => (a.span?.start ?? 0) - (b.span?.start ?? 0));
-  return { comments: builder.comments, items: builder.items, lineStarts, diagnostics };
+  return { comments: builder.comments, items: builder.items, text, lineStarts, diagnostics };
 }
 
 function computeLineStarts(text: string): number[] {
@@ -536,11 +536,11 @@ class Builder {
     const args = (kind: DeclarationKind, values: string[], extra: Partial<DeclarationData> = {}) =>
       ({ kind, args: values, ...base, ...extra }) as DeclarationData;
 
-    if (ctx instanceof OptionDeclContext)
-      return args(
-        "option",
-        words.map((t) => this.text(t)),
-      );
+    if (ctx instanceof OptionDeclContext) {
+      // The name, then the value: the rest of the line, as a property's (docs/dsl/lexical.md).
+      const [, name] = toks;
+      return args("option", name ? [this.text(name), this.propertyValue(toks, 2)] : []);
+    }
     if (ctx instanceof RootDeclContext) {
       const values = words.map((t) => this.text(t));
       const [name, type, ...extra] = values;
@@ -1083,13 +1083,14 @@ class Builder {
     return start && stop ? this.src.slice(start.start, stop.stop + 1) : "";
   }
 
-  /** Text after the first token, trimmed. */
-  private rest(toks: Token[]): string {
-    return toks.length > 1 ? this.range(toks, 1, toks.length).trim() : "";
+  /** Text from toks[from] to the end of the line, trimmed. */
+  private rest(toks: Token[], from = 1): string {
+    return toks.length > from ? this.range(toks, from, toks.length).trim() : "";
   }
 
-  private propertyValue(toks: Token[]): string {
-    const value = this.rest(toks);
+  /** A property's or option's value: the rest of the line, unquoted when quoted as a whole. */
+  private propertyValue(toks: Token[], from = 1): string {
+    const value = this.rest(toks, from);
     return value.length > 1 && value.startsWith('"') && value.endsWith('"')
       ? unquote(value)
       : value;

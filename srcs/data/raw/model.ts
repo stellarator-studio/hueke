@@ -197,6 +197,8 @@ export interface ModuleData {
   /** Comments before the first block; Metadata there is `parse.orphan-line`. */
   readonly comments: readonly (NoteLine & { readonly note: CommentNote })[];
   readonly items: readonly ItemData[];
+  /** The text exactly as parsed; text patches name the part they replace from it. */
+  readonly text: string;
   /** Offset where each line starts; lines and columns are computed from it (`position`). */
   readonly lineStarts: readonly number[];
   readonly diagnostics: readonly Diagnostic[]; // parse-stage diagnostics

@@ -151,6 +151,11 @@ describe("source positions", () => {
         text.slice(lunch.postings[1].span.start, lunch.postings[1].span.end),
     ).toBe("Assets:Cash");
   });
+  it("keeps the module's text exactly as parsed", () => {
+    const text =
+      'option timezone UTC\r\n2026-10-12 "Lunch"\n    Expenses:Food  180 NTD\n    Assets:Cash';
+    expect(parse("main.hueke", text).text).toBe(text);
+  });
   it("counts offsets and columns in UTF-16 code units", () => {
     const text = '2026-10-12 "🍜 Ramen" #x\n';
     const data = parse("main.hueke", text);

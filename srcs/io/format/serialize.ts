@@ -121,11 +121,15 @@ class Writer {
   declaration(d: DeclarationData): string[] {
     let head: string;
     switch (d.kind) {
-      case "option":
+      case "option": {
+        // The value runs to the end of the line, as a property's.
+        const [name = "", text = ""] = d.args;
+        head = text === "" ? `option ${name}` : `option ${name} ${value(text)}`;
+        break;
+      }
       case "account-root":
-        if (d.kind === "account-root" && d.args[1] === "shared")
-          throw new Unwritable("account-root shared");
-        head = [d.kind, ...d.args].join(" ");
+        if (d.args[1] === "shared") throw new Unwritable("account-root shared");
+        head = ["account-root", ...d.args].join(" ");
         break;
       case "commodity":
         head = `commodity ${d.args[0] ?? ""}`;

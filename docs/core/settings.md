@@ -8,7 +8,7 @@ A **ledger setting** is written as `option <name> <value>` in the root module an
 | --- | --- |
 | Settings | `implemented` |
 | Errors in settings | `implemented` |
-| Changing settings | `specified` |
+| Changing settings | `implemented` |
 
 ## Behavior
 
@@ -41,7 +41,7 @@ Status: `implemented`
 
 ### Changing settings
 
-Status: `specified`
+Status: `implemented`
 
 A platform changes a setting by asking Core for text patches to the root module and applying them (see [ledger.md](ledger.md), "Text patches"). Only the root module changes: settings written in included modules take no effect and are left as written.
 
@@ -54,16 +54,17 @@ A platform changes a setting by asking Core for text patches to the root module 
 | Does not write it | A line `option <name> <value>` is inserted right after the last `option` block of the root module. With no `option` block, it is inserted before the first block, after the comments at the top of the file, followed by a blank line; with no block at all, at the end of the file |
 | Removing the setting | Every block that writes it is removed, with its line break, and the default takes effect again. A setting not written gives no patch |
 
-- When the root module already reads exactly as it would after the change, no patch is returned.
+- Lines written use the file's line break: `\r\n` when every line break in the file is `\r\n`, `\n` otherwise.
+- When the change would leave the text as it is, no patch is returned: the setting is written once, in canonical form, with this value. A writing with the same value but not in canonical form, such as extra spaces, is rewritten.
 - These are refused with an exception, and no patch is returned:
   - a name that is not a setting, which would be `option.unknown`;
   - a value that would be `option.invalid-value`;
-  - a value that is empty, contains a line break or `;`, or starts or ends with whitespace, since it could not be read back as written.
+  - a value that is empty, contains `;`, or starts or ends with a space, or has whitespace other than spaces, such as a line break or a tab. A setting's value is the rest of its line, trimmed (see [../dsl/lexical.md](../dsl/lexical.md), "Strings and values"), and `setOption` writes a value on one line, unquoted.
 - A value that is valid on its own but not in this ledger is written, and is reported by `check` once the changed module is loaded again: an `income-expense` name already taken (`option.invalid-root`), a `decimal-mark` equal to the `group-mark` (`option.invalid-number-format`), or a `pad-account` that names an unknown account.
 
 ## API
 
-- `setOption(ledger, name, value)` [specified] returns the text patches that make the root module write `value` for the setting `name`; without `value`, those that remove every writing of it (see "Changing settings"). It throws before initialization, when the root module was never loaded, and on a refused name or value.
+- `setOption(ledger, name, value)` returns the text patches that make the root module write `value` for the setting `name`; without `value`, those that remove every writing of it (see "Changing settings"). It throws before initialization, when the root module was never loaded, and on a refused name or value.
 
 ## Examples
 
@@ -84,7 +85,7 @@ Changing settings. These cases do not load the shared declarations; the root mod
 
 | `main.hueke` | Call | Result |
 | --- | --- | --- |
-| `option week-start monday` | `setOption(ledger, "week-start", "sunday")` | `option week-start sunday`; one patch, with `expect` `option week-start monday` plus its line break |
+| `option week-start monday` | `setOption(ledger, "week-start", "sunday")` | `option week-start sunday`; one patch, with `expect` `option week-start monday` |
 | `option timezone Asia/Tokyo  ; office` | `setOption(ledger, "timezone", "Asia/Taipei")` | `option timezone Asia/Taipei  ; office` |
 | `option timezone UTC`, then `option timezone Asia/Tokyo` | `setOption(ledger, "timezone", "Asia/Taipei")` | `option timezone Asia/Taipei`; the second line is removed |
 | `option timezone Asia/Taipei`, then `commodity NTD` | `setOption(ledger, "week-start", "sunday")` | `option week-start sunday` inserted right after the `timezone` line |
