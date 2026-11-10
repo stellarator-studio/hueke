@@ -1,6 +1,6 @@
 # Loading and normalization
 
-Core never sees files. The platform parses each file into a **module** and loads it; initializing a **ledger** from a root module follows its `include`s, reads its settings and declarations, and normalizes every record into one derived model. This document covers the two models, loading and initialization, declarations and strict mode, the normalization steps, IDs and source positions.
+Core never sees files. The platform parses each file into a **module** and loads it; initializing a **ledger** from a root module follows its `include`s, reads its settings and declarations, and normalizes every record into one derived model. This document covers the two models, loading and initialization, declarations and strict mode, the normalization steps, IDs, source positions, and the text patches through which Core changes a module's text.
 
 ## Features
 
@@ -12,6 +12,7 @@ Core never sees files. The platform parses each file into a **module** and loads
 | Normalization | `implemented` |
 | IDs | `implemented` |
 | Source positions | `implemented` |
+| Text patches | `specified` |
 
 ## Concepts
 
@@ -25,6 +26,7 @@ A **module** is the parsed text of one file, identified by a **logical path** (s
 | Derived model | The result of normalization: inheritance, name resolution, expansion and derivation applied; generated records exist only here. | Queries, validation, views |
 
 - The Raw model is plain immutable data. A module's Raw model holds its records in written order, the comments before its first record, the start offset of each line, and the parse diagnostics.
+- A module's Raw model also holds its `text`, exactly as parsed, so that text patches can name what they replace. [specified]
 - Each derived record points back to its Raw record through `origin`. Rules that depend on what was written, such as `posting.pnl-effective`, look at `origin`, not at derived values.
 
 **Ledger**
@@ -41,6 +43,15 @@ A **module** is the parsed text of one file, identified by a **logical path** (s
 | `entities` | Every entity, declared ones first, then those used without a declaration (see [entities.md](entities.md)). |
 | `transactions` | Every transaction, in order (see [transactions.md](transactions.md), "Order of transactions"), including generated ones. |
 | `balances` | Every Balance assertion (see [balance.md](balance.md)). |
+
+**Text patch**: one change to a module's text, returned by Core for the platform to apply.
+
+| Field | Meaning |
+| --- | --- |
+| `source` | The logical path of the module. |
+| `start`, `end` | The range replaced: offsets in the module's text as parsed, end exclusive. They are equal for an insertion. |
+| `text` | The text put in place of the range. |
+| `expect` | The text of the range as parsed; empty for an insertion. |
 
 ## Behavior
 
@@ -134,6 +145,17 @@ Status: `implemented`
 - Every record parsed from text carries its span: start and end offsets in its module's text, end exclusive. A record's span covers its whole block, from its first line to the last line it owns.
 - Offsets and columns count UTF-16 code units, as JS string indexes do. Lines and columns start at 1.
 - Line and column are computed from the module on request; they are not stored on records.
+
+### Text patches
+
+Status: `specified`
+
+Core never writes files. A function that changes a ledger's text, such as `setOption` (see [settings.md](settings.md), "Changing settings"), returns text patches, and the platform applies them.
+
+- The patches of one call refer to the text the module was parsed from. They never overlap and are sorted by `start`.
+- Before applying, the platform compares each patch's `expect` with its file's current text at that range. When any one differs, the file has changed since it was parsed: the platform applies none of them, and parses and loads the file again before asking again.
+- Applied from the last to the first, each patch's offsets stay valid.
+- The ledger the patches came from does not change. To see the result, the platform parses and loads the changed module and initializes a new ledger.
 
 ## API
 

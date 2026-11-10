@@ -1,6 +1,6 @@
 {
   "name": "@hueke/hueke",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A double-entry bookkeeping command line and library",
   "license": "MIT",
   "repository": {

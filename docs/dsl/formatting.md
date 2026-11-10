@@ -66,7 +66,7 @@ Status: `draft`
 - Formatting rewrites every block of one module of the ledger in canonical form and returns the changes as text patches, each replacing a range of the module's text, for the platform to apply.
 - Blocks already in canonical form produce no change.
 - A block that could not be parsed, that holds syntax reported as `syntax.unsupported`, or whose amounts or times cannot be read with the ledger's settings and commodities, is left exactly as written.
-- The shape of a text patch, and how the platform detects that a file changed since it was parsed, are not settled.
+- Text patches, and how the platform detects that a file changed since it was parsed, are described in [../core/ledger.md](../core/ledger.md), "Text patches".
 
 ## API
 
