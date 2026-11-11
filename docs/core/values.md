@@ -44,7 +44,7 @@ Status: `implemented`
 Status: `implemented`
 
 - Wherever a number is written in an amount, a price, a cost or a Balance, an expression in parentheses may stand instead; breakdown figures take no expressions: `(1000/3) NTD`, `((100 + 50) * 2) NTD`, `-(12.5 * 4)NTD`.
-- The whole number is one pair of parentheses. Inside: numbers in the ledger's marks, `+`, `-`, `*`, `/`, nested parentheses and whitespace. `*` and `/` bind tighter than `+` and `-`; a `-` before a number or a parenthesis negates it. `+` is not a sign.
+- The whole number is one pair of parentheses. Inside: numbers in the ledger's marks, `+`, `-`, `*`, `/`, nested parentheses and whitespace. `*` and `/` bind tighter than `+` and `-`; a `-` before a number, a parenthesis or another `-` negates it, so `(--5)` is 5. `+` is not a sign.
 - The value is exact, a fraction if need be: `(1000/3)` is 1000/3, and three postings of `(1000/3) NTD` add up to exactly 1000 NTD.
 - An expression's decimal places, for inferred precision and `posting.excess-precision`, are the most decimal places among the numbers written in it: `(10/4)` has none, `(0.25 * 2)` has two.
 - An expression that cannot be read, or that divides by zero, is `parse.invalid-number`.

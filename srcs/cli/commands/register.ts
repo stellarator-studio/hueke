@@ -5,7 +5,7 @@ import { UsageError, type CliIO } from "../io.js";
 import { table } from "../output.js";
 import { treeLines } from "./balance.js";
 import {
-  axisOf,
+  axisOption,
   FILTERS,
   filtered,
   OCCURRENCE,
@@ -25,7 +25,7 @@ export const registerCommand: Command = {
   run(hueke: Hueke, args: readonly string[], options: Options, io: CliIO): number {
     if (options.format !== "table")
       throw new UsageError(`register has no ${options.format} output`);
-    const axis = options.axis === undefined ? "effective" : axisOf(options.axis);
+    const axis = axisOption(options);
     const name = shownName(hueke, options);
     const rows = register(hueke, filtered(hueke, args, options), { all: options.all === true });
     // The account lines of every row share one alignment; the postings follow their row.

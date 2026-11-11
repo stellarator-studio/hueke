@@ -114,6 +114,74 @@ describe("lending and repayment", () => {
   });
 });
 
+describe("progress asked several times of one ledger", () => {
+  const h = load(`
+2026-10-20 * "NAT pays the rest"
+    Bank:Checking                   150 NTD
+    Assets:Receivable:lunch-1011   -150 NTD
+
+2026-10-11 * "Lunch"
+    Expenses:Food                   600 NTD
+    Assets:Receivable:lunch-1011    400 NTD @NAT
+    Assets:Cash                   -1000 NTD
+
+2026-10-15 * "NAT pays back"
+    Bank:Checking                   250 NTD
+    Assets:Receivable:lunch-1011   -250 NTD
+`);
+  const lengths = (options: Parameters<typeof obligations>[1]) =>
+    obligations(h, { all: true, ...options }).map((r) => r.postings.length);
+
+  it("gives the same rows each time, whatever was asked before", () => {
+    expect(codes(h)).toEqual([]);
+    const all = progress(h, { all: true });
+    const first = progress(h, { at: "2026-10-15" });
+    expect(progress(h, { all: true })).toEqual(all);
+    expect(progress(h, { at: "2026-10-11" })).toEqual([
+      "Assets:Receivable:lunch-1011 NTD [NAT] 400/0/400 open -",
+    ]);
+    expect(progress(h, { at: "2026-10-15" })).toEqual(first);
+    expect(first).toEqual(["Assets:Receivable:lunch-1011 NTD [NAT] 400/250/150 open 2026-10-15"]);
+    expect(all).toEqual(["Assets:Receivable:lunch-1011 NTD [NAT] 400/400/0 settled 2026-10-20"]);
+  });
+  it("lists each result's own postings, which do not grow with later calls", () => {
+    const early = obligations(h, { all: true, at: "2026-10-11" });
+    const whole = obligations(h, { all: true });
+    expect(early.map((r) => r.postings.length)).toEqual([1]);
+    expect(whole.map((r) => r.postings.length)).toEqual([3]);
+    expect(lengths({ at: "2026-10-15" })).toEqual([2]);
+    expect(lengths({})).toEqual([3]);
+    expect(lengths({})).toEqual([3]);
+    expect(lengths({ at: "2026-10-11" })).toEqual([1]);
+    expect(early.map((r) => r.postings.length)).toEqual([1]);
+    expect(whole.map((r) => r.postings.length)).toEqual([3]);
+  });
+  it("lists the postings in effective order, not written order", () => {
+    const ids = (description: string) =>
+      query(h)
+        .accounts("Assets:Receivable")
+        .postings()
+        .filter((p) =>
+          h.transactions.find((t) => t.description === description)?.postings.includes(p),
+        )
+        .map((p) => p.id);
+    const [r] = obligations(h, { all: true });
+    expect(r?.postings).toEqual([
+      ...ids("Lunch"),
+      ...ids("NAT pays back"),
+      ...ids("NAT pays the rest"),
+    ]);
+    expect(obligations(h, { all: true })[0]?.postings).toEqual(r?.postings);
+  });
+  it("hides the settled obligation in balance only from its settling on", () => {
+    const receivable = (at: string) =>
+      rows(balance(h, query(h).accounts("Assets:Receivable").until(at)));
+    expect(receivable("2026-10-15")).toEqual(["Assets:Receivable:lunch-1011 150 NTD"]);
+    expect(receivable("2026-10-20")).toEqual([]);
+    expect(receivable("2026-10-15")).toEqual(["Assets:Receivable:lunch-1011 150 NTD"]);
+  });
+});
+
 describe("an obligation with several people", () => {
   const h = load(`
 2026-10-13 * "Dinner, I paid 1200"
@@ -463,6 +531,23 @@ describe("closing an obligation", () => {
     ]);
     expect(generated(h)).toEqual(["Assets:Receivable:lunch-1011 50 NTD", "Income:Other -50 NTD"]);
     expect(progress(h)).toEqual([]);
+  });
+  it("counts a positive generated posting on a receivable as lending, not repayment", () => {
+    const h = load(`
+2026-10-11 * "Lunch"
+    Expenses:Food                   600 NTD
+    Assets:Receivable:lunch-1011    400 NTD @NAT
+    Assets:Cash                   -1000 NTD
+
+2026-10-15 * "NAT pays back 450"
+    Bank:Checking                   450 NTD
+    Assets:Receivable:lunch-1011   -450 NTD
+
+2026-10-20 balance Assets:Receivable:lunch-1011 0 NTD pad 50 NTD -> Income:Other
+`);
+    expect(progress(h, { all: true })).toEqual([
+      "Assets:Receivable:lunch-1011 NTD [NAT] 450/450/0 settled 2026-10-15",
+    ]);
   });
 });
 
@@ -835,6 +920,10 @@ account Bank:Checking
     expect(obligations(h, { accounts: ["Bank:Checking"] })).toEqual([]);
     expect(obligations(h, { accounts: ["Assets:Nowhere"] })).toEqual([]);
   });
+  it("counts an empty list of accounts as none given", () => {
+    expect(obligations(h, { accounts: [] })).toEqual(obligations(h));
+    expect(obligations(h, { accounts: [] })).toHaveLength(4);
+  });
   it("an entity with no obligation matches nothing", () => {
     expect(obligations(h, { entity: "BOB" })).toEqual([]);
   });
@@ -1101,5 +1190,76 @@ describe("accounts inside an obligation", () => {
     const declared = h.accounts.find((a) => a.id === SNACK_ACCOUNT);
     expect(nested(h)).toEqual([declared?.span?.start]);
     expect(declared?.obligation).toBe("receivable");
+  });
+});
+
+describe("where an account stands among obligations", () => {
+  const ROOTS = `
+account Payable
+    obligation payable
+`;
+  /** A ledger with one lending posting on `account`, naming an entity. */
+  const lend = (account: string): Hueke =>
+    load(
+      `
+2026-10-11 * "Lent"
+    ${account}    100 NTD @NAT
+    Assets:Cash  -100 NTD
+`,
+      ROOTS,
+    );
+  /** The diagnostics and the obligations of `lend(account)`. */
+  const placed = (account: string) => {
+    const h = lend(account);
+    return { codes: codes(h), rows: obligations(h).map((r) => r.account) };
+  };
+
+  it.each([["Assets:Receivable"], ["Liabilities:Payable"], ["Payable"]])(
+    "a posting on the obligation account %s belongs to no obligation",
+    (account) => {
+      expect(placed(account)).toEqual({ codes: ["obligation.root-posting"], rows: [] });
+    },
+  );
+  it.each([["Assets:Receivable:alice-2026-10"], ["Liabilities:Payable:bob"], ["Payable:bob"]])(
+    "%s, a direct sub-account, is one obligation",
+    (account) => {
+      expect(placed(account)).toEqual({ codes: [], rows: [account] });
+    },
+  );
+  it.each([
+    ["Assets:Receivable:alice-2026-10:interest"],
+    ["Assets:Receivable:alice-2026-10:interest:late"],
+    ["Payable:bob:fee"],
+  ])("%s is inside an obligation", (account) => {
+    expect(placed(account)).toEqual({ codes: ["obligation.nested"], rows: [] });
+  });
+  it.each([
+    ["Assets"],
+    ["Assets:Bank:Checking"],
+    ["Assets:Receivable2"],
+    ["Assets:Receivable2:x"],
+    ["Assets:ReceivableX:y:z"],
+    ["Liabilities"],
+    ["Payables:bob"],
+    ["Receivable:alice"],
+  ])("%s, whose name only looks alike, is outside every obligation", (account) => {
+    expect(placed(account)).toEqual({ codes: [], rows: [] });
+    const h = lend(account);
+    expect(h.accounts.find((a) => a.id === account)).not.toHaveProperty("obligation");
+    expect(obligations(h, { accounts: [account] })).toEqual([]);
+  });
+  it("the outermost obligation account wins", () => {
+    const h = load(`
+account Assets:Receivable:alice
+    obligation receivable
+
+2026-10-11 * "Lent"
+    Assets:Receivable:alice      100 NTD @NAT
+    Assets:Receivable:alice:x     50 NTD @NAT
+    Assets:Cash                 -150 NTD
+`);
+    // Once on the declaration and once on the posting inside the obligation.
+    expect(codes(h)).toEqual(["obligation.nested", "obligation.nested"]);
+    expect(progress(h)).toEqual(["Assets:Receivable:alice NTD [NAT] 100/0/100 open -"]);
   });
 });

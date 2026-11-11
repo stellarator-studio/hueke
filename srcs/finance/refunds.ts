@@ -5,6 +5,7 @@ import type { Amount, Id } from "../data/model/types.js";
 import { abs, decimal, sub, ZERO, type Rational } from "../data/values/decimal.js";
 import { initialized, type Hueke } from "../engine/hueke.js";
 import {
+  lineOfKey,
   measureRefunds,
   refundedBack,
   refundExceeds,
@@ -39,7 +40,7 @@ export function refunds(ledger: Hueke, options: RefundsOptions = {}): RefundProg
     position.set(t.id, [i, 0]);
     t.postings.forEach((p, j) => position.set(p.id, [i, j + 1]));
   });
-  const only = options.ids && new Set(options.ids);
+  const only = options.ids && options.ids.length > 0 ? new Set(options.ids) : undefined;
   const measures = [...measureRefunds(ledger.transactions, accounts)]
     .filter(([target]) => !only || only.has(target))
     .sort(([a], [b]) => {
@@ -49,7 +50,7 @@ export function refunds(ledger: Hueke, options: RefundsOptions = {}): RefundProg
     });
   return measures.flatMap(([target, m]) =>
     [...m.original].map(([key, signed]): RefundProgress => {
-      const [account = "", commodity = ""] = key.split("\u0000");
+      const { account, commodity } = lineOfKey(key);
       const precision = precisions.get(commodity) ?? 0;
       const net = m.refunded.get(key) ?? ZERO;
       const original = abs(signed);

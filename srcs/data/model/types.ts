@@ -118,7 +118,7 @@ export interface Posting {
 
 export interface Transaction {
   readonly id: Id;
-  readonly source?: SourcePath;
+  readonly source: SourcePath;
   readonly span?: SourceSpan;
   readonly origin?: TransactionData; // absent on generated transactions
   readonly effective: TimeValue;
@@ -135,7 +135,7 @@ export interface Transaction {
 }
 
 export interface Balance {
-  readonly source?: SourcePath;
+  readonly source: SourcePath;
   readonly span?: SourceSpan;
   readonly origin?: BalanceData;
   readonly account: Id;

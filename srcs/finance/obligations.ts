@@ -41,8 +41,12 @@ export function obligations(ledger: Hueke, options: ObligationsOptions = {}): Ob
   const at = options.at === undefined ? undefined : timeInput(options.at, { timezone, weekStart });
   const accounts = new Map(ledger.accounts.map((a) => [a.id, a]));
   const entities = obligationEntitiesOf(ledger);
-  // An account given that is neither an obligation account nor inside one matches nothing.
-  const given = options.accounts?.filter((a) => obligationPlace(a, accounts) !== undefined);
+  // An account given that is neither an obligation account nor inside one matches nothing; an
+  // empty list is no list.
+  const given =
+    options.accounts && options.accounts.length > 0
+      ? options.accounts.filter((a) => obligationPlace(a, accounts) !== undefined)
+      : undefined;
   const rows: ObligationProgress[] = [];
   for (const [account, byCommodity] of progress(ledger, at)) {
     if (given && !given.some((a) => within(account, a))) continue;

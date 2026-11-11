@@ -29,6 +29,7 @@ Other directories are not decided yet; ask before adding new top-level ones.
 - `srcs/index.ts` is the only entry point. Types are re-exported with `export type *`; only what the docs describe is exported.
 - Optional fields never take `undefined` (`exactOptionalPropertyTypes`): leave the field out instead. The Raw model relies on this to tell "not written" from "written empty".
 - Tests take ledger text as input and go through the parser, not hand-built models.
+- Temporal (`temporal-polyfill`) is slow and only used where a local time meets a time zone: a day's start and UTC offset (`dayIn`), times on a day when the clocks change, and checking a zone name. All of it is in `srcs/data/time/time.ts`, and lint rejects Temporal elsewhere in Core's `srcs/` (tests may use it to check results). Calendar arithmetic (stepping days, weekdays, weeks, months, quarters) does without it, on day numbers, `Date` in UTC or the date text; queries compare local dates and need no Temporal.
 - Code, tests and comments contain no development IDs: no use case, decision or milestone numbers. Describe the situation instead.
 
 ## Subagents

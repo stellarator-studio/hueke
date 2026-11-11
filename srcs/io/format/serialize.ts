@@ -2,7 +2,8 @@
 // Numbers and aliases are read with the ledger's settings and commodities, as resolved by
 // initialization; the directives are never read here.
 
-import type { Commodity, Id, LedgerSettings } from "../../data/model/types.js";
+import type { Commodity, LedgerSettings } from "../../data/model/types.js";
+import { UNSUPPORTED_SCOPES } from "../../data/raw/anchor.js";
 import type {
   AnchorRef,
   BalanceData,
@@ -18,6 +19,7 @@ import type {
   TransactionData,
 } from "../../data/raw/model.js";
 import {
+  aliasTableOf,
   NumberError,
   parseAmount,
   parseFigureValue,
@@ -246,19 +248,9 @@ class Writer {
 
 /** Aliases as initialization resolved them: one in conflict is not loaded. */
 function aliasTable(commodities: readonly Commodity[]): AliasTable {
-  const owners = new Map<string, { id: Id; position: "prefix" | "suffix" }[]>();
-  for (const c of commodities)
-    for (const a of c.aliases)
-      owners.set(a.text, [...(owners.get(a.text) ?? []), { id: c.id, ...a }]);
   const codes = new Set(commodities.map((c) => c.id));
-  const prefix = new Map<string, Id>();
-  const suffix = new Map<string, Id>();
-  for (const [text, list] of owners) {
-    const [first] = list;
-    if (first && list.length === 1 && !codes.has(text))
-      (first.position === "prefix" ? prefix : suffix).set(text, first.id);
-  }
-  return { prefix, suffix };
+  const entries = commodities.flatMap((c) => c.aliases.map((a) => ({ ...a, owner: c.id })));
+  return aliasTableOf(entries, (t) => codes.has(t)).table;
 }
 
 /** A decimal value in the ledger's marks, with group marks and the decimal places written. */
@@ -328,7 +320,7 @@ function inOrder(lines: readonly ItemChild[], order: readonly string[]): ItemChi
   return [...lead, ...groups.sort((a, b) => rank(a) - rank(b)).flat()];
 }
 
-/** An include path is one token: quoted when it holds whitespace or a character that ends a token. */
+/** An include path is one token: quoted when it holds whitespace or a character listed in docs/dsl/formatting.md. */
 function includePath(text: string): string {
   return /[\s;"()[\]{}]/.test(text) ? quote(text) : text;
 }
@@ -336,9 +328,6 @@ function includePath(text: string): string {
 function quote(text: string): string {
   return `"${text.replace(/["\\]/g, "\\$&")}"`;
 }
-
-/** Scopes whose features are not supported yet (docs/core/diagnostics.md, "Unsupported syntax"). */
-const RESERVED_SCOPES = new Set(["installment", "statement", "fulfills", "rule", "shared"]);
 
 /** A module or a period after an anchor is unsupported syntax, which has no canonical form. */
 function anchorText(ref: AnchorRef): string {
@@ -354,7 +343,7 @@ function reference(text: string): string {
 
 /** `#travel`, never `#tag:travel`. */
 function tag(t: TagData): string {
-  if (t.scope !== undefined && RESERVED_SCOPES.has(t.scope))
+  if (t.scope !== undefined && UNSUPPORTED_SCOPES.has(t.scope))
     throw new Unwritable(`the tag scope ${t.scope}`);
   return `#${t.scope === undefined || t.scope === "tag" ? "" : `${t.scope}:`}${anchorText(t.ref)}`;
 }

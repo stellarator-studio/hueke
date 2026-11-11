@@ -4,7 +4,7 @@
 
 import { diagnostic } from "../../data/source/diagnostics.js";
 import type { ModuleData } from "../../data/raw/model.js";
-import { resolvePath } from "../../data/source/paths.js";
+import { includedPath } from "../../data/raw/include.js";
 import type { Diagnostic, SourcePath } from "../../data/source/source.js";
 import type { SourcedItem } from "./shared.js";
 import { supported } from "./unsupported.js";
@@ -36,25 +36,19 @@ export function collectModules(
         result.items.push({ item, source: path, ...(dropped && { dropped }) });
         continue;
       }
-      const [written = ""] = item.args;
-      const resolved = resolvePath(path, written);
-      if (!("path" in resolved)) {
-        out.push(diagnostic(resolved.error, resolved.message, path, item.span));
+      const resolved = includedPath(path, item);
+      if (typeof resolved !== "string") {
+        out.push(resolved);
         continue;
       }
-      const included = data.get(resolved.path);
-      if (result.ledger.includes(resolved.path))
+      const included = data.get(resolved);
+      if (result.ledger.includes(resolved))
         out.push(
-          diagnostic(
-            "module.duplicate",
-            `${resolved.path} is already in the ledger`,
-            path,
-            item.span,
-          ),
+          diagnostic("module.duplicate", `${resolved} is already in the ledger`, path, item.span),
         );
       else if (!included)
-        out.push(diagnostic("module.missing", `${resolved.path} is not loaded`, path, item.span));
-      else visit(resolved.path, included);
+        out.push(diagnostic("module.missing", `${resolved} is not loaded`, path, item.span));
+      else visit(resolved, included);
     }
   };
   const module = data.get(root);

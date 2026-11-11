@@ -37,9 +37,11 @@ import { LineRecovery } from "./recovery.js";
 import {
   accountError,
   aliasError,
+  amountError,
   anchorError,
   commodityError,
   entityError,
+  KEYWORDS,
   referenceError,
   rootError,
   scopeError,
@@ -69,7 +71,12 @@ import type {
   TagData,
   TransactionData,
 } from "../../data/raw/model.js";
-import type { Diagnostic, SourcePath, SourceSpan } from "../../data/source/source.js";
+import {
+  position,
+  type Diagnostic,
+  type SourcePath,
+  type SourceSpan,
+} from "../../data/source/source.js";
 
 // ---------- Ownership (docs/dsl/lexical.md) ----------
 
@@ -171,7 +178,7 @@ export function parse(path: SourcePath, text: string): ModuleData {
   const lineStarts = computeLineStarts(text);
   const report = (offset: number, end: number, message: string, code: Code = "parse.syntax") => {
     const d = diagnostic(code, message, path, { start: offset, end });
-    const line = lineOf(lineStarts, offset);
+    const { line } = position({ lineStarts }, offset);
     const list = lineErrors.get(line);
     if (list) list.push(d);
     else lineErrors.set(line, [d]);
@@ -219,18 +226,6 @@ function computeLineStarts(text: string): number[] {
   const starts = [0];
   for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
   return starts;
-}
-
-/** 1-based line of an offset. */
-function lineOf(starts: readonly number[], offset: number): number {
-  let low = 0;
-  let high = starts.length - 1;
-  while (low < high) {
-    const mid = (low + high + 1) >> 1;
-    if ((starts[mid] ?? 0) <= offset) low = mid;
-    else high = mid - 1;
-  }
-  return low + 1;
 }
 
 // ---------- Builder ----------
@@ -502,10 +497,10 @@ class Builder {
       ...this.balanceTime(ctx),
       account: this.text(b.WORD().symbol),
       ...(entity && { entity: this.text(entity.symbol).slice(1) }),
-      amount: this.ctxText(b.amount()),
+      amount: this.amountText(this.ctxText(b.amount())),
       ...(pad && {
         pad: {
-          ...(padAmount && { amount: this.ctxText(padAmount) }),
+          ...(padAmount && { amount: this.amountText(this.ctxText(padAmount)) }),
           ...(padPrice && { price: this.price(this.lineTokensOf(padPrice)) }),
           ...(padAccount && { account: this.text(padAccount.symbol) }),
         },
@@ -821,7 +816,8 @@ class Builder {
       const closing = end - close + 1;
       if (close < 0 || open !== closing)
         throw new BlockError("parse.syntax", "the braces of a cost do not match");
-      cost = { kind: open === 2 ? "total" : "unit", amount: this.range(toks, i + open, close) };
+      const amount = this.amountText(this.range(toks, i + open, close));
+      cost = { kind: open === 2 ? "total" : "unit", amount };
       i = end + 1;
     }
     let price: PriceData | undefined;
@@ -882,7 +878,7 @@ class Builder {
       ...(trailer && { trailer }),
       cleared,
       account: this.text(accountToken),
-      ...(amountText !== undefined && !slot && { amount: amountText }),
+      ...(amountText !== undefined && !slot && { amount: this.amountText(amountText) }),
       ...(cost && { cost }),
       ...(price && { price }),
       ...(effective !== undefined && { effective }),
@@ -902,8 +898,14 @@ class Builder {
     if (amount.length === 0) throw new BlockError("parse.syntax", "a price needs an amount");
     return {
       kind: at.type === P.AT2 ? "total" : "unit",
-      amount: this.range(amount, 0, amount.length),
+      amount: this.amountText(this.range(amount, 0, amount.length)),
     };
+  }
+
+  /** An amount as written, once checked for keywords (docs/dsl/lexical.md, "Identifiers"). */
+  private amountText(text: string): string {
+    identifier(amountError(text));
+    return text;
   }
 
   private split(ctx: SplitLineContext, span: SourceSpan, trailer: Note | undefined): SplitLine {
@@ -1022,6 +1024,14 @@ class Builder {
 
   private timeOf(ctx: ParserRuleContext, allowAccounting: boolean): string {
     const text = this.ctxText(ctx);
+    // A line starting with "-" and a digit, or with "(", is a date line too (docs/dsl/lexical.md).
+    if (!/^\d/.test(text)) {
+      const word = ctx.start ? this.text(ctx.start) : text;
+      throw new BlockError(
+        "parse.syntax",
+        `"${word}" is not a time: a line starting with "-" and a number, or with "(", is read as a date line`,
+      );
+    }
     if (/\s/.test(text)) throw new BlockError("parse.syntax", `"${text}" cannot contain spaces`);
     const error = timeTextError(text, allowAccounting);
     if (error) throw new BlockError("parse.invalid-time", error);
@@ -1115,14 +1125,13 @@ class Builder {
 
 // ---------- Token text → Raw parts ----------
 
+/** A word, number or keyword: a keyword in an amount is then reported by `amountError`. */
 function isWordLike(token: Token | undefined): boolean {
   if (!token) return false;
-  return (
-    token.type === P.WORD ||
-    token.type === P.NUMWORD ||
-    (token.type >= P.KW_OPTION && token.type <= P.KW_MINIMUM)
-  );
+  return token.type === P.WORD || token.type === P.NUMWORD || KEYWORD_TYPES.has(token.type);
 }
+
+const KEYWORD_TYPES: ReadonlySet<number> = new Set(KEYWORDS.values());
 
 function slotOf(text: string): PostingData["slot"] {
   const m = /^(-?)(amount|interest|fee)$/.exec(text);

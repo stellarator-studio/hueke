@@ -24,7 +24,7 @@ import {
   type SettingName,
   type SettingValues,
 } from "../../data/model/settings.js";
-import type { AliasTable } from "../../data/values/number.js";
+import { aliasTableOf, type AliasEntry, type AliasTable } from "../../data/values/number.js";
 import { diagnostic } from "../../data/source/diagnostics.js";
 import type { HuekeOptions } from "../hueke.js";
 import { metaFrom, type SourcedItem } from "./shared.js";
@@ -194,10 +194,7 @@ export function collectDeclarations(
   // The parser has checked each precision and alias line.
   const commodities = new Map<Id, Commodity>();
   const commodityDeclared = new Map<Id, Sourced>();
-  const aliasOwners = new Map<
-    string,
-    { position: "prefix" | "suffix"; owner: Id; at: Sourced }[]
-  >();
+  const aliasEntries: (AliasEntry & { at: Sourced })[] = [];
   for (const at of kind("commodity")) {
     const [id = ""] = at.d.args;
     const first = commodityDeclared.get(id);
@@ -217,9 +214,7 @@ export function collectDeclarations(
         const [text = "", position] = line.value.split(/\s+/);
         const alias: CommodityAlias = { text, position: position as "prefix" | "suffix" };
         aliases.push(alias);
-        const list = aliasOwners.get(alias.text) ?? [];
-        list.push({ position: alias.position, owner: id, at });
-        aliasOwners.set(alias.text, list);
+        aliasEntries.push({ ...alias, owner: id, at });
       }
     }
     const commodity: Commodity = {
@@ -234,19 +229,11 @@ export function collectDeclarations(
     commodities.set(id, commodity);
     sources.set(commodity, at.source);
   }
-  const prefix = new Map<string, Id>();
-  const suffix = new Map<string, Id>();
   // A conflicting alias is not loaded for any declaration; amounts read as if it were not declared.
-  for (const [text, owners] of aliasOwners) {
-    const [first, ...others] = owners;
-    if (!first) continue;
-    if (others.length > 0 || commodities.has(text)) {
-      for (const o of others.length > 0 ? others : [first])
-        report("commodity.alias-conflict", `alias "${text}" of ${o.owner} is already used`, o.at);
-      continue;
-    }
-    (first.position === "prefix" ? prefix : suffix).set(text, first.owner);
-  }
+  const { table: aliasTable, conflicts } = aliasTableOf(aliasEntries, (t) => commodities.has(t));
+  for (const [first, ...others] of conflicts)
+    for (const o of others.length > 0 ? others : first ? [first] : [])
+      report("commodity.alias-conflict", `alias "${o.text}" of ${o.owner} is already used`, o.at);
 
   // ---- Accounts ----
   const accounts = new Map<Id, Account>();
@@ -342,7 +329,7 @@ export function collectDeclarations(
     commodities,
     accounts,
     entities,
-    aliases: { prefix, suffix },
+    aliases: aliasTable,
     sources,
     ...(incomeExpenseRoot !== undefined &&
       ie && {

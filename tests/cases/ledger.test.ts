@@ -124,7 +124,7 @@ describe("loading and initialization", () => {
   it("does not depend on the order of loading", () => {
     const files = { "main.hueke": `${TEXT}include sub.hueke\n`, "sub.hueke": LUNCH };
     const reversed = Object.fromEntries(Object.entries(files).reverse());
-    const ids = (h: Hueke) => h.transactions.map((t) => `${t.id} ${t.source ?? ""}`);
+    const ids = (h: Hueke) => h.transactions.map((t) => `${t.id} ${t.source}`);
     expect(ids(modules(reversed))).toEqual(ids(modules(files)));
     expect(ids(modules(files))).toEqual(["~1 main.hueke", "~2 sub.hueke"]);
   });

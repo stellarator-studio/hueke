@@ -86,9 +86,17 @@ export function shownName(
   };
 }
 
-export function axisOf(text: string): Axis {
+function axisOf(text: string): Axis {
   if (text === "accounting" || text === "effective" || text === "txn-effective") return text;
   throw new UsageError(`unknown axis "${text}"`);
+}
+
+/**
+ * The axis `--axis` names; without it, the API's default, `effective` (docs/cli.md, "Filters"). A
+ * query does not tell its axis, so the dates the CLI prints need it from here.
+ */
+export function axisOption(o: Options): Axis {
+  return o.axis === undefined ? "effective" : axisOf(o.axis);
 }
 
 function statusOf(text: string): Status {

@@ -106,7 +106,7 @@ Each document drives the code and tests listed here. When a document changes, th
 | --- | --- | --- |
 | [core/values.md](core/values.md) | `srcs/data/values/`, `srcs/engine/normalize/records.ts` | `tests/cases/values.test.ts` |
 | [core/commodities.md](core/commodities.md) | `srcs/data/model/`, `srcs/data/values/number.ts` (aliases), `srcs/engine/normalize/declarations.ts`, `srcs/engine/normalize/validate.ts`, `srcs/engine/hueke.ts` | `tests/cases/commodities.test.ts` |
-| [core/time.md](core/time.md) | `srcs/data/time/`, `srcs/engine/normalize/declarations.ts`, `srcs/engine/normalize/records.ts` | `tests/cases/time.test.ts` |
+| [core/time.md](core/time.md) | `srcs/data/time/`, `srcs/engine/normalize/declarations.ts`, `srcs/engine/normalize/records.ts` | `tests/cases/time.test.ts`, `tests/data/time/time.test.ts` |
 | [core/accounts.md](core/accounts.md) | `srcs/data/model/`, `srcs/engine/normalize/declarations.ts`, `srcs/engine/hueke.ts` | `tests/cases/accounts.test.ts` |
 | [core/anchors.md](core/anchors.md) | `srcs/data/raw/` (anchor keys), `srcs/engine/normalize/anchors.ts`, `srcs/engine/normalize/shared.ts` and `validate.ts` (refunds), `srcs/engine/query/` (`ids`), `srcs/finance/` (`refunds`) | `tests/cases/anchors.test.ts` |
 | [core/entities.md](core/entities.md) | `srcs/data/model/`, `srcs/engine/normalize/declarations.ts`, `srcs/engine/normalize/records.ts` | `tests/cases/entities.test.ts` |

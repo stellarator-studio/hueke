@@ -2,7 +2,8 @@
 // times and for period labels after an anchor) and the API's time arguments (docs/core/time.md, "Times given to the API"). Weeks that need
 // `option week-start` (such as a missing W53) are checked when the time is read.
 
-const POINT =
+/** One point of a time value, as written; groups: year, week, month, day, hour, minute, offset, zone. */
+export const POINT =
   /^(\d{4})(?:-(?:W(\d{2})|(\d{2})(?:-(\d{2})(?:T(\d{2}):(\d{2})([+-]\d{2}:\d{2})?)?)?))?(?:\[([A-Za-z0-9/_+-]+)\])?$/;
 
 /** Returns a message when `text` (a time value, optionally `<time>=<time>`) is not valid. */

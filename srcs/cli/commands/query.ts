@@ -4,7 +4,7 @@ import type { Hueke } from "../../index.js";
 import type { CliIO } from "../io.js";
 import { csv } from "../output.js";
 import {
-  axisOf,
+  axisOption,
   FILTERS,
   filtered,
   OCCURRENCE,
@@ -22,7 +22,7 @@ export const queryCommand: Command = {
     "  [--breakdown <name,...>] [--planned] [--cancelled] [--name] [--strict] [--format table|csv]",
   options: [...FILTERS, ...OCCURRENCE, "name"],
   run(hueke: Hueke, args: readonly string[], options: Options, io: CliIO): number {
-    const axis = options.axis === undefined ? "effective" : axisOf(options.axis);
+    const axis = axisOption(options);
     const rows = postingRows(
       hueke,
       filtered(hueke, args, options).postings(),

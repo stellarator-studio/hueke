@@ -12,10 +12,11 @@ import type {
   Weekday,
 } from "../../data/model/types.js";
 import { anchorKey } from "../../data/raw/anchor.js";
-import { eachDate, timeInput, weekLabel } from "../../data/time/time.js";
-import { add, decimal, rational, ZERO, type Rational } from "../../data/values/decimal.js";
+import { eachDate, isPlainDate, timeInput, weekLabel } from "../../data/time/time.js";
+import type { Rational } from "../../data/values/decimal.js";
 import type { Hueke } from "../hueke.js";
 import type { TimeClause } from "./query.js";
+import { addTo, amountsOf } from "./tree.js";
 
 export type GroupKey =
   | "account"
@@ -62,15 +63,8 @@ export class GroupedQuery implements Grouped {
   sum(): Group<Amount[]>[] {
     return this.collect<Map<Id, Rational>, Amount[]>(
       () => new Map(),
-      (acc, p) =>
-        acc.set(
-          p.amount.commodity,
-          add(acc.get(p.amount.commodity) ?? ZERO, rational(p.amount.value)),
-        ),
-      (acc) =>
-        [...acc]
-          .sort(([a], [b]) => compareText(a, b))
-          .map(([commodity, total]) => ({ value: decimal(total), commodity })),
+      (acc, p) => addTo(acc, p.amount),
+      amountsOf,
     );
   }
 
@@ -160,6 +154,9 @@ export function periodLabel(ledger: Hueke, date: string, key: Bucket): string {
   // Checked first, so that a time of day is also parse.invalid-time, not query.time-of-day.
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
     throw new Error(`parse.invalid-time: "${date}" is not a day`);
+  // A date that exists is its own local date. Any other, and the years 0000 and 9999, is read as a
+  // time as before: a date that does not exist throws its error.
+  if (isPlainDate(date)) return bucketOf(key, date, weekStart);
   const time = timeInput(date, { timezone, weekStart });
   return bucketOf(key, time.localDate, weekStart);
 }

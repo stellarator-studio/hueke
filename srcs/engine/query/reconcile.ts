@@ -5,7 +5,7 @@
 import type { Hueke } from "../hueke.js";
 import { compareText } from "../../data/model/order.js";
 import type { Amount, Id, Posting, TimeValue } from "../../data/model/types.js";
-import { matches, timeInput } from "../../data/time/time.js";
+import { compareTime, matches, timeInput } from "../../data/time/time.js";
 import { add, decimal, neg, rational, ZERO } from "../../data/values/decimal.js";
 import { query, type TimeInput } from "./query.js";
 
@@ -40,9 +40,7 @@ export function reconcile(ledger: Hueke, req: { account: Id; at: TimeInput }): R
     const assertions = mine.filter((b) => b.amount.commodity === commodity);
     const after = assertions
       .filter((b) => b.effective.end < at.end && !matches(at, "until", b.effective))
-      .sort((a, b) =>
-        a.effective.end < b.effective.end ? -1 : a.effective.end > b.effective.end ? 1 : 0,
-      )
+      .sort((a, b) => compareTime(a.effective, b.effective))
       .at(-1)?.effective;
     const total = (ps: readonly Posting[]): Amount => ({
       value: decimal(ps.reduce((sum, p) => add(sum, rational(p.amount.value)), ZERO)),

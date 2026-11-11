@@ -33,7 +33,7 @@ Status: `implemented`
 
 A module includes another with `include <path>` (see [../dsl/records.md](../dsl/records.md), "`include`"); an included module may include others.
 
-- The root and every module it includes, directly or not, form one ledger. Records (transactions and Balances) and `include` lines load from every module, and records share one namespace: a record does not depend on which file it is in.
+- Records (transactions and Balances) and `include` lines load from every module, and records share one namespace: a record does not depend on which file it is in.
 - **Module order.** The modules are ordered depth-first: each included module stands at the place of its `include` line, before the records that follow that line. "Source position" anywhere in these documents means a place in this order.
 - A path that resolves to a module that was not loaded is `module.missing`, reported on the `include` line; that `include` is ignored and the rest loads.
 - Each module appears once in a ledger. Including a module that is already in it, including twice or in a cycle, is `module.duplicate`, reported on the `include` line; that `include` is ignored.

@@ -61,7 +61,7 @@ interface Use {
   readonly account?: Id;
   readonly commodity?: Id;
   readonly entity?: Id;
-  readonly source: SourcePath | undefined;
+  readonly source: SourcePath;
   readonly span: SourceSpan | undefined;
 }
 
@@ -185,11 +185,8 @@ export class Hueke {
     for (const t of transactions) order.set(t, order.size);
 
     // Step 6: pad balances, sorting, undeclared objects and inferred precision
-    // Precision as #resolve settles it: declared, else inferred from the loaded records.
-    const precision = (id: Id): number => {
-      const c = declared.commodities.get(id);
-      return c?.precisionWritten ? c.precision : (usedDecimals.get(id) ?? 0);
-    };
+    const precision = (id: Id): number =>
+      settledPrecision(declared.commodities.get(id), usedDecimals.get(id));
     const generated = expandPads(
       balances,
       transactions,
@@ -276,7 +273,10 @@ export class Hueke {
     const entities = new Map(declared.entities);
     const commodities = new Map<Id, Commodity>();
     for (const [id, c] of declared.commodities)
-      commodities.set(id, c.precisionWritten ? c : { ...c, precision: usedDecimals.get(id) ?? 0 });
+      commodities.set(
+        id,
+        c.precisionWritten ? c : { ...c, precision: settledPrecision(c, usedDecimals.get(id)) },
+      );
     const accounts = new Map(declared.accounts);
     const known = (id: Id): boolean => declared.roots.has(id.split(":")[0] ?? "");
     if (strictAccount)
@@ -359,6 +359,11 @@ export function check(hueke: Hueke): Diagnostic[] {
     decimals: inner.decimals,
   });
   return [...inner.diagnostics, ...inner.validated];
+}
+
+/** A commodity's precision as #resolve settles it: declared, else inferred from the loaded records. */
+function settledPrecision(c: Commodity | undefined, decimals: number | undefined): number {
+  return c?.precisionWritten ? c.precision : (decimals ?? 0);
 }
 
 /**

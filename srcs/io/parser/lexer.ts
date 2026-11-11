@@ -12,11 +12,7 @@ import {
   type TokenSource,
 } from "antlr4ng";
 import { HuekeLexer as L } from "./generated/HuekeLexer.js";
-
-const KEYWORDS = new Map<string, number>();
-L.literalNames.forEach((literal, type) => {
-  if (literal && /^'[a-z-]+'$/.test(literal)) KEYWORDS.set(literal.slice(1, -1), type);
-});
+import { KEYWORDS } from "./identifiers.js";
 
 // WORD_CHAR: not [ \t\r\n;"[\]{}]. WORD_START: a WORD_CHAR that is not one of %#^@*×!- or a digit.
 // Inside a word, a parenthesized group closed on the same line is part of the word, whitespace

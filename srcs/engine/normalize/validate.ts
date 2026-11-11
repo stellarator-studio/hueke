@@ -15,20 +15,20 @@ import { compareTime } from "../../data/time/time.js";
 import {
   abs,
   add,
-  cmp,
   decimal,
   isInteger,
-  mul,
   rational,
   sub,
-  tenToMinus,
   ZERO,
   type Rational,
 } from "../../data/values/decimal.js";
 import { diagnostic } from "../../data/source/diagnostics.js";
 import {
   balanceAt,
+  indexPostings,
   balanceBelongs,
+  lineKey,
+  lineOfKey,
   measureRefunds,
   refundExceeds,
   show,
@@ -91,7 +91,7 @@ export function validate(input: ValidationInput): Diagnostic[] {
 function unbalanced(
   t: Transaction,
   commodities: ReadonlyMap<Id, Commodity>,
-  source: SourcePath | undefined,
+  source: SourcePath,
   out: Diagnostic[],
 ): void {
   if (t.postings.length === 0) return;
@@ -106,12 +106,9 @@ function unbalanced(
   const off: string[] = [];
   for (const [commodity, g] of groups) {
     const precision = commodities.get(commodity)?.precision ?? 0;
-    // |sum| ≤ 0.5 × 10^-precision × k, where k counts weights converted by a price or cost
-    const tolerance = mul(
-      mul(rational("0.5"), tenToMinus(precision)),
-      rational(String(Math.max(1, g.converted))),
-    );
-    if (cmp(abs(g.total), tolerance) > 0) off.push(show(g.total, commodity));
+    // k counts the weights converted by a price or cost, at least 1.
+    if (!withinHalfUnit(g.total, precision, Math.max(1, g.converted)))
+      off.push(show(g.total, commodity));
   }
   if (off.length > 0)
     out.push(
@@ -129,7 +126,7 @@ function itemBalances(
   commodities: ReadonlyMap<Id, Commodity>,
   out: Diagnostic[],
 ): void {
-  const sources = new Map<Posting, SourcePath | undefined>();
+  const sources = new Map<Posting, SourcePath>();
   for (const t of transactions) for (const p of t.postings) sources.set(p, t.source);
   const postings = transactions
     .filter((t) => t.occurrence === "occurred")
@@ -139,7 +136,7 @@ function itemBalances(
   const running = new Map<string, Rational>();
   const reported = new Set<string>();
   for (const p of postings) {
-    const key = `${p.account}\u0000${p.amount.commodity}`;
+    const key = lineKey(p.account, p.amount.commodity);
     const total = add(running.get(key) ?? ZERO, rational(p.amount.value));
     running.set(key, total);
     if (total.n < 0n && !reported.has(key)) {
@@ -158,19 +155,18 @@ function itemBalances(
 
 function hardBalances(input: ValidationInput, out: Diagnostic[]): void {
   const { balances, transactions, commodities } = input;
-  const ordered = [...balances].sort((a, b) =>
-    a.effective.end < b.effective.end ? -1 : a.effective.end > b.effective.end ? 1 : 0,
-  );
+  const ordered = [...balances].sort((a, b) => compareTime(a.effective, b.effective));
   const previous = new Map<string, Balance>();
+  const index = indexPostings(transactions);
   for (const b of ordered) {
     // A Balance with an entity follows only those with the same entity.
-    const key = `${b.account}\u0000${b.amount.commodity}\u0000${b.entity ?? ""}`;
+    const key = `${lineKey(b.account, b.amount.commodity)}\u0000${b.entity ?? ""}`;
     const before = previous.get(key);
     previous.set(key, b);
     if (b.mode !== "hard") continue;
     const commodity = b.amount.commodity;
     const belongs = balanceBelongs(b, input.accounts, input.obligations);
-    const recorded = balanceAt(transactions, b.account, commodity, b.effective, belongs);
+    const recorded = balanceAt(index, b.account, commodity, b.effective, belongs);
     const asserted = rational(b.amount.value);
     if (withinHalfUnit(sub(recorded, asserted), commodities.get(commodity)?.precision ?? 0))
       continue;
@@ -193,7 +189,7 @@ function hardBalances(input: ValidationInput, out: Diagnostic[]): void {
 function obligationPostings(input: ValidationInput, out: Diagnostic[]): void {
   const { transactions, accounts, obligations } = input;
   const seen = new Map<Id, { commodities: Set<Id>; linked: boolean; unlinked?: Posting }>();
-  const sources = new Map<Posting, SourcePath | undefined>();
+  const sources = new Map<Posting, SourcePath>();
   // Where a record is written: generated postings are not written anywhere.
   for (const b of input.balances)
     if (obligationPlace(b.account, accounts)?.kind === "nested")
@@ -271,7 +267,7 @@ function obligationPostings(input: ValidationInput, out: Diagnostic[]): void {
 function refunds(input: ValidationInput, out: Diagnostic[]): void {
   const { transactions, accounts, commodities } = input;
   const exceeds = (m: RefundMeasure, key: string): boolean => {
-    const precision = commodities.get(key.split("\u0000")[1] ?? "")?.precision ?? 0;
+    const precision = commodities.get(lineOfKey(key).commodity)?.precision ?? 0;
     return refundExceeds(m.original.get(key) ?? ZERO, m.refunded.get(key) ?? ZERO, precision);
   };
   const first = new Map<RefundMeasure, Transaction>();
@@ -290,7 +286,7 @@ function refunds(input: ValidationInput, out: Diagnostic[]): void {
     const parts = [...m.refunded]
       .filter(([key]) => exceeds(m, key))
       .map(([key, r]) => {
-        const [account = "", commodity = ""] = key.split("\u0000");
+        const { account, commodity } = lineOfKey(key);
         const original = m.original.get(key) ?? ZERO;
         return `${account} original ${show(abs(original), commodity)}, refunded ${show(abs(r), commodity)}`;
       });
