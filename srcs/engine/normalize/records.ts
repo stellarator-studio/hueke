@@ -30,7 +30,13 @@ import type {
   TransactionData,
 } from "../../data/raw/model.js";
 import type { Diagnostic, SourcePath, SourceSpan } from "../../data/source/source.js";
-import { isOneDayOrMoment, parseTime, TimeError, type TimeContext } from "../../data/time/time.js";
+import {
+  isOneDay,
+  isOneDayOrMoment,
+  parseTime,
+  TimeError,
+  type TimeContext,
+} from "../../data/time/time.js";
 import {
   abs,
   add,
@@ -410,7 +416,7 @@ export function buildBalance(data: BalanceData, ctx: RecordContext): Balance | u
   try {
     return guard(ctx, data, () => {
       const effective = parseTime(data.time, ctx.time);
-      if (effective.precision !== "day" || data.time.includes(".."))
+      if (!isOneDay(effective))
         fail(ctx, "balance.invalid-effective", `a Balance is on one day, not ${data.time}`, data);
       const accounting =
         data.accounting === undefined ? undefined : parseTime(data.accounting, ctx.time);

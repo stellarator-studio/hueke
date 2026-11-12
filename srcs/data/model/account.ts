@@ -20,13 +20,16 @@ export function obligationPlace(
   account: Id,
   accounts: ReadonlyMap<Id, { readonly obligation?: string }>,
 ): ObligationPlace | undefined {
-  const parts = account.split(":");
-  for (let n = 1; n <= parts.length; n++) {
-    const root = parts.slice(0, n).join(":");
-    if (accounts.get(root)?.obligation === undefined) continue;
-    if (n === parts.length) return { kind: "root", root };
-    const obligation = parts.slice(0, n + 1).join(":");
-    return { kind: n + 1 === parts.length ? "obligation" : "nested", root, obligation };
+  // Each ancestor in turn, outermost first, ending at the account itself; it runs for every
+  // posting, so the name is cut at its separators rather than split and joined again.
+  for (let end = account.indexOf(":"); ; end = account.indexOf(":", end + 1)) {
+    const root = end === -1 ? account : account.slice(0, end);
+    if (accounts.get(root)?.obligation !== undefined) {
+      if (end === -1) return { kind: "root", root };
+      const next = account.indexOf(":", end + 1);
+      const obligation = next === -1 ? account : account.slice(0, next);
+      return { kind: next === -1 ? "obligation" : "nested", root, obligation };
+    }
+    if (end === -1) return undefined;
   }
-  return undefined;
 }

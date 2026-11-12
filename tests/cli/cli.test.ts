@@ -779,7 +779,7 @@ account Bank:Checking %main-bank
   });
 });
 
-describe("ID, entity, tag and primary-tag filters", () => {
+describe("Filters: ids, entities, tags and primary tags", () => {
   const files = withObligations();
   it("--who matches the whole chain of an obligation", () => {
     expect(hueke("query --file main.hueke --who NAT", files).stdout).toBe(

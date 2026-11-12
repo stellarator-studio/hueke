@@ -115,7 +115,7 @@ Status: `implemented`
 
 - Only `occurred` transactions count toward balances. `planned` and `cancelled` ones are kept but never counted.
 - For `occurred` postings, `none` and `cleared` count exactly the same; `cleared` only records that the user has checked the posting.
-- The transaction's `status` is the default; a posting may set its own. The posting's value is the only source of truth.
+- The posting's `status` is the only source of truth (see "Concepts" for how it is inherited).
 - `cleared` makes sense only for `occurred`. A `planned` or `cancelled` transaction with a cleared posting is `txn.cleared-not-occurred`; every posting is loaded as `none`.
 - A mistake is corrected by marking the wrong transaction cancelled and writing the right one. The cancelled one stays in the ledger and can still be queried.
 

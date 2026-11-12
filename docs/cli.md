@@ -1,6 +1,6 @@
 # Command line
 
-`hueke` is a command-line shell around the API: each command reads one ledger, makes one API call and prints the result. This document covers how `hueke` loads a ledger, its commands and filter options, its output formats and its exit status.
+`hueke` is a command-line shell around the API: each command reads one ledger, calls the API and prints the result. This document covers how `hueke` loads a ledger, its commands and filter options, its output formats and its exit status.
 
 ## Features
 
@@ -10,7 +10,6 @@
 | Commands | `implemented` |
 | `obligations` and `group` | `implemented` |
 | Filters | `implemented` |
-| ID, entity, tag and primary-tag filters | `implemented` |
 | Settled obligations and display names | `implemented` |
 | Output | `implemented` |
 | Exit status | `implemented` |
@@ -36,7 +35,7 @@ Status: `implemented`
 | `--strict` | Strict mode for every kind, whatever the ledger says, as when creating the ledger with strict mode. |
 
 - Files are read as UTF-8 and parsed. Each is loaded under its path relative to `--root`, with `/` separators.
-- Starting from the root file, `hueke` asks which files each module includes and reads them too, until no new file is found; then it initializes the ledger from the root file. An included file that cannot be read is left out, so Core reports `module.missing` for it. A root file that cannot be read is a usage error (see "Exit status").
+- Starting from the root file, `hueke` reads every file the modules include, as described in [core/modules.md](core/modules.md), "Modules and `include`"; then it initializes the ledger from the root file. An included file that cannot be read is left out, so Core reports `module.missing` for it. A root file that cannot be read is a usage error (see "Exit status").
 - When the ledger has diagnostics of severity `warning` or `error`, every command except `check` still runs and prints its result to standard output. After the result, it prints those diagnostics to standard error, in the format `check` uses in a table, so that the user can find what went wrong; `info` diagnostics are left out. The exit status is not changed.
 
 ### Commands
@@ -90,19 +89,13 @@ Status: `implemented`
 | `--who <entity,…>` | `entities` |
 | `--tag <tag,…>` | `tags`, each written in full as in the API, with or without `#`: `--tag tag:travel,refund:t_book` |
 | `--primary <anchor>` | `primaryTag` |
-| `--breakdown <name,…>` | `breakdown`: the posting has a breakdown line with one of the names, matched exactly as written (see [core/query.md](core/query.md), "Breakdown lines"); a name with `,` cannot be given. The postings' amounts count, not the lines' totals |
+| `--breakdown <name,…>` | `breakdown`: the posting has a breakdown line with one of the names, matched exactly as written (see [core/query.md](core/query.md), "Breakdown lines"); a name with `,` cannot be given |
 
 - Each option is written at most once; writing one twice is a usage error.
 - Times are text, read as the API reads them (see [core/time.md](core/time.md), "Times given to the API"): `--period 2026-10`, `--at 2026-10-31`, `--period 2026-11..2026-12`. A time the API rejects is a usage error.
 - Without `--axis`, these commands use the API's default, `effective` (see [core/query.md](core/query.md), "Axis of a query").
 - `--depth <n>` (`balance` only, n from 1) leaves out rows whose account has more than n segments. It changes only what is shown.
-- `reconcile` takes no filters: it reads `--at` as its `at`.
-
-### ID, entity, tag and primary-tag filters
-
-Status: `implemented`
-
-- `--id`, `--who`, `--tag` and `--primary` apply to `balance`, `query` and `register`, and combine with the other filters like them. `--who` also applies to `obligations`, with exactly one entity.
+- `reconcile` takes no filters; `--at` is its `at`.
 
 ### Settled obligations and display names
 
@@ -128,7 +121,7 @@ Status: `implemented`
 | `group` | The anchor's record, then each member transaction in query order | `role` (`anchor` or `member`), `date`, `kind`, `id`, `description`. The date is the effective time, a posting's own for a posting; a posting's `description` is its transaction's; for an account, `date` and `description` are empty. A table shows the same columns, without a header |
 | `reconcile` | View, one per commodity | The account, commodity and range, opening, the period's postings, closing, asserted, difference, then the uncleared postings as `query` rows. With `--balance`, each posting of the period also shows the balance after it, and the amounts of opening and closing are shown in that column |
 
-- `date` is the time on the query's axis, as written: the transaction's accounting time on `accounting`, the posting's effective time on `effective`, the transaction's effective time on `txn-effective` (see [core/time.md](core/time.md), "API"). In `reconcile`, it is always the posting's effective time.
+- `date` is the posting's time on the query's axis, as written, as `timeOnAxis` gives it (see [core/time.md](core/time.md), "API"). In `reconcile`, it is always the posting's effective time.
 - **Tables.** Each table is aligned on its own: in `register`, the account rows share one alignment and each row's postings another; in `reconcile`, each view has its own. Amounts are written with the ledger's decimal mark and group mark (see [core/settings.md](core/settings.md)), padded with zeros to the commodity's precision and never rounded: `12,300 NTD`, or `12.300,50 EUR` with decimal mark `,` and group mark `.`. A value that is a fraction is written as its numerator and denominator, each grouped, without padding: `28,300/3 NTD`. `balance` indents each account two spaces per segment after the first and marks subtotal rows `(total)`. `query` shows a mark: `!` planned, `#` cancelled, `*` cleared. `check` prints `<source>:<line>:<column>: <severity> <code>: <message>`. Several `reconcile` views are separated by a blank line.
 - In `obligations`, `settled` is shown as `settled` or `open` in tables, and as `true` or `false` in CSV; `last_repaid` is the time as written, empty when there is none.
 - **CSV.** A header row, then the fields as plain text; amounts are the API's values, with `.` as the decimal mark, no group mark and no padding. Fields containing `,`, `"` or a line break are quoted.

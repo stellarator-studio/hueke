@@ -68,6 +68,7 @@ Status: `implemented`
 
 - Different clauses combine with AND. Values within one clause combine with OR, except `involves`, which is AND.
 - Calling a time clause again adds another condition; calling any other clause again replaces it.
+- A clause given no values does not filter, and drops what an earlier call of it set: `accounts()` matches every account. `occurrence` is the exception (see the table).
 - There is no filtering by account type. List the accounts with `accounts`.
 - An account, entity or commodity that the ledger does not have is not an error; it matches nothing.
 - `tags` matches tags whether anchored or plain, and never a tag skipped for a scope error (see [anchors.md](anchors.md), "Scopes").
@@ -130,7 +131,7 @@ Only matched postings are grouped.
 
 - Several keys combine into nested groups; a key given twice counts once. With no key, there is one group, whose `key` is empty.
 - A posting with no value for a key falls in the "none" group.
-- A posting with several values (several tags, several references, a time spanning several buckets) belongs to each of them, so such groups may add up to more than the whole. A record spanning several buckets counts in full in each one it overlaps. When the query has a time range, only buckets inside it are listed.
+- A posting with several values (several tags, several references, a time spanning several buckets) belongs to each of them, so such groups may add up to more than the whole. A record spanning several buckets counts in full in each one it overlaps (see [time.md](time.md), "Points and periods"). When the query has a time range, only buckets inside it are listed.
 - Rows are sorted by their key values in key order, comparing code points; the "none" group comes first.
 - The account tree is not a grouping key; it is laid out by `balance` and `register` (see "Account tree").
 
@@ -194,7 +195,6 @@ Status: `implemented`
 Status: `implemented`
 
 - `balance` and `register` leave out the rows of settled obligations unless the option `all` is set, as described in [obligations.md](obligations.md), "Hiding settled obligations".
-- Subtotal rows stay, including a parent all of whose obligations are hidden.
 
 ## API
 

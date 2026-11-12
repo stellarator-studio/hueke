@@ -21,7 +21,7 @@ A **commodity** is what an amount is counted in: a currency, a security, loyalty
 | `id` | The code, such as `NTD`, `AAPL`, `camera-01`. Records always refer to a commodity by its code. |
 | `span` | Where it is declared; absent for a commodity used without a declaration. |
 | `item` | Item mode, for things counted one by one. Default false. |
-| `precision` | Decimal places. It sets the balancing tolerance (see [transactions.md](transactions.md), "Balancing") and the padding of amounts for display. Always 0 in item mode. |
+| `precision` | Decimal places. It sets the balancing tolerance (see [transactions.md](transactions.md), "Balancing") and the padding of amounts for display. |
 | `precisionWritten` | Whether the precision was declared, not inferred. Always true in item mode. |
 | `aliases` | Other ways to write the commodity in amounts, each a text and a position, `prefix` or `suffix`. An alias in conflict is still listed, though it is not used. |
 | `meta` | Free metadata, such as `category: camera`. |

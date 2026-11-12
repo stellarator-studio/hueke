@@ -49,7 +49,7 @@ Status: `implemented`
   - an `account` declaration of it;
   - a Balance on it, `pad` included. The posting a pad generates there is not reported again, since it has no place in the files; it counts in balances but belongs to no obligation.
 - An `obligation` declared on an account inside an obligation account is also `obligation.nested`, and that declaration's `obligation` takes no effect. A declaration that is both inside an obligation and declares `obligation` is reported once.
-- An account inside an obligation still inherits the obligation account's `obligation` and `pad-account`, and needs no declaration in strict mode; `obligation.nested` already reports everything written on it.
+- An account inside an obligation inherits like any other sub-account (see above); `obligation.nested` already reports everything written on it.
 - An obligation account may stand under any root, whatever its type, or under an unknown root. Its type changes nothing about obligations; rules that depend on type still apply to its postings, such as `posting.pnl-effective` under an expense root.
 - An obligation opens with its first posting; it needs no declaration. It may have several lending postings.
 - The same last segment under a receivable and under a payable account, such as `Assets:Receivable:tokyo-trip` and `Liabilities:Payable:tokyo-trip`, gives two obligations that never offset each other.
@@ -82,7 +82,7 @@ Status: `implemented`
 
 - Progress is computed per obligation and commodity, never converted between commodities. A debt in THB repaid in NTD is repaid with a THB posting priced in NTD (`3000 THB @@ 2700 NTD`).
 - `original` and `repaid` are made positive according to the direction. On a payable obligation with 5000 lent and 2000 repaid, `original` is 5000, `repaid` 2000 and `remaining` 3000, although the account's balance is −3000.
-- `settled` means `remaining` is zero within the tolerance of Balance assertions: |`remaining`| ≤ 0.5 × 10^−p, where p is the commodity's precision (see [balance.md](balance.md), "Balance assertions"). A difference that small is ignored, so a `balance <obligation> 0 <commodity>` that passes always leaves the obligation settled. `remaining` itself is shown as computed. Everything else is open, including a negative `remaining`, such as a prepayment not yet used up. There are no separate states for "not repaid", "partly repaid" or "overpaid": look at whether `repaid` is zero and at the sign of `remaining`.
+- `settled` means `remaining` is zero within the tolerance of Balance assertions (see [balance.md](balance.md), "Balance assertions"). A difference that small is ignored, so a `balance <obligation> 0 <commodity>` that passes always leaves the obligation settled. `remaining` itself is shown as computed. Everything else is open, including a negative `remaining`, such as a prepayment not yet used up. There are no separate states for "not repaid", "partly repaid" or "overpaid": look at whether `repaid` is zero and at the sign of `remaining`.
 - An obligation is **settled** when it is settled in every commodity it has.
 - An obligation has no due date, so it is never overdue.
 - When one obligation has several commodities and none of its postings has a price or a cost, that is `obligation.unlinked-commodity` (warning): a repayment was probably written in the wrong commodity. Each commodity is computed as usual. It is reported once per obligation, on its first posting, in transaction order, in a commodity other than the obligation's first commodity.
@@ -96,7 +96,7 @@ Obligations keep piling up, so settled ones are hidden by default.
 
 - `balance` and `register` leave out the row of an obligation that is settled at the end of the query's range: the point of `until`, or the end of a period; with several time clauses, the earliest of their ends; without a time clause, the end of the ledger. Postings are compared on their effective time, whatever the query's axis, as `obligations` does. Whether it is settled looks at all its postings up to that time, not only those the query matches.
 - Only the `all` option lists them, even when the query names the obligation itself.
-- Hiding changes only which rows are listed, never a total: a parent's subtotal still includes the hidden obligation, whose net is zero anyway.
+- Hiding changes only which rows are listed, never a total: a parent's subtotal row stays, even when all its obligations are hidden, and still includes them, whose net is zero anyway.
 - With `income-expense` on, rows may merge accounts (see [accounts.md](accounts.md), "Combined income and expense"). A row is left out only when every posting it counts is on a settled obligation, so a merged row that also counts another account's postings stays.
 - `obligations` hides settled rows in the same way (see "`obligations`").
 
@@ -106,8 +106,8 @@ Status: `implemented`
 
 Obligations are checked and closed with `balance` (see [balance.md](balance.md), "Obligations in Balance assertions").
 
-- **Checking**: `balance <obligation> <amount>` asserts one obligation's balance at a point; `balance <obligation account> <amount>`, the total of its obligations. A `hard` Balance on obligations takes no entity: a whole obligation is asserted, whoever its postings name. Closing is always done on one obligation, one Balance each.
-- **Closing**: an amount nobody will pay is written off with `balance <obligation> [@<entity>] 0 <commodity> pad <padding>`. The padding must be written, so that a later mistake in an earlier entry fails the assertion instead of being absorbed. The assertion covers the whole obligation; `@<entity>` does not narrow it, but says who the write-off is with: the generated posting goes to the same obligation carrying `@<entity>`, and is a repayment; the counter-account is the `pad-account` inherited from the obligation account unless `->` names one.
+- **Checking**: `balance <obligation> <amount>` asserts one obligation's balance at a point; `balance <obligation account> <amount>`, the total of its obligations. Entities never narrow these assertions (see [balance.md](balance.md), "Obligations in Balance assertions"). Closing is always done on one obligation, one Balance each.
+- **Closing**: an amount nobody will pay is written off with `balance <obligation> [@<entity>] 0 <commodity> pad <padding>`. The padding must be written, and `@<entity>` says who the write-off is with (see [balance.md](balance.md), "Obligations in Balance assertions"). The generated posting goes to the same obligation carrying `@<entity>`, and is a repayment or a lending by its sign; the counter-account is the `pad-account` inherited from the obligation account unless `->` names one.
 - A pad may carry a price, as a posting does, to settle a debt in another commodity.
 - An obligation can also be closed by an ordinary transaction moving the remainder to an income or expense account; the only difference is that nothing is asserted.
 
@@ -115,8 +115,8 @@ Obligations are checked and closed with `balance` (see [balance.md](balance.md),
 
 Status: `implemented`
 
-- It takes the accounts to look at, an entity, a point `at`, and the option `all`, all optional. The accounts are obligation accounts or obligations, sub-accounts included; without accounts, every obligation account. An account that is neither, and is not inside one, matches nothing.
-- With an entity, it lists the obligations whose entities include it, each in full: their progress counts every posting, whoever it names.
+- It takes the accounts to look at, an entity, a point `at`, and the option `all`, all optional. The accounts are obligation accounts or obligations, sub-accounts included; without accounts, or with an empty list, every obligation account. An account that is neither, and is not inside one, matches nothing.
+- With an entity, it lists the obligations whose entities include it, each in full (see "Entities of an obligation").
 - It counts the postings on the effective axis up to `at`; without `at`, every posting in the ledger, which tells which obligations are settled as recorded.
 - It returns one row per obligation and commodity. It leaves out the rows of settled obligations unless `all` is set; an obligation open in one commodity keeps all its rows. Rows are sorted by account, segment by segment as in the account tree (see [query.md](query.md), "Account tree"), then by commodity, comparing code points.
 - An obligation's full history is its rows' `postings`, or a query on the obligation, iterated (see [query.md](query.md)). A running remainder is the presentation layer's job.

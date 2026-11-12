@@ -1,6 +1,6 @@
 # Formatting and serialization
 
-Core writes ledger text in one **canonical form**. Serialization writes one record in that form; formatting rewrites a whole module. This document defines the canonical form and what serialization guarantees.
+This document defines the canonical form in which Core writes ledger text, and what serialization guarantees.
 
 ## Features
 
@@ -35,8 +35,8 @@ Status: `implemented`
 | Omitted amounts | Stay omitted |
 | Times | As written |
 | Breakdowns | `- <name>  <figures>`, two spaces after the name; one space between the quantity and its unit and around `*` and `=`; `*` for `×`: `- Bubble tea  3 cups * 40 NTD = 120 NTD`. A name is quoted only when it must be (see [records.md](records.md), "Breakdowns") |
-| Strings | Double quotes; `"` and `\` inside are escaped |
-| Values | Unquoted, unless they start with `"`, contain `;`, or have leading or trailing whitespace; a quoted value escapes `"` and `\`. An `include` path is also quoted when it contains whitespace or any of `;` `"` `(` `)` `[` `]` `{` `}` |
+| Strings | As in [lexical.md](lexical.md), "Strings and values" |
+| Values | Quoted only when they must be: when they start with `"`, contain `;`, or have leading or trailing whitespace (see [lexical.md](lexical.md), "Strings and values"). An `include` path is quoted when it contains whitespace or any of `;` `"` `(` `)` `[` `]` `{` `}` |
 | Metadata and comments | `;; key: value` and `; text`; at the end of a line, preceded by two spaces. A metadata value with line breaks is written on its own line: the first line after the key (`""` when it is empty), each further line on a continuation line `;;` and four spaces, plus the line's own indentation (see [lexical.md](lexical.md), "Comments and metadata"). A line is quoted when it is empty, starts with `"`, contains `;`, ends with whitespace, or has whitespace other than spaces right after its indentation; when every further line is indented, the least indented one is quoted with its spaces, so the indentation reads back the same |
 | Blocks | One serialized record ends with one line break |
 | Blocks in a module | One blank line between blocks, and the file ends with one line break [draft] |
@@ -66,7 +66,7 @@ Status: `draft`
 - Formatting rewrites every block of one module of the ledger in canonical form and returns the changes as text patches, each replacing a range of the module's text, for the platform to apply.
 - Blocks already in canonical form produce no change.
 - A block that could not be parsed, that holds syntax reported as `syntax.unsupported`, or whose amounts or times cannot be read with the ledger's settings and commodities, is left exactly as written.
-- The shape of a text patch, and how the platform detects that a file changed since it was parsed, are not settled.
+- Text patches, and how the platform detects that a file changed since it was parsed, are described in [../core/ledger.md](../core/ledger.md), "Text patches".
 
 ## API
 

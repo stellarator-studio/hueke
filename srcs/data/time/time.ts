@@ -3,7 +3,7 @@
 
 import { Temporal } from "temporal-polyfill";
 import type { Precision, TimeValue, Weekday } from "./types.js";
-import { timeTextError } from "./text.js";
+import { POINT, timeTextError } from "./text.js";
 
 export interface TimeContext {
   readonly timezone: string;
@@ -34,23 +34,48 @@ const WEEKDAYS: readonly Weekday[] = [
   "sunday",
 ];
 
-const POINT =
-  /^(\d{4})(?:-(?:W(\d{2})|(\d{2})(?:-(\d{2})(?:T(\d{2}):(\d{2})([+-]\d{2}:\d{2})?)?)?))?(?:\[([^\]]+)\])?$/;
-
+/** One end of a time value; instants are ISO strings in UTC to the minute, as `TimeValue` has. */
 interface Point {
   readonly precision: Precision;
   readonly timezone: string;
-  readonly start: Temporal.Instant;
-  readonly end: Temporal.Instant; // equal to start for a time of day
-  readonly firstDate: Temporal.PlainDate;
-  readonly lastDate: Temporal.PlainDate; // inclusive
+  readonly start: string;
+  readonly end: string; // equal to start for a time of day
+  readonly firstDate: string;
+  readonly lastDate: string; // inclusive
 }
+
+/**
+ * The time values read so far, or why one could not be read, by time zone, week start and text.
+ * A ledger writes the same times again and again, and every reload reads them all.
+ */
+const readTimes = new Map<string, TimeValue | TimeError>();
+/** Past this many, the times read are forgotten, so a long session does not keep every one. */
+const READ_TIMES_LIMIT = 200_000;
 
 /**
  * Parses a time value: a point or `<point>..<point>`, each with an optional `[Zone]`. Text is
  * checked by the same rules as ledger text, so `2026-13` is rejected, never adjusted.
  */
 export function parseTime(literal: string, context: TimeContext): TimeValue {
+  const key = `${context.timezone} ${context.weekStart} ${literal}`;
+  const known = readTimes.get(key);
+  if (known instanceof TimeError) throw new TimeError(known.code, known.message);
+  if (known) return known;
+  let value: TimeValue | TimeError;
+  try {
+    // Every reader gets this same value, so none can change what the others see.
+    value = Object.freeze(readTime(literal, context));
+  } catch (e) {
+    if (!(e instanceof TimeError)) throw e;
+    value = e;
+  }
+  if (readTimes.size >= READ_TIMES_LIMIT) readTimes.clear();
+  readTimes.set(key, value);
+  if (value instanceof TimeError) throw value;
+  return value;
+}
+
+function readTime(literal: string, context: TimeContext): TimeValue {
   const error = timeTextError(literal, false);
   if (error !== undefined) throw new TimeError("parse.invalid-time", error);
   const parts = literal.split("..");
@@ -58,16 +83,16 @@ export function parseTime(literal: string, context: TimeContext): TimeValue {
   if (first === undefined || parts.length > 2) throw new TimeError("parse.invalid-time", literal);
   const a = parsePoint(first, context);
   const b = second === undefined ? a : parsePoint(second, context);
-  if (Temporal.Instant.compare(b.end, a.start) < 0)
+  if (b.end < a.start)
     throw new TimeError("parse.invalid-time", `"${literal}" ends before it starts`);
   return {
     literal,
     precision: a.precision,
     timezone: a.timezone,
-    localDate: a.firstDate.toString(),
-    localEnd: b.lastDate.toString(),
-    start: iso(a.start),
-    end: iso(b.end),
+    localDate: a.firstDate,
+    localEnd: b.lastDate,
+    start: a.start,
+    end: b.end,
   };
 }
 
@@ -110,6 +135,78 @@ function iso(instant: Temporal.Instant): string {
   return instant.toString({ smallestUnit: "minute" });
 }
 
+/** An instant in epoch milliseconds as `iso` writes it: UTC to the minute. */
+function isoOfMs(ms: number): string {
+  return `${new Date(ms).toISOString().slice(0, 16)}Z`;
+}
+
+/** A local date as text, `YYYY-MM-DD`. */
+function dateText(year: number, month: number, day: number): string {
+  const pad = (n: number, width: number): string => String(n).padStart(width, "0");
+  return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
+}
+
+/** The local date `days` after one, as text; the date is valid. */
+function addDays(date: string, days: number): string {
+  const d = new Date(0);
+  d.setUTCFullYear(
+    Number(date.slice(0, 4)),
+    Number(date.slice(5, 7)) - 1,
+    Number(date.slice(8)) + days,
+  );
+  return dateText(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+}
+
+/** A local date and time, read as if it were UTC, in epoch milliseconds. */
+function localMs(year: number, month: number, day: number, hour: number, minute: number): number {
+  const d = new Date(0);
+  d.setUTCFullYear(year, month - 1, day);
+  d.setUTCHours(hour, minute, 0, 0);
+  return d.getTime();
+}
+
+/** A local date in one time zone: when it starts, and its UTC offset when its time is steady. */
+interface Day {
+  /** The instant the day starts, as `iso` writes it. */
+  readonly start: string;
+  /** The UTC offset in milliseconds, when the day has one throughout; undefined when it changes. */
+  readonly offset: number | undefined;
+}
+
+const days = new Map<string, Day>();
+
+/**
+ * A local date (`YYYY-MM-DD`, valid) in a time zone, worked out with Temporal once. A day that
+ * starts at its local midnight, with no transition before the next local midnight read at the
+ * later of its offsets, has no transition, so its times map to instants by its offset alone.
+ * - A day whose midnight is skipped starts later, already at the new offset.
+ * - A day skipped whole, as when a zone crosses the date line, "starts" on the next date.
+ * - Clocks set back shortly after the next midnight repeat the last minutes of this day too.
+ */
+function dayIn(timezone: string, date: string): Day {
+  const key = `${timezone} ${date}`;
+  let day = days.get(key);
+  if (!day) {
+    const start = Temporal.PlainDate.from(date).toZonedDateTime({ timeZone: timezone });
+    const next = Temporal.PlainDate.from(addDays(date, 1))
+      .toPlainDateTime()
+      .toZonedDateTime(timezone, { disambiguation: "later" });
+    const transition = start.getTimeZoneTransition("next");
+    const steady =
+      start.toPlainDate().toString() === date &&
+      start.hour === 0 &&
+      start.minute === 0 &&
+      (transition === null || Temporal.ZonedDateTime.compare(transition, next) >= 0);
+    day = {
+      start: iso(start.toInstant()),
+      offset: steady ? start.offsetNanoseconds / 1_000_000 : undefined,
+    };
+    if (days.size >= READ_TIMES_LIMIT) days.clear();
+    days.set(key, day);
+  }
+  return day;
+}
+
 function parsePoint(text: string, context: TimeContext): Point {
   const m = POINT.exec(text);
   if (!m?.[1]) throw new TimeError("parse.invalid-time", `"${text}" is not a time value`);
@@ -122,28 +219,39 @@ function parsePoint(text: string, context: TimeContext): Point {
   if (week !== undefined) {
     const n = Number(week);
     const first = weekOne(y, context.weekStart);
-    const count = first.until(weekOne(y + 1, context.weekStart)).days / 7;
+    const count = (weekOne(y + 1, context.weekStart) - first) / 7;
     if (n < 1 || n > count)
       throw new TimeError("time.nonexistent-week", `${String(y)} has no week ${String(n)}`);
-    const startDate = first.add({ days: (n - 1) * 7 });
-    return dates("week", timezone, startDate, startDate.add({ days: 6 }));
+    const startDate = dateOfDayNumber(first + (n - 1) * 7);
+    return dates("week", timezone, startDate, addDays(startDate, 6));
   }
-  if (month === undefined) {
-    const startDate = Temporal.PlainDate.from({ year: y, month: 1, day: 1 });
-    return dates("year", timezone, startDate, startDate.add({ years: 1 }).subtract({ days: 1 }));
-  }
+  if (month === undefined) return dates("year", timezone, dateText(y, 1, 1), dateText(y, 12, 31));
   const mo = Number(month);
   if (day === undefined) {
-    const startDate = Temporal.PlainDate.from({ year: y, month: mo, day: 1 });
-    return dates("month", timezone, startDate, startDate.add({ months: 1 }).subtract({ days: 1 }));
+    const first = dateText(y, mo, 1);
+    const next = mo === 12 ? dateText(y + 1, 1, 1) : dateText(y, mo + 1, 1);
+    return dates("month", timezone, first, addDays(next, -1));
   }
-  const date = Temporal.PlainDate.from(
-    { year: y, month: mo, day: Number(day) },
-    { overflow: "reject" },
-  );
+  // The text has been checked, so the date exists.
+  const date = dateText(y, mo, Number(day));
   if (hour === undefined || minute === undefined) return dates("day", timezone, date, date);
 
-  const local = date.toPlainDateTime({ hour: Number(hour), minute: Number(minute) });
+  const steady = dayIn(timezone, date).offset;
+  if (steady !== undefined) {
+    // No transition that day: the local time exists once, at the day's offset.
+    if (offset !== undefined && offsetNanoseconds(offset) !== steady * 1_000_000)
+      throw new TimeError(
+        "time.offset-mismatch",
+        `${text}: ${timezone} is not at ${offset} at that time`,
+      );
+    const at = isoOfMs(localMs(y, mo, Number(day), Number(hour), Number(minute)) - steady);
+    return { precision: "time", timezone, start: at, end: at, firstDate: date, lastDate: date };
+  }
+
+  const local = Temporal.PlainDate.from(date).toPlainDateTime({
+    hour: Number(hour),
+    minute: Number(minute),
+  });
   const earlier = local.toZonedDateTime(timezone, { disambiguation: "earlier" });
   const later = local.toZonedDateTime(timezone, { disambiguation: "later" });
   if (!earlier.toPlainDateTime().equals(local))
@@ -164,7 +272,7 @@ function parsePoint(text: string, context: TimeContext): Point {
       "time.ambiguous-local-time",
       `${text} happens twice in ${timezone}; write its UTC offset (${earlier.offset} or ${later.offset})`,
     );
-  const instant = chosen.toInstant();
+  const instant = iso(chosen.toInstant());
   return {
     precision: "time",
     timezone,
@@ -181,50 +289,82 @@ function offsetNanoseconds(offset: string): number {
   return (offset.startsWith("-") ? -minutes : minutes) * 60_000_000_000;
 }
 
-function dates(
-  precision: Precision,
-  timezone: string,
-  firstDate: Temporal.PlainDate,
-  lastDate: Temporal.PlainDate,
-): Point {
+/** Whole local days, from the start of the first to the start of the day after the last. */
+function dates(precision: Precision, timezone: string, firstDate: string, lastDate: string): Point {
   return {
     precision,
     timezone,
-    start: firstDate.toZonedDateTime({ timeZone: timezone }).toInstant(),
-    end: lastDate.add({ days: 1 }).toZonedDateTime({ timeZone: timezone }).toInstant(),
+    start: dayIn(timezone, firstDate).start,
+    end: dayIn(timezone, addDays(lastDate, 1)).start,
     firstDate,
     lastDate,
   };
 }
 
-/** Whether a time is one day or one moment: what a posting or a Balance may have as its effective. */
+/** Whether a time is one day or one moment: what a posting may have as its effective. */
 export const isOneDayOrMoment = (t: TimeValue): boolean =>
   (t.precision === "day" || t.precision === "time") && !t.literal.includes("..");
 
-/** Week 1 is the week that contains January 1, starting on `weekStart` (not ISO 8601). */
-export function weekOne(year: number, weekStart: Weekday): Temporal.PlainDate {
-  const jan1 = Temporal.PlainDate.from({ year, month: 1, day: 1 });
-  const offset = (jan1.dayOfWeek - 1 - WEEKDAYS.indexOf(weekStart) + 7) % 7;
-  return jan1.subtract({ days: offset });
+/** Whether a time is one day: what a Balance has as its effective. */
+export const isOneDay = (t: TimeValue): boolean =>
+  t.precision === "day" && !t.literal.includes("..");
+
+/** A day number: days since 1970-01-01, which is 0. */
+function dayNumber(year: number, month: number, day: number): number {
+  const d = new Date(0);
+  d.setUTCFullYear(year, month - 1, day);
+  return Math.round(d.getTime() / 86_400_000);
+}
+
+/** The day number of a local date (`YYYY-MM-DD`, valid). */
+function dayNumberOf(date: string): number {
+  return dayNumber(Number(date.slice(0, 4)), Number(date.slice(5, 7)), Number(date.slice(8)));
+}
+
+/** The local date of a day number, as text. */
+function dateOfDayNumber(n: number): string {
+  const d = new Date(n * 86_400_000);
+  return dateText(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+}
+
+/**
+ * Whether `YYYY-MM-DD` text is a date that exists, in the years a ledger may use: 0001 to 9998
+ * (docs/core/time.md).
+ */
+export function isPlainDate(text: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const year = Number(text.slice(0, 4));
+  return year >= 1 && year <= 9998 && dateOfDayNumber(dayNumberOf(text)) === text;
+}
+
+/**
+ * Week 1 is the week that contains January 1, starting on `weekStart` (not ISO 8601): the day
+ * number of its first day.
+ */
+function weekOne(year: number, weekStart: Weekday): number {
+  const jan1 = dayNumber(year, 1, 1);
+  // Day 0, 1970-01-01, is a Thursday: 3 days after a Monday.
+  const weekday = (((jan1 + 3) % 7) + 7) % 7; // 0 is Monday
+  return jan1 - ((weekday - WEEKDAYS.indexOf(weekStart) + 7) % 7);
 }
 
 /** The week label ("2027-W01") of a local date. */
 export function weekLabel(date: string, weekStart: Weekday): string {
-  const d = Temporal.PlainDate.from(date);
-  let year = d.year + 1;
-  while (Temporal.PlainDate.compare(weekOne(year, weekStart), d) > 0) year--;
-  const n = Math.floor(weekOne(year, weekStart).until(d).days / 7) + 1;
+  const d = dayNumberOf(date);
+  let year = Number(date.slice(0, 4)) + 1;
+  while (weekOne(year, weekStart) > d) year--;
+  const n = Math.floor((d - weekOne(year, weekStart)) / 7) + 1;
   return `${String(year)}-W${String(n).padStart(2, "0")}`;
 }
 
 /** Each local date from `first` to `last`, inclusive. */
 export function* eachDate(first: string, last: string): Generator<string> {
-  let d = Temporal.PlainDate.from(first);
-  const end = Temporal.PlainDate.from(last);
-  while (Temporal.PlainDate.compare(d, end) <= 0) {
-    yield d.toString();
-    d = d.add({ days: 1 });
+  if (first === last) {
+    yield first;
+    return;
   }
+  const end = dayNumberOf(last);
+  for (let d = dayNumberOf(first); d <= end; d++) yield dateOfDayNumber(d);
 }
 
 // ---------- Predicates (docs/core/time.md, "Time predicates") ----------

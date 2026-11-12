@@ -54,10 +54,10 @@ Status: `implemented`
 | `parse.metadata-after-breakdown` | warning | Metadata after a breakdown line, at its end or on its own line (see [../dsl/lexical.md](../dsl/lexical.md), "Ownership") | Computed as written: it belongs to the posting | `implemented` |
 | `option.unknown` | error | Unknown setting name | Line ignored | `implemented` |
 | `option.duplicate` | error | Setting written more than once in the root module | All writings ignored; default used (see [settings.md](settings.md), "Errors in settings") | `implemented` |
-| `option.invalid-value` | error | Setting value not allowed | Default used | `implemented` |
+| `option.invalid-value` | error | Setting value not allowed (see [settings.md](settings.md), "Errors in settings") | Default used | `implemented` |
 | `option.missing-timezone` | warning | No time zone is set at all (see [time.md](time.md), "Default time zone") | UTC used | `implemented` |
-| `option.invalid-number-format` | error | `decimal-mark` and `group-mark` are both written, and are the same mark | Both defaults used | `implemented` |
-| `option.invalid-root` | error | The name of the merged income and expense root equals an account root, built-in or declared, or the root of an account in use (see [accounts.md](accounts.md), "Combined income and expense") | The setting takes no effect | `implemented` |
+| `option.invalid-number-format` | error | `decimal-mark` and `group-mark` are both written, and are the same mark (see [settings.md](settings.md), "Errors in settings") | Both defaults used | `implemented` |
+| `option.invalid-root` | error | The name of the merged income and expense root is already a root (see [accounts.md](accounts.md), "Combined income and expense") | The setting takes no effect | `implemented` |
 | `time.nonexistent-local-time` | error | Local time skipped by daylight saving time | Record not loaded; on a posting's time, the whole transaction | `implemented` |
 | `time.ambiguous-local-time` | error | Local time repeated by daylight saving time | Same | `implemented` |
 | `time.nonexistent-week` | error | The week does not exist in that year under `week-start` | Same | `implemented` |

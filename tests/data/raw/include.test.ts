@@ -12,4 +12,9 @@ describe("referencedSources", () => {
       ["path.invalid", "2026/main.hueke", text.indexOf("include x/")],
     ]);
   });
+  it("accepts a path with parentheses written without quotes", () => {
+    const data = parse("main.hueke", "include a(b).hueke\n");
+    expect(data.diagnostics).toEqual([]);
+    expect(referencedSources("main.hueke", data)).toEqual({ paths: ["a(b).hueke"], errors: [] });
+  });
 });

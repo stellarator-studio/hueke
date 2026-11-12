@@ -53,6 +53,9 @@ Status: `implemented`
 - `a..b` where `b` ends before `a` starts is `parse.invalid-time`.
 - Values wrong from their text alone (`2026-13`, `2026-02-30`, `W00`, `W54`, `T25:00`) and unknown zones are `parse.invalid-time`.
 - A record with a time error is not loaded; an error in a posting's time drops the whole transaction.
+- Out of scope:
+  - Times in the years 0000 and 9999, at the edges of the four-digit range. They may be read wrongly, or stop the ledger from loading.
+  - Times in a period when the zone's offset is not a whole number of minutes, such as local mean time before a zone adopted standard time. Their UTC instants may be one minute off.
 
 ### Daylight saving time
 
@@ -80,7 +83,7 @@ Status: `implemented`
 
 Status: `implemented`
 
-- The first day of the week is the ledger setting `week-start`, any weekday, default `monday`.
+- The first day of the week is the ledger setting `week-start` (see [settings.md](settings.md), "Settings").
 - Week 1 is the week that contains January 1, counted from `week-start`. The week that contains the next January 1 is week 1 of the next year, so a year has 52 or 53 weeks and the last days of December may belong to the next year's week 1 (2026-12-29 can be 2027-W01).
 - This rule applies to `monday` too; ISO 8601 week numbering is not used.
 - A week that does not exist in its year under the ledger's week start (such as `W53` in a 52-week year) is `time.nonexistent-week`.

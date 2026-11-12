@@ -124,7 +124,7 @@ describe("loading and initialization", () => {
   it("does not depend on the order of loading", () => {
     const files = { "main.hueke": `${TEXT}include sub.hueke\n`, "sub.hueke": LUNCH };
     const reversed = Object.fromEntries(Object.entries(files).reverse());
-    const ids = (h: Hueke) => h.transactions.map((t) => `${t.id} ${t.source ?? ""}`);
+    const ids = (h: Hueke) => h.transactions.map((t) => `${t.id} ${t.source}`);
     expect(ids(modules(reversed))).toEqual(ids(modules(files)));
     expect(ids(modules(files))).toEqual(["~1 main.hueke", "~2 sub.hueke"]);
   });
@@ -150,6 +150,11 @@ describe("source positions", () => {
       lunch?.postings[1]?.span &&
         text.slice(lunch.postings[1].span.start, lunch.postings[1].span.end),
     ).toBe("Assets:Cash");
+  });
+  it("keeps the module's text exactly as parsed", () => {
+    const text =
+      'option timezone UTC\r\n2026-10-12 "Lunch"\n    Expenses:Food  180 NTD\n    Assets:Cash';
+    expect(parse("main.hueke", text).text).toBe(text);
   });
   it("counts offsets and columns in UTF-16 code units", () => {
     const text = '2026-10-12 "🍜 Ramen" #x\n';

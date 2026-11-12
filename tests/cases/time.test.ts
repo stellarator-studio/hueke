@@ -408,6 +408,31 @@ describe("weeks and the first day of the week", () => {
     expect(codes(h)).toEqual(["time.nonexistent-week"]);
     expect(descriptions(h.transactions)).not.toContain("F");
   });
+  it("reads the last week of a 53-week year and week 1 of the next", () => {
+    const h = ledger(WEEKS.replace("2026-12-28 *", "2023-12-31=2023-W53 *"));
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions.find((t) => t.description === "E")?.accounting).toMatchObject({
+      precision: "week",
+      localDate: "2023-12-25",
+      localEnd: "2023-12-31",
+    });
+    const days = ledger(
+      ["2023-12-24", "2023-12-25", "2023-12-31", "2024-01-01"]
+        .map((d) => LUNCH(d).replace('"Lunch"', `"${d}"`))
+        .join("\n"),
+    );
+    expect(week(days, "2023-W53")).toEqual(["2023-12-25", "2023-12-31"]);
+    expect(week(days, "2024-W01")).toEqual(["2024-01-01"]);
+    expect(week(days, "2023-W52")).toEqual(["2023-12-24"]);
+  });
+  it("has week 53 in a year only under the week starts that give it one", () => {
+    const sunday = ledger(`option week-start sunday\n${LUNCH("2022-12-31")}`);
+    expect(descriptions(query(sunday).within("2022-W53"))).toEqual(["Lunch"]);
+    expect(() => query(ledger(LUNCH("2022-12-31"))).within("2022-W53")).toThrow(
+      "time.nonexistent-week",
+    );
+    expect(() => query(sunday).within("2023-W53")).toThrow("time.nonexistent-week");
+  });
 });
 
 describe("time predicates", () => {

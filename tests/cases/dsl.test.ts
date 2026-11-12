@@ -1,7 +1,7 @@
 // Cases for the DSL: line ownership, token order and parse diagnostics.
 import { describe, expect, it } from "vitest";
 import { balance, check, parse, position, query } from "../../srcs/index.js";
-import { balanceOf, codes, ledger, SHARED } from "./ledger.js";
+import { balanceOf, codes, descriptions, ledger, SHARED } from "./ledger.js";
 
 describe("a broken block does not affect others", () => {
   it("loads the other blocks", () => {
@@ -322,6 +322,30 @@ describe("a posting mark", () => {
         .postings()
         .map((p) => `${p.account} ${p.status}`),
     ).toEqual(["Expenses:Food cleared", "Assets:Cash none"]);
+  });
+});
+
+describe("lines read as date lines", () => {
+  it.each([
+    ["a - and a number", "-5 NTD", "-5"],
+    ["a parenthesis closed on the line", "(5) NTD", "(5)"],
+    ["a - and a parenthesis", "-(5) NTD", "-(5)"],
+  ])("rejects a top-level line starting with %s and does not load its block", (_, line, word) => {
+    const h = ledger(`
+${line}
+    Expenses:Food     100 NTD
+    Assets:Cash      -100 NTD
+
+2026-10-12 * "Lunch"
+    Expenses:Food     180 NTD
+    Assets:Cash      -180 NTD
+`);
+    const found = check(h);
+    expect(found.map((d) => d.code)).toEqual(["parse.syntax"]);
+    expect(found[0]?.message).toBe(
+      `"${word}" is not a time: a line starting with "-" and a number, or with "(", is read as a date line`,
+    );
+    expect(h.transactions.map((t) => t.description)).toEqual(["Lunch"]);
   });
 });
 
@@ -811,4 +835,96 @@ describe("properties that may repeat", () => {
   it("cap-group is not a declaration", () => {
     expect(codes(ledger("cap-group %food 3000 NTD\n"))).toEqual(["parse.unexpected-property"]);
   });
+});
+
+describe("keywords as commodity codes and aliases", () => {
+  const message = (word: string) =>
+    `"${word}" is a keyword and cannot be a commodity code or alias`;
+  it("rejects a keyword as a declared code, and the commodity is not declared", () => {
+    const h = ledger("commodity fixed\n    precision 2\n");
+    expect(check(h).map((d) => [d.code, d.message])).toEqual([["parse.syntax", message("fixed")]]);
+    expect(h.commodities.some((c) => c.id === "fixed")).toBe(false);
+  });
+  it("rejects a keyword as an alias, and the declaration is not loaded", () => {
+    const h = ledger("commodity TWD\n    precision 2\n    alias fee suffix\n");
+    expect(check(h).map((d) => [d.code, d.message])).toEqual([["parse.syntax", message("fee")]]);
+    expect(h.commodities.some((c) => c.id === "TWD")).toBe(false);
+  });
+  it("rejects a keyword as a primary commodity, and the account is not declared", () => {
+    const h = ledger("account Bank:Checking\n    primary minimum\n");
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.accounts.some((a) => a.id === "Bank:Checking")).toBe(false);
+  });
+  const next = '\n2026-10-13 * "Next"\n    Expenses:Food  7 NTD\n    Assets:Cash  -7 NTD\n';
+  const posting = (amount: string, extra = "") =>
+    `2026-10-12 * "x"\n    Expenses:Food  ${amount}${extra}\n    Assets:Cash  -5 NTD\n${next}`;
+  it.each([
+    ["fixed", posting("5 fixed")],
+    ["cap-group", posting("5 cap-group")],
+    ["minimum", posting("5 minimum")],
+    ["fixed", posting("5fixed")],
+    ["fixed", posting("5 NTD", " @ 3 fixed")],
+    ["fixed", posting("5 NTD", " {3 fixed}")],
+    ["fixed", posting("(100 + 50)fixed")],
+    ["fixed", posting("((1 + 2) * 2)fixed")],
+  ])("rejects %s in a posting's amount, price or cost: %j", (word, text) => {
+    const h = ledger(text);
+    expect(check(h).map((d) => [d.code, d.message])).toEqual([["parse.syntax", message(word)]]);
+    expect(descriptions(h.transactions)).toEqual(["Next"]);
+    expect(balanceOf(h, "Assets:Cash", "2026-10-14")).toBe("-7");
+  });
+  it.each([
+    ["a Balance amount", "2026-10-14 balance Assets:Cash 5 fixed\n"],
+    ["a padding", "2026-10-14 balance Assets:Cash -7 NTD pad 5 fixed -> Expenses:Other\n"],
+    [
+      "a padding's price",
+      "2026-10-14 balance Assets:Cash -7 NTD pad 5 NTD @ 1 fixed -> Expenses:Other\n",
+    ],
+  ])("rejects a keyword in %s, and the Balance is not loaded", (_, text) => {
+    const h = ledger(`${next}\n${text}\n2026-10-15 balance Assets:Cash -7 NTD\n`);
+    expect(check(h).map((d) => [d.code, d.message])).toEqual([["parse.syntax", message("fixed")]]);
+    expect(h.balances.map((b) => [b.amount.value, b.mode])).toEqual([["-7", "hard"]]);
+    expect(descriptions(h.transactions)).toEqual(["Next"]);
+  });
+  it.each(["5 fixed-income", "5 items", "5 rate2"])(
+    "accepts a code that only contains a keyword: %s",
+    (amount) => {
+      const h = ledger(posting(amount));
+      expect(codes(h).filter((c) => c.startsWith("parse."))).toEqual([]);
+      expect(descriptions(h.transactions)).toEqual(["x", "Next"]);
+    },
+  );
+  it.each([
+    [
+      "a quantity's unit",
+      "- Toast  3 fixed",
+      [],
+      [{ name: "Toast", quantity: { value: "3", unit: "fixed" } }],
+    ],
+    [
+      "a unit price",
+      "- Toast  1 * 5 fixed",
+      ["breakdown.commodity-mismatch"],
+      [{ name: "Toast", quantity: { value: "1" }, unitPrice: { value: "5", commodity: "fixed" } }],
+    ],
+    [
+      "a total",
+      "- Toast  = 5 fixed",
+      ["breakdown.commodity-mismatch"],
+      [{ name: "Toast", total: { value: "5", commodity: "fixed" } }],
+    ],
+  ])("does not check a keyword in a breakdown line's %s", (_, line, expected, breakdown) => {
+    const h = ledger(posting("5 NTD", `\n        ${line}`));
+    expect(codes(h)).toEqual(expected);
+    expect(descriptions(h.transactions)).toEqual(["x", "Next"]);
+    expect(query(h).accounts("Expenses:Food").postings()[0]?.breakdown).toEqual(breakdown);
+  });
+  it.each(["(5 - - 3) NTD", "(5 -- 3) NTD", "(5--3) NTD"])(
+    "does not read a minus sign in an expression as a keyword: %s",
+    (amount) => {
+      const h = ledger(posting(amount).replace("-5 NTD", "-8 NTD"));
+      expect(check(h)).toEqual([]);
+      expect(balanceOf(h, "Expenses:Food", "2026-10-12")).toBe("8");
+    },
+  );
 });

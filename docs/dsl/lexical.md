@@ -30,7 +30,7 @@ Each line has its leading whitespace removed and is split at the first `;` outsi
 | Order | Class | Recognized by | Example |
 | --- | --- | --- | --- |
 | 1 | Blank line, whole-line metadata, whole-line comment | Empty content | `;; invoice_number: AB-12345678`, `; note` |
-| 2 | Date line | First character is a digit | `2026-10-12 * "Lunch"`, `2026-10-25 balance …` |
+| 2 | Date line | First character is a digit, or `(` closed on the same line; either may follow a `-`. A date line not starting with a digit, such as `-5 NTD` or `(5) NTD`, is `parse.syntax`, and its block is not loaded | `2026-10-12 * "Lunch"`, `2026-10-25 balance …` |
 | 3 | Declaration | First token is a declaration keyword | `commodity NTD`, `account Assets:Cash` |
 | 4 | Breakdown | `-` followed by whitespace, the end of the line, or one of `"` `;` `[` `]` `{` `}` `%` `#` `^` `@` `*` `×` `!` `-` | `- Toast  = 65`, `-"Toast"  = 65` |
 | 5 | Marked posting | `*`, with or without whitespace after it | `* Expenses:Other 500 NTD` |
@@ -47,6 +47,7 @@ Each line has its leading whitespace removed and is split at the first `;` outsi
 | Properties | `item`, `precision`, `alias`, `primary`, `display-name`, `obligation`, `pad-account`; reserved: `type`, `active`, `allow`, `deny`, `statement`, `source`, `self`, `map`, `from`, `every`, `count`, `until`, `follows`, `skip`, `due`, `override`, `principal`, `method`, `rate`, `periodic-rate`, `first-period`, `rounding`, `absorb`, `fee`, `split`, `paid-by`, `share`, `into`, `cap`, `minimum`, `cap-group`, `fixed` |
 
 - An account root cannot be a keyword; otherwise a one-segment account would read as a declaration or property.
+- A commodity code or alias cannot be a keyword either, reserved ones included, so that keywords stay free for features to come: `commodity fixed`, `alias fee suffix` and the amounts `5 fixed` and `(100 + 50)fixed`, in a posting, a price, a cost or a Balance, are `parse.syntax`, and the block is not loaded. A breakdown line's figures are not checked, since a commodity written there is not a use of it (see [../core/transactions.md](../core/transactions.md), "Breakdowns").
 
 ### Ownership
 
@@ -146,11 +147,11 @@ Status: `implemented`
 | --- | --- | --- |
 | Account name | Segments separated by `:`, none empty; no whitespace, `;`, `"`, `,`, `[`, `]`, `{`, `}`; does not start with `%`, `#`, `^`, `@` | `Assets:Cash`, `Expenses:CoffeeShop` |
 | Account root | The first segment; starts with a letter; not a keyword | `Assets`, `Bank` |
-| Commodity code | A letter, then letters, digits, `_`, `-`, `.` | `NTD`, `camera-01`, `BRK.B` |
+| Commodity code | A letter, then letters, digits, `_`, `-`, `.`; not a keyword | `NTD`, `camera-01`, `BRK.B` |
 | Entity | A letter or `_`, then letters, digits, `_`, `-` | `NAT`, `xx_breakfast` |
 | Role | As an entity | `person` |
 | Anchor | Letters, digits, `_`, `-`; no `/`, `.`, `:`; not `self`. A `/` after the name starts a period, which is not part of the anchor (see [README.md](README.md), "Reserved syntax") | `t_book`, `deposit-1011`, `t8f3k2q` |
-| Commodity alias | No whitespace or digits; none of `;` `"` `,` `%` `#` `^` `@` `*` `×` `[` `]` `{` `}` `=` `(` `)` `+` `/`; does not start with `-`, `.`, `'` | `NT$`, `$`, `dollars` |
+| Commodity alias | No whitespace or digits; none of `;` `"` `,` `%` `#` `^` `@` `*` `×` `[` `]` `{` `}` `=` `(` `)` `+` `/`; does not start with `-`, `.`, `'`; not a keyword | `NT$`, `$`, `dollars` |
 | Tag scope | Lowercase ASCII letters and `-` | `system` |
 | Metadata key | A letter, then letters, Unicode digits, `_`, `-` | `invoice_number` |
 | Time zone | An IANA name: ASCII letters, digits, `/`, `_`, `-`, `+` | `Asia/Taipei` |

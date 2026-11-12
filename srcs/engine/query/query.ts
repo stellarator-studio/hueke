@@ -53,6 +53,9 @@ interface State {
   readonly involves?: readonly Id[];
 }
 
+/** The clauses that take a list of values. */
+type ListClause = "ids" | "accounts" | "entities" | "tags" | "status" | "breakdown" | "involves";
+
 // Kept outside the class so that the public API has only the clauses of the documents.
 const states = new WeakMap<Query, { readonly hueke: Hueke; readonly state: State }>();
 
@@ -84,19 +87,19 @@ export class Query implements Iterable<Transaction> {
   }
   /** A transaction's ID at transaction level, a posting's ID at posting level. */
   ids(...ids: Id[]): Query {
-    return this.#with({ ids });
+    return this.#filter("ids", ids);
   }
   /** Posting level; sub-accounts included; a merged income and expense name also matches. */
   accounts(...ids: Id[]): Query {
-    return this.#with({ accounts: ids });
+    return this.#filter("accounts", ids);
   }
   /** Posting level, on the posting's references, else its transaction's; see `entitiesOf`. */
   entities(...ids: Id[]): Query {
-    return this.#with({ entities: ids });
+    return this.#filter("entities", ids);
   }
   /** Posting level, on the posting's own tags plus its transaction's. */
   tags(...tags: TagInput[]): Query {
-    return this.#with({ tags: tags.map(tagKey) });
+    return this.#filter("tags", tags.map(tagKey));
   }
   /** Transaction level. */
   primaryTag(anchor: string): Query {
@@ -108,15 +111,15 @@ export class Query implements Iterable<Transaction> {
   }
   /** Posting level. */
   status(...s: Status[]): Query {
-    return this.#with({ status: s });
+    return this.#filter("status", s);
   }
   /** Posting level: the posting has a breakdown line with one of the names, as written. */
   breakdown(...names: string[]): Query {
-    return this.#with({ breakdown: names });
+    return this.#filter("breakdown", names);
   }
   /** Transaction level; every commodity must appear in some posting's amount (AND). */
   involves(...commodities: Id[]): Query {
-    return this.#with({ involves: commodities });
+    return this.#filter("involves", commodities);
   }
 
   *[Symbol.iterator](): Iterator<Transaction> {
@@ -151,6 +154,14 @@ export class Query implements Iterable<Transaction> {
     );
   }
 
+  /** A clause of values: with none, it does not filter (docs/core/query.md, "Filtering"). */
+  #filter<K extends ListClause>(key: K, values: NonNullable<State[K]>): Query {
+    const { hueke, state } = inner(this);
+    if (values.length > 0) return new Query(hueke, { ...state, [key]: values });
+    const rest = Object.fromEntries(Object.entries(state).filter(([k]) => k !== key));
+    return new Query(hueke, rest as unknown as State);
+  }
+
   #with(change: Partial<State>): Query {
     const { hueke, state } = inner(this);
     return new Query(hueke, { ...state, ...change });
@@ -180,9 +191,21 @@ function orderedPostings({
     })),
   );
   // The sort is stable: within a transaction, postings keep their written order.
-  return out
-    .sort((a, b) => compareTime(a.time, b.time) || order(a.transaction) - order(b.transaction))
-    .map(({ transaction, posting }) => ({ transaction, posting }));
+  return inTimeOrder(out, (x) => x.time, order).map(({ transaction, posting }) => ({
+    transaction,
+    posting,
+  }));
+}
+
+/** Sorts by time, then by the transactions' source order (docs/core/query.md, "Ordering"). */
+function inTimeOrder<T extends { readonly transaction: Transaction }>(
+  items: T[],
+  time: (item: T) => TimeValue,
+  order: (t: Transaction) => number,
+): T[] {
+  return items.sort(
+    (a, b) => compareTime(time(a), time(b)) || order(a.transaction) - order(b.transaction),
+  );
 }
 
 function inner(q: Query): { readonly hueke: Hueke; readonly state: State } {
@@ -256,8 +279,7 @@ function evaluate(q: Query): {
     if (hit.length > 0) hits.push({ transaction: t, postings: hit });
   }
   const order = sourceOrder(hueke);
-  const time = (h: Hit): TimeValue => transactionTime(h.transaction, axis);
-  hits.sort((a, b) => compareTime(time(a), time(b)) || order(a.transaction) - order(b.transaction));
+  inTimeOrder(hits, (h) => transactionTime(h.transaction, axis), order);
   return { hueke, axis, state: s, hits, read };
 }
 

@@ -127,7 +127,7 @@ Status: `implemented`
 - The effective time is one day; an accounting time may follow after `=` (see [../core/balance.md](../core/balance.md), "Balance assertions").
 - The amount is signed; with `pad`, it is the balance after padding.
 - After `pad`, a number or alias is the padding (signed, on the asserted account); `->` names the counter-account. Both are optional.
-- `@entity` limits the assertion to one entity (see [../core/balance.md](../core/balance.md), "Entities in Balance assertions"). At most one; a second is `parse.syntax`. `@person:entity` is the same as `@entity`, and any other role is `name.unknown-role`, as on any reference. On obligations, only a pad on one obligation takes an entity (see [../core/balance.md](../core/balance.md), "Obligations in Balance assertions").
+- `@entity` limits the assertion to one entity (see [../core/balance.md](../core/balance.md), "Entities in Balance assertions"). At most one; a second is `parse.syntax`. Its role follows the rules of any reference (see [../core/entities.md](../core/entities.md), "References and roles"). On obligations, only a pad on one obligation takes an entity (see [../core/balance.md](../core/balance.md), "Obligations in Balance assertions").
 - A Balance takes metadata but no tags; a tag is `parse.syntax`.
 
 ```hueke
@@ -193,5 +193,5 @@ include accounts.hueke
 include 2026/10.hueke
 ```
 
-- `include <path>` is a top-level line with no child lines. The path is one token; quote it when it contains whitespace or any of `;` `"` `(` `)` `[` `]` `{` `}`. A missing path or an extra token is `parse.syntax`, and the line is not loaded.
+- `include <path>` is a top-level line with no child lines. The path is one token; quote it when it contains whitespace or any of `;` `"` `[` `]` `{` `}`. A path with `(` or `)` may be written with or without quotes; Core writes it quoted (see [formatting.md](formatting.md), "Canonical form"). A missing path or an extra token is `parse.syntax`, and the line is not loaded.
 - How paths resolve and how included modules join the ledger is described in [../core/modules.md](../core/modules.md).

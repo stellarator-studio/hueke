@@ -10,7 +10,7 @@ import type {
   Transaction,
 } from "../../data/model/types.js";
 import type { Diagnostic } from "../../data/source/source.js";
-import { obligationPlace, within } from "../../data/model/account.js";
+import { obligationPlace, within, type ObligationPlace } from "../../data/model/account.js";
 import {
   add,
   decimal,
@@ -21,8 +21,10 @@ import {
   type Rational,
 } from "../../data/values/decimal.js";
 import { diagnostic, type Code } from "../../data/source/diagnostics.js";
+import { compareTime } from "../../data/time/time.js";
 import {
   balanceAt,
+  indexPostings,
   balanceBelongs,
   show,
   withinHalfUnit,
@@ -52,13 +54,10 @@ export function expandPads(
   // Array.prototype.sort is stable, so source order decides ties.
   const pads = balances
     .filter((b) => b.mode === "pad")
-    .sort((a, b) =>
-      a.effective.end < b.effective.end ? -1 : a.effective.end > b.effective.end ? 1 : 0,
-    );
+    .sort((a, b) => compareTime(a.effective, b.effective));
   // The Balance's, then the account's (declared, or inherited from an obligation account), then
   // the ledger's.
-  const padAccountOf = (b: Balance): Id | undefined => {
-    const place = obligationPlace(b.account, accounts);
+  const padAccountOf = (b: Balance, place: ObligationPlace | undefined): Id | undefined => {
     const own =
       accounts.get(b.account)?.padAccount ??
       (place ? accounts.get(place.root)?.padAccount : undefined);
@@ -70,9 +69,10 @@ export function expandPads(
 
   // A pad fills only the asserted commodity, from a counter-account.
   const effects = new Map<Balance, Effect[]>();
+  const padAccounts = new Map<Balance, Id>();
   for (const b of pads) {
-    const padAccount = padAccountOf(b);
     const place = obligationPlace(b.account, accounts);
+    const padAccount = padAccountOf(b, place);
     if (place && !b.pad)
       report(
         "balance.pad-needs-amount",
@@ -93,11 +93,13 @@ export function expandPads(
       );
     else if (padAccount === undefined)
       report("balance.missing-pad-account", `pad of ${b.account} has no account to pad from`, b);
-    else
+    else {
+      padAccounts.set(b, padAccount);
       effects.set(b, [
         { account: b.account, commodity: b.amount.commodity },
         { account: padAccount, commodity: b.padPrice?.commodity ?? b.amount.commodity },
       ]);
+    }
   }
 
   // Pads at the same point must not affect each other, nor pad from inside their own account.
@@ -135,13 +137,14 @@ export function expandPads(
 
   const generated: Transaction[] = [];
   const result: { balance: Balance; transaction: Transaction }[] = [];
-  const all = (): Iterable<Transaction> => [...transactions, ...generated];
+  // The pads generated so far count toward the balances after them.
+  const index = indexPostings(transactions);
   for (const b of pads) {
-    const padAccount = padAccountOf(b);
-    if (!effects.has(b) || conflicted.has(b) || padAccount === undefined) continue;
+    const padAccount = padAccounts.get(b);
+    if (conflicted.has(b) || padAccount === undefined) continue;
     const commodity = b.amount.commodity;
     const belongs = balanceBelongs(b, accounts, obligations);
-    const current = balanceAt(all(), b.account, commodity, b.effective, belongs);
+    const current = balanceAt(index, b.account, commodity, b.effective, belongs);
     const asserted = rational(b.amount.value);
     let diff: Rational;
     if (b.pad) {
@@ -164,6 +167,7 @@ export function expandPads(
       generated.length + 1,
     );
     generated.push(transaction);
+    indexPostings([transaction], index);
     result.push({ balance: b, transaction });
   }
   return result;
@@ -191,7 +195,7 @@ function padTransaction(b: Balance, padAccount: Id, diff: Amount, n: number): Tr
   });
   return {
     id,
-    ...(b.source !== undefined && { source: b.source }),
+    source: b.source,
     effective: b.effective,
     accounting: b.accounting ?? b.effective,
     occurrence: "occurred",
