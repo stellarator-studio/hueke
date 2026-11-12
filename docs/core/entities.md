@@ -40,7 +40,7 @@ Status: `implemented`
 
 - Unless strict mode covers entities, any entity can be referenced without a declaration. Its ID is the name referenced, and it has no `displayName`.
 - In strict mode for entities (see [ledger.md](ledger.md), "Declarations and strict mode"), referencing an undeclared entity is `strict.undeclared`; the ledger is computed as in normal mode.
-- The ledger's `entities` lists the declared entities first, in declaration order, then those used without a declaration, in the order of their first use in the source.
+- The ledger's `entities` lists the declared entities first, in declaration order, then those used without a declaration (see [ledger.md](ledger.md), "Declarations and strict mode").
 - Entities never change balances. They take part in filtering and grouping (see [query.md](query.md)), in Balance assertions (see [balance.md](balance.md), "Entities in Balance assertions") and in obligations (see [obligations.md](obligations.md)).
 
 ### Entity declarations

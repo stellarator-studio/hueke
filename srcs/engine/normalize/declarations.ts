@@ -14,13 +14,17 @@ import type {
   Id,
   LedgerSettings,
   ObligationKind,
-  Weekday,
 } from "../../data/model/types.js";
 import { obligationPlace } from "../../data/model/account.js";
 import type { DeclarationData } from "../../data/raw/model.js";
 import type { Diagnostic, SourcePath, SourceSpan } from "../../data/source/source.js";
-import { isTimeZone } from "../../data/time/time.js";
-import type { AliasTable } from "../../data/values/number.js";
+import {
+  isSettingName,
+  readSetting,
+  type SettingName,
+  type SettingValues,
+} from "../../data/model/settings.js";
+import { aliasTableOf, type AliasEntry, type AliasTable } from "../../data/values/number.js";
 import { diagnostic } from "../../data/source/diagnostics.js";
 import type { HuekeOptions } from "../hueke.js";
 import { metaFrom, type SourcedItem } from "./shared.js";
@@ -54,25 +58,7 @@ const BUILTIN_ROOTS: readonly [string, AccountType][] = [
   ["Income", "income"],
   ["Expenses", "expense"],
 ];
-const WEEKDAYS: readonly Weekday[] = [
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday",
-];
 const DECLARATIONS = new Set(["option", "account-root", "commodity", "account", "entity"]);
-const OPTIONS = new Set([
-  "timezone",
-  "pad-account",
-  "decimal-mark",
-  "group-mark",
-  "week-start",
-  "strict",
-  "income-expense",
-]);
 
 export function collectDeclarations(
   items: readonly SourcedItem[],
@@ -124,10 +110,10 @@ export function collectDeclarations(
   }
 
   // ---- Options ----
-  const byName = new Map<string, Sourced[]>();
+  const byName = new Map<SettingName, Sourced[]>();
   for (const at of kind("option")) {
     const [name] = at.d.args;
-    if (name === undefined || !OPTIONS.has(name)) {
+    if (name === undefined || !isSettingName(name)) {
       report("option.unknown", `unknown option "${name ?? ""}"`, at);
       continue;
     }
@@ -135,7 +121,10 @@ export function collectDeclarations(
     if (list) list.push(at);
     else byName.set(name, [at]);
   }
-  const value = (name: string): { value: string; at: Sourced } | undefined => {
+  /** The value written once, read; undefined when not written, written twice or invalid. */
+  const read = <N extends SettingName>(
+    name: N,
+  ): { value: SettingValues[N]; at: Sourced } | undefined => {
     const list = byName.get(name);
     if (!list) return undefined;
     const [first, ...rest] = list;
@@ -143,26 +132,14 @@ export function collectDeclarations(
     // Conflicting writings are all dropped: the result does not depend on their order.
     for (const d of rest) report("option.duplicate", `option ${name} is written more than once`, d);
     if (rest.length > 0) return undefined;
-    return { value: first.d.args.slice(1).join(" "), at: first };
-  };
-  const invalid = (name: string, v: { value: string; at: Sourced }): void => {
-    report("option.invalid-value", `"${v.value}" is not a valid value of option ${name}`, v.at);
-  };
-  /** The written value when `accept` maps it, else the default (reporting an invalid one). */
-  const pick = <T>(name: string, accept: ReadonlyMap<string, T>, fallback: T): T => {
-    const v = value(name);
-    if (v === undefined) return fallback;
-    if (accept.has(v.value)) return accept.get(v.value) as T;
-    invalid(name, v);
-    return fallback;
+    const text = first.d.args[1] ?? "";
+    const valid = readSetting(name, text);
+    if (valid) return { value: valid.value, at: first };
+    report("option.invalid-value", `"${text}" is not a valid value of option ${name}`, first);
+    return undefined;
   };
 
-  const tz = value("timezone");
-  let timezone: string | undefined;
-  if (tz) {
-    if (isTimeZone(tz.value)) timezone = tz.value;
-    else invalid("timezone", tz);
-  }
+  let timezone = read("timezone")?.value;
   if (timezone === undefined) {
     if (options.timezone !== undefined) timezone = options.timezone;
     else if (!byName.has("timezone"))
@@ -170,24 +147,8 @@ export function collectDeclarations(
   }
 
   // Undefined when not written, not valid, or written twice.
-  let decimalMark = pick<LedgerSettings["decimalMark"] | undefined>(
-    "decimal-mark",
-    new Map([
-      [".", "."],
-      [",", ","],
-    ]),
-    undefined,
-  );
-  let groupMark = pick<LedgerSettings["groupMark"] | undefined>(
-    "group-mark",
-    new Map<string, LedgerSettings["groupMark"]>([
-      [",", ","],
-      [".", "."],
-      ["'", "'"],
-      ["none", null],
-    ]),
-    undefined,
-  );
+  let decimalMark = read("decimal-mark")?.value;
+  let groupMark = read("group-mark")?.value;
   if (decimalMark !== undefined && decimalMark === groupMark) {
     const at = byName.get("decimal-mark")?.[0];
     if (at) report("option.invalid-number-format", "decimal-mark and group-mark are the same", at);
@@ -198,33 +159,24 @@ export function collectDeclarations(
   if (decimalMark === undefined) decimalMark = groupMark === "." ? "," : ".";
   if (groupMark === undefined) groupMark = decimalMark === "," ? "." : ",";
 
-  const weekStart = pick<Weekday>("week-start", new Map(WEEKDAYS.map((w) => [w, w])), "monday");
+  const weekStart = read("week-start")?.value ?? "monday";
 
-  const st = value("strict");
-  let strict: LedgerSettings["strict"] = [];
-  if (st) {
-    const kinds = st.value.split(",").map((s) => s.trim());
-    if (kinds.every((k) => k === "account" || k === "commodity" || k === "entity")) strict = kinds;
-    else invalid("strict", st);
-  }
+  let strict = read("strict")?.value ?? [];
   if (options.strict) strict = ["account", "commodity", "entity"];
 
   // `on [<name>]`: income and expense roots are shown under one merged root (docs/core/accounts.md).
-  const ie = value("income-expense");
+  const ie = read("income-expense");
   let incomeExpenseRoot: string | undefined;
   if (ie) {
-    const [on, name = "IncomeExpenses", ...rest] = ie.value.split(/\s+/);
-    if (on !== "on" || rest.length > 0 || !/^\p{L}[^\s:;",]*$/u.test(name))
-      invalid("income-expense", ie);
-    else if (roots.has(name))
-      report("option.invalid-root", `${name} is already an account root`, ie.at);
-    else incomeExpenseRoot = name;
+    if (roots.has(ie.value))
+      report("option.invalid-root", `${ie.value} is already an account root`, ie.at);
+    else incomeExpenseRoot = ie.value;
   }
 
-  const pa = value("pad-account");
+  const padAccount = read("pad-account")?.value;
   const settings: LedgerSettings = {
     timezone: timezone ?? "UTC",
-    ...(pa && { padAccount: pa.value }),
+    ...(padAccount !== undefined && { padAccount }),
     weekStart,
     strict,
     ...(incomeExpenseRoot !== undefined && { incomeExpenseRoot }),
@@ -242,10 +194,7 @@ export function collectDeclarations(
   // The parser has checked each precision and alias line.
   const commodities = new Map<Id, Commodity>();
   const commodityDeclared = new Map<Id, Sourced>();
-  const aliasOwners = new Map<
-    string,
-    { position: "prefix" | "suffix"; owner: Id; at: Sourced }[]
-  >();
+  const aliasEntries: (AliasEntry & { at: Sourced })[] = [];
   for (const at of kind("commodity")) {
     const [id = ""] = at.d.args;
     const first = commodityDeclared.get(id);
@@ -265,9 +214,7 @@ export function collectDeclarations(
         const [text = "", position] = line.value.split(/\s+/);
         const alias: CommodityAlias = { text, position: position as "prefix" | "suffix" };
         aliases.push(alias);
-        const list = aliasOwners.get(alias.text) ?? [];
-        list.push({ position: alias.position, owner: id, at });
-        aliasOwners.set(alias.text, list);
+        aliasEntries.push({ ...alias, owner: id, at });
       }
     }
     const commodity: Commodity = {
@@ -282,19 +229,11 @@ export function collectDeclarations(
     commodities.set(id, commodity);
     sources.set(commodity, at.source);
   }
-  const prefix = new Map<string, Id>();
-  const suffix = new Map<string, Id>();
   // A conflicting alias is not loaded for any declaration; amounts read as if it were not declared.
-  for (const [text, owners] of aliasOwners) {
-    const [first, ...others] = owners;
-    if (!first) continue;
-    if (others.length > 0 || commodities.has(text)) {
-      for (const o of others.length > 0 ? others : [first])
-        report("commodity.alias-conflict", `alias "${text}" of ${o.owner} is already used`, o.at);
-      continue;
-    }
-    (first.position === "prefix" ? prefix : suffix).set(text, first.owner);
-  }
+  const { table: aliasTable, conflicts } = aliasTableOf(aliasEntries, (t) => commodities.has(t));
+  for (const [first, ...others] of conflicts)
+    for (const o of others.length > 0 ? others : first ? [first] : [])
+      report("commodity.alias-conflict", `alias "${o.text}" of ${o.owner} is already used`, o.at);
 
   // ---- Accounts ----
   const accounts = new Map<Id, Account>();
@@ -390,7 +329,7 @@ export function collectDeclarations(
     commodities,
     accounts,
     entities,
-    aliases: { prefix, suffix },
+    aliases: aliasTable,
     sources,
     ...(incomeExpenseRoot !== undefined &&
       ie && {

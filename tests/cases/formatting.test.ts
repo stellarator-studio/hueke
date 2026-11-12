@@ -147,9 +147,30 @@ include   "a;b.hueke"
     ]);
   });
   it.each([
+    [
+      "without quotes when it needs none",
+      'option timezone "Asia/Taipei"\n',
+      "option timezone Asia/Taipei\n",
+    ],
+    [
+      "with its inner spacing",
+      "option pad-account   Expenses:A  B  \n",
+      "option pad-account Expenses:A  B\n",
+    ],
+    [
+      "quoted when it holds a ;",
+      'option pad-account "Expenses:A;B"\n',
+      'option pad-account "Expenses:A;B"\n',
+    ],
+  ])("writes an option's value %s", (_, text, written) => {
+    expect(canonical(text)).toEqual([written]);
+    expect(canonical(written)).toEqual([written]);
+  });
+  it.each([
     ["a path with a space", 'include "a b.hueke"\n', "a b.hueke"],
     ["a path with brackets", 'include "a[1].hueke"\n', "a[1].hueke"],
     ["a plain path", "include 2026/10.hueke\n", "2026/10.hueke"],
+    ["a path with parentheses", 'include "a(b).hueke"\n', "a(b).hueke"],
   ])("writes an include of %s that reads back as the same path", (_, text, path) => {
     const written = canonical(text);
     expect(written).toEqual([text]);
@@ -157,6 +178,9 @@ include   "a;b.hueke"
     expect(again.diagnostics).toEqual([]);
     expect(again.items.map((i) => (i.kind === "include" ? i.args : []))).toEqual([[path]]);
     expect(canonical(written.join(""))).toEqual(written);
+  });
+  it("quotes an include path with parentheses written without quotes", () => {
+    expect(canonical("include a(b).hueke\n")).toEqual(['include "a(b).hueke"\n']);
   });
   it("writes a Balance's accounting time after its effective time", () => {
     expect(canonical("2026-10-25=2026-10   balance  Assets:Cash  NT$500\n")).toEqual([

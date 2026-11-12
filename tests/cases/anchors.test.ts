@@ -818,6 +818,10 @@ describe("the refunds function", () => {
     ]);
     expect(refunds(h, { ids: ["r_gift1", "nowhere"] })).toEqual([]);
   });
+  it("lists every refunded record when given an empty list of IDs", () => {
+    expect(refunds(h, { ids: [] }).map(line)).toEqual(refunds(h).map(line));
+    expect(refunds(h, { ids: [] })).toHaveLength(5);
+  });
   it("a record named only by a planned refund is listed with nothing refunded", () => {
     const g = ledger(`
 2026-10-03 * %t_book "Bookstore"

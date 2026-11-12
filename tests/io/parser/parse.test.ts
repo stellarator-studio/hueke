@@ -108,6 +108,19 @@ describe("parse: records", () => {
     });
   });
 
+  it.each([
+    ["the rest of the line, trimmed", "option pad-account   Expenses:A  B  \n", "Expenses:A  B"],
+    [
+      "a quoted value as a string",
+      'option pad-account "Expenses:A;B \\"x\\""\n',
+      'Expenses:A;B "x"',
+    ],
+  ])("reads an option's value as %s", (_, text, value) => {
+    const { items, diagnostics } = parse("main.hueke", text);
+    expect(diagnostics).toEqual([]);
+    expect(items[0]).toMatchObject({ kind: "option", args: ["pad-account", value] });
+  });
+
   it("reads declarations, statement children and include", () => {
     const { items, diagnostics } = parse(
       "main.hueke",

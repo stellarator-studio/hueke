@@ -74,7 +74,7 @@ Status: `implemented`
 
 - `obligation receivable` or `obligation payable` makes the account an obligation account, whatever its type; its direct sub-accounts are obligations (see [obligations.md](obligations.md), "Obligation accounts").
 - `pad-account <account>` sets `padAccount`: the counter-account of a pad on this account that names none, before the ledger's `pad-account` (see [balance.md](balance.md), "`pad` assertions"). It is kept as written and not checked when read.
-- An obligation's sub-accounts inherit both from the obligation account, and need no declaration even in strict mode. Other sub-accounts inherit neither: a pad on `Bank:Checking` does not use the `pad-account` of `Bank`.
+- An obligation's sub-accounts inherit both from the obligation account (see [obligations.md](obligations.md), "Obligation accounts"). Other sub-accounts inherit neither: a pad on `Bank:Checking` does not use the `pad-account` of `Bank`.
 
 ### Account roots
 
@@ -103,7 +103,7 @@ Status: `implemented`
 
 Unless strict mode covers accounts (see [ledger.md](ledger.md), "Declarations and strict mode"), any account can be used without a declaration, including one whose root is unknown (`Spending:Food` when `Spending` is not a root).
 
-- Such an account has no type, and `name.unknown-root` (info) is reported once per account. When strict mode covers accounts, `name.unknown-root` is not reported: an undeclared account is `strict.undeclared`, and a declared one with an unknown root is `strict.unknown-root`.
+- Such an account has no type, and `name.unknown-root` (info) is reported once per account. When strict mode covers accounts, `name.unknown-root` is not reported; strict mode reports the account instead (see [ledger.md](ledger.md), "Declarations and strict mode").
 - Rules that depend on type do not apply to it. In particular, its postings may have their own effective time. Otherwise it behaves like any other account: it can be posted to, queried, totalled and asserted.
 - To give it a type, declare its root with `account-root` or use a known root.
 

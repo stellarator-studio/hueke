@@ -1,9 +1,10 @@
 // Logical paths and the paths written in `include` (docs/core/modules.md, "Paths"). Paths are text
 // only: Core does not know whether they are disk paths, vault paths or URLs.
 
+import type { Code } from "./diagnostics.js";
 import type { SourcePath } from "./source.js";
 
-export type PathError = "path.invalid" | "path.outside-root";
+export type PathError = Extract<Code, "path.invalid" | "path.outside-root">;
 
 export type ResolvedPath =
   { readonly path: SourcePath } | { readonly error: PathError; readonly message: string };

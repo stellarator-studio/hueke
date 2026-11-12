@@ -62,9 +62,25 @@ export function weightOf(p: { amount: Amount; price?: Amount; cost?: Amount }): 
 
 export const show = (r: Rational, commodity: Id): string => `${decimal(r)} ${commodity}`;
 
-/** A Balance's tolerance: within half a unit of the commodity's precision (docs/core/balance.md). */
-export const withinHalfUnit = (difference: Rational, precision: number): boolean =>
-  cmp(abs(difference), mul(rational("0.5"), tenToMinus(precision))) <= 0;
+/**
+ * Half a unit of a commodity's precision, times k: the tolerance of balancing
+ * (docs/core/transactions.md, "Balancing") and, with k = 1, of Balance assertions.
+ */
+export const halfUnit = (precision: number, k = 1): Rational =>
+  mul(mul(rational("0.5"), tenToMinus(precision)), rational(String(k)));
+
+/** Whether a difference is within the tolerance (`halfUnit`). */
+export const withinHalfUnit = (difference: Rational, precision: number, k = 1): boolean =>
+  cmp(abs(difference), halfUnit(precision, k)) <= 0;
+
+/** The key of one account and one commodity, such as a line a refund is measured on. */
+export const lineKey = (account: Id, commodity: Id): string => `${account}\u0000${commodity}`;
+
+/** The account and commodity of a `lineKey`. */
+export const lineOfKey = (key: string): { account: Id; commodity: Id } => {
+  const [account = "", commodity = ""] = key.split("\u0000");
+  return { account, commodity };
+};
 
 /** The entities of each obligation, by the obligation's account ID. */
 export type ObligationEntities = ReadonlyMap<Id, readonly Id[]>;
@@ -132,24 +148,41 @@ export function entitiesOf(
 /** Which postings a Balance counts: with an entity, only those read with it. */
 export type Belongs = (t: Transaction, p: Posting) => boolean;
 
+/**
+ * The postings of occurred transactions by account, each with its transaction: a balance then
+ * reads only the postings of its account and the accounts under it, not the whole ledger.
+ */
+export type PostingsByAccount = Map<Id, (readonly [Transaction, Posting])[]>;
+
+/** Adds the postings of the occurred transactions to `index`; a new index without one. */
+export function indexPostings(
+  transactions: Iterable<Transaction>,
+  index: PostingsByAccount = new Map(),
+): PostingsByAccount {
+  for (const t of transactions) {
+    if (t.occurrence !== "occurred") continue;
+    for (const p of t.postings) {
+      const list = index.get(p.account);
+      if (list) list.push([t, p]);
+      else index.set(p.account, [[t, p]]);
+    }
+  }
+  return index;
+}
+
 /** Balance of `account` (with sub-accounts) in one commodity, up to the balance's point. */
 export function balanceAt(
-  transactions: Iterable<Transaction>,
+  index: PostingsByAccount,
   account: Id,
   commodity: Id,
   at: Balance["effective"],
   belongs: Belongs = () => true,
 ): Rational {
   let total = ZERO;
-  for (const t of transactions) {
-    if (t.occurrence !== "occurred") continue;
-    for (const p of t.postings)
-      if (
-        p.amount.commodity === commodity &&
-        within(p.account, account) &&
-        matches(p.effective, "until", at) &&
-        belongs(t, p)
-      )
+  for (const [posted, postings] of index) {
+    if (!within(posted, account)) continue;
+    for (const [t, p] of postings)
+      if (p.amount.commodity === commodity && matches(p.effective, "until", at) && belongs(t, p))
         total = add(total, rational(p.amount.value));
   }
   return total;
@@ -193,13 +226,10 @@ export function unclearedBetween(
   return out;
 }
 
-/** The key of one account and commodity measured for a refund. */
-export const refundLineKey = (account: Id, commodity: Id): string => `${account}\u0000${commodity}`;
-
 /** One refunded record, measured (docs/core/anchors.md, "Refunds"). */
 export interface RefundMeasure {
   /**
-   * The original's signed net per measured account and commodity (`refundLineKey`), in the order
+   * The original's signed net per measured account and commodity (`lineKey`), in the order
    * the measured postings first name them.
    */
   readonly original: Map<string, Rational>;
@@ -229,7 +259,7 @@ export function measureRefunds(
   const net = (postings: readonly Posting[]): Map<string, Rational> => {
     const totals = new Map<string, Rational>();
     for (const p of postings) {
-      const key = refundLineKey(p.account, p.amount.commodity);
+      const key = lineKey(p.account, p.amount.commodity);
       totals.set(key, add(totals.get(key) ?? ZERO, rational(p.amount.value)));
     }
     return totals;
@@ -271,7 +301,4 @@ export const refundedBack = (original: Rational, refunded: Rational): Rational =
  */
 export const refundExceeds = (original: Rational, refunded: Rational, precision: number): boolean =>
   original.n !== 0n &&
-  cmp(
-    sub(refundedBack(original, refunded), abs(original)),
-    mul(rational("0.5"), tenToMinus(precision)),
-  ) > 0;
+  cmp(sub(refundedBack(original, refunded), abs(original)), halfUnit(precision)) > 0;

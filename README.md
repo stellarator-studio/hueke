@@ -50,5 +50,5 @@ Exact versions are pinned in `package.json`.
 | Lint | ESLint with typescript-eslint `strictTypeChecked` | Also enforces the module boundaries in [docs/architecture.md](docs/architecture.md) |
 | Format | Prettier, print width 100 | Does not format Markdown |
 | Parser | ANTLR grammar with a hand-written lexer | antlr-ng generates the parser without Java; antlr4ng is the runtime |
-| Time | temporal-polyfill | IANA time zones and daylight saving time |
+| Time | temporal-polyfill | IANA time zones and daylight saving time only; calendar arithmetic is Core's own |
 | Decimals | Own BigInt rational numbers | Exact, including fractions such as `1000/3` |

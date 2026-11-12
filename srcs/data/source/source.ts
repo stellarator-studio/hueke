@@ -13,7 +13,10 @@ export interface SourceSpan {
   readonly end: number; // exclusive
 }
 
-/** Replaces source text [start, end) with `text`. Produced only by formatting. */
+/**
+ * Replaces [start, end) of a module's text as parsed with `text` (docs/core/ledger.md, "Text
+ * patches"). An insertion has start equal to end and an empty `expect`.
+ */
 export interface TextPatch {
   readonly source: SourcePath;
   readonly start: number;

@@ -94,8 +94,8 @@ Scopes are defined by Core; a ledger cannot add any.
 Status: `implemented`
 
 - A transaction has at most one primary tag, so primary tags never overlap: grouping by primary tag gives totals that add up to the whole, with the transactions that have none in the "none" group (see [query.md](query.md), "Grouping").
-- Tags may overlap: one transaction can carry several, so totals by tag may add up to more than the whole.
-- A primary tag resolves as a tag does (see "Resolving tags"). Like a tag, it exists whether or not a record defines its anchor: `^trip` groups, filters and totals the same with or without `%trip`, and `primaryTarget` only says whether the anchor is mounted on a record. It is never checked against a scope, because its scope is always `tag`.
+- Tags may overlap: one transaction can carry several (see [query.md](query.md), "Grouping", for what that does to totals).
+- A primary tag resolves as a tag does (see "Resolving tags"). Like a tag, it is plain or anchored (see "Concepts"): `^trip` works the same with or without `%trip`, and `primaryTarget` only says whether the anchor is mounted on a record. It is never checked against a scope, because its scope is always `tag`.
 - A primary tag naming the transaction it is written on, such as `%trip … ^trip`, is `tag.self-reference` (error): the anchor's record is never a member of its own group. `primaryTag` and `primaryTarget` are left out.
 - A second `^` on one header is `txn.multiple-primary-tag` (error), reported by the parser; the block is not loaded.
 
@@ -123,7 +123,7 @@ A **refund** is money that actually comes back. It is a new transaction tagged `
 
 Status: `implemented`
 
-- It takes the IDs of refunded records, optional; without them, every refunded record. A **refunded record** is a transaction or posting named by a refund tag, on a transaction of any occurrence; only `occurred` refunds are counted, so one named only by `planned` or `cancelled` refunds has nothing refunded. An ID that names no refunded record gives no rows.
+- It takes the IDs of refunded records, optional; without them, or with an empty list, every refunded record. A **refunded record** is a transaction or posting named by a refund tag, on a transaction of any occurrence; one named only by `planned` or `cancelled` refunds has nothing refunded (see "Refunds"). An ID that names no refunded record gives no rows.
 - It returns one row per refunded record, account and commodity measured (see "Refunds"). A refunded transaction with no income or expense postings gives no rows.
 - Rows follow the refunded records in transaction order, a posting right after its transaction, postings in their order; within one record, the order in which the measured postings first name each account and commodity.
 - It counts every `occurred` refund in the ledger; it has no time limit.

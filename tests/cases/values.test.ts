@@ -275,6 +275,16 @@ describe("arithmetic in amounts", () => {
     expect(codes(h)).toEqual([]);
     expect(amounts(h)).toEqual(["300 NTD", "1000/3 NTD", "1.5 NTD", "-3809/6 NTD"]);
   });
+  it("reads a - before another - as negating it", () => {
+    const h = ledger(`
+2026-10-12 * "Signs"
+    Expenses:Food      (--5) NTD
+    Expenses:Other     (2 * - -3) NTD
+    Assets:Cash
+`);
+    expect(codes(h)).toEqual([]);
+    expect(amounts(h)).toEqual(["5 NTD", "6 NTD", "-11 NTD"]);
+  });
   it("balances fractions exactly", () => {
     const h = ledger(`
 2026-10-12 * "Split three ways"

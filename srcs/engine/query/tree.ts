@@ -84,15 +84,24 @@ function ancestors(account: Id): Id[] {
   return parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join(":"));
 }
 
-/** One total per commodity, sorted by commodity. */
-function sum(postings: readonly Posting[]): Amount[] {
-  const totals = new Map<Id, Rational>();
-  for (const p of postings)
-    totals.set(
-      p.amount.commodity,
-      add(totals.get(p.amount.commodity) ?? ZERO, rational(p.amount.value)),
-    );
+/** Adds an amount to running totals by commodity. */
+export function addTo(totals: Map<Id, Rational>, amount: Amount): Map<Id, Rational> {
+  return totals.set(
+    amount.commodity,
+    add(totals.get(amount.commodity) ?? ZERO, rational(amount.value)),
+  );
+}
+
+/** Running totals as amounts, one per commodity, sorted by commodity. */
+export function amountsOf(totals: ReadonlyMap<Id, Rational>): Amount[] {
   return [...totals]
     .sort(([a], [b]) => compareText(a, b))
     .map(([commodity, total]) => ({ value: decimal(total), commodity }));
+}
+
+/** One total per commodity, sorted by commodity. */
+function sum(postings: readonly Posting[]): Amount[] {
+  const totals = new Map<Id, Rational>();
+  for (const p of postings) addTo(totals, p.amount);
+  return amountsOf(totals);
 }

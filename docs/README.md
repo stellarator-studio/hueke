@@ -35,9 +35,9 @@ Every feature carries one status.
 | [core/balance.md](core/balance.md) | Balance assertions, `pad`, entities and obligations in Balances, the reconciliation view |
 | [core/obligations.md](core/obligations.md) | Obligation accounts, lending and repayment, the entities of an obligation, progress, settling, `obligations` |
 | [core/query.md](core/query.md) | Filtering, ordering, grouping and period labels, aggregation, listing breakdown lines; the account tree, `balance` and `register` |
-| [core/ledger.md](core/ledger.md) | The two models, loading, declarations and strict mode, normalization, IDs, source positions |
+| [core/ledger.md](core/ledger.md) | The two models, loading, declarations and strict mode, normalization, IDs, source positions, text patches |
 | [core/modules.md](core/modules.md) | Modules, `include`, module order, logical paths and how written paths resolve |
-| [core/settings.md](core/settings.md) | Every ledger setting, its values and default, wrong or repeated settings |
+| [core/settings.md](core/settings.md) | Every ledger setting, its values and default, wrong or repeated settings, changing a setting |
 | [core/diagnostics.md](core/diagnostics.md) | Every diagnostic code, its severity and what happens to the faulty record |
 | [dsl/README.md](dsl/README.md) | The ledger file format: overview, symbols, what each piece of syntax becomes |
 | [dsl/lexical.md](dsl/lexical.md) | Lines, ownership, whitespace, comments and metadata, identifiers, strings, error recovery |

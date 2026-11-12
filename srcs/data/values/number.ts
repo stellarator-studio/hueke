@@ -15,6 +15,36 @@ export interface AliasTable {
   readonly suffix: ReadonlyMap<string, Id>;
 }
 
+/** One alias as written: its text and side, and the commodity it stands for. */
+export interface AliasEntry {
+  readonly text: string;
+  readonly position: "prefix" | "suffix";
+  readonly owner: Id;
+}
+
+/**
+ * The aliases in use (docs/core/commodities.md, "Commodity aliases"): an alias written by more than
+ * one commodity, or equal to a commodity code, is in conflict and stands for nothing. Returns the
+ * table and, for each alias in conflict, its entries in written order.
+ */
+export function aliasTableOf<E extends AliasEntry>(
+  entries: Iterable<E>,
+  isCode: (text: string) => boolean,
+): { table: AliasTable; conflicts: E[][] } {
+  const owners = new Map<string, E[]>();
+  for (const e of entries) owners.set(e.text, [...(owners.get(e.text) ?? []), e]);
+  const prefix = new Map<string, Id>();
+  const suffix = new Map<string, Id>();
+  const conflicts: E[][] = [];
+  for (const [text, list] of owners) {
+    const [first] = list;
+    if (!first) continue;
+    if (list.length > 1 || isCode(text)) conflicts.push(list);
+    else (first.position === "prefix" ? prefix : suffix).set(text, first.owner);
+  }
+  return { table: { prefix, suffix }, conflicts };
+}
+
 export class NumberError extends Error {}
 
 export interface ParsedNumber {

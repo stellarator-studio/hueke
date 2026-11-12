@@ -867,3 +867,147 @@ account Assets:Parcels
     ]);
   });
 });
+
+describe("pads one after another on the same account", () => {
+  const amounts = (h: ReturnType<typeof ledger>): string[][] =>
+    generated(h).map((t) => t.postings.map((p) => `${p.account} ${p.amount.value}`));
+  const OPENING = `
+2026-10-01 * "Opening"
+    Bank:Checking      12300 NTD
+    Bank:Savings        1000 NTD
+    Equity:Opening    -13300 NTD
+`;
+
+  it("the later pad counts the earlier one's generated transaction", () => {
+    const h = ledger(`${OPENING}
+2026-10-25 balance Bank:Checking 12345 NTD pad -> Expenses:ReconcileDiff
+2026-10-31 balance Bank:Checking 12400 NTD pad -> Expenses:ReconcileDiff
+`);
+    expect(codes(h)).toEqual([]);
+    expect(amounts(h)).toEqual([
+      ["Bank:Checking 45", "Expenses:ReconcileDiff -45"],
+      ["Bank:Checking 55", "Expenses:ReconcileDiff -55"],
+    ]);
+    expect(balanceOf(h, "Bank:Checking", "2026-10-31")).toBe("12400");
+  });
+  it("counts postings written between the pads too", () => {
+    const h = ledger(`${OPENING}
+2026-10-25 balance Bank:Checking 12345 NTD pad -> Expenses:ReconcileDiff
+
+2026-10-28 * "Deposit"
+    Bank:Checking       20 NTD
+    Equity:Opening     -20 NTD
+
+2026-10-31 balance Bank:Checking 12400 NTD pad -> Expenses:ReconcileDiff
+2026-11-30 balance Bank:Checking 12300 NTD pad -> Expenses:ReconcileDiff
+2026-11-30 balance Bank:Checking 12300 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    expect(amounts(h)).toEqual([
+      ["Bank:Checking 45", "Expenses:ReconcileDiff -45"],
+      ["Bank:Checking 35", "Expenses:ReconcileDiff -35"],
+      ["Bank:Checking -100", "Expenses:ReconcileDiff 100"],
+    ]);
+  });
+  it("written in reverse source order, the pads still run by date", () => {
+    const h = ledger(`${OPENING}
+2026-10-31 balance Bank:Checking 12400 NTD pad -> Expenses:ReconcileDiff
+2026-10-25 balance Bank:Checking 12345 NTD pad -> Expenses:ReconcileDiff
+`);
+    expect(codes(h)).toEqual([]);
+    expect(amounts(h)).toEqual([
+      ["Bank:Checking 45", "Expenses:ReconcileDiff -45"],
+      ["Bank:Checking 55", "Expenses:ReconcileDiff -55"],
+    ]);
+    expect(balanceOf(h, "Bank:Checking", "2026-10-31")).toBe("12400");
+  });
+  it("a later pad on the parent counts the generated transaction of a sub-account", () => {
+    const h = ledger(`${OPENING}
+2026-10-25 balance Bank:Checking 12345 NTD pad -> Expenses:ReconcileDiff
+2026-10-31 balance Bank 13400 NTD pad -> Expenses:ReconcileDiff
+`);
+    expect(codes(h)).toEqual([]);
+    expect(amounts(h)).toEqual([
+      ["Bank:Checking 45", "Expenses:ReconcileDiff -45"],
+      ["Bank 55", "Expenses:ReconcileDiff -55"],
+    ]);
+  });
+  it("a hard Balance after the pads sees them all", () => {
+    const h = ledger(`${OPENING}
+2026-10-25 balance Bank:Checking 12345 NTD pad -> Expenses:ReconcileDiff
+2026-10-31 balance Bank:Checking 12400 NTD pad -> Expenses:ReconcileDiff
+2026-11-01 balance Bank 13400 NTD
+2026-11-01 balance Bank:Checking 12400 NTD
+`);
+    expect(codes(h)).toEqual([]);
+  });
+});
+
+describe("which postings a Balance counts", () => {
+  const ACCOUNTS = `
+2026-10-01 * "Opening"
+    Assets:Bank            100 NTD
+    Assets:Bank:Sub         50 NTD
+    Assets:Bank:Sub:Deep     5 NTD
+    Assets:Bank2          1000 NTD
+    Assets:BankX           300 NTD
+    Equity:Opening       -1455 NTD
+`;
+
+  it("counts the account's sub-accounts", () => {
+    const h = ledger(`${ACCOUNTS}
+2026-10-25 balance Assets:Bank 155 NTD
+2026-10-25 balance Assets:Bank:Sub 55 NTD
+2026-10-25 balance Assets:Bank2 1000 NTD
+`);
+    expect(codes(h)).toEqual([]);
+  });
+  it("leaves out an account whose name only starts with the same text", () => {
+    const h = ledger(`${ACCOUNTS}\n2026-10-25 balance Assets:Bank 1455 NTD\n`);
+    expect(codes(h)).toEqual(["balance.mismatch"]);
+    expect(message(h, "balance.mismatch")).toContain("recorded 155 NTD");
+  });
+  it("a pad on the parent pads by its sub-accounts' postings only", () => {
+    const h = ledger(
+      `${ACCOUNTS}\n2026-10-25 balance Assets:Bank 200 NTD pad -> Expenses:ReconcileDiff\n`,
+    );
+    expect(codes(h)).toEqual([]);
+    const [padding, ...rest] = generated(h);
+    expect(rest).toEqual([]);
+    expect(padding?.postings.map((p) => `${p.account} ${p.amount.value}`)).toEqual([
+      "Assets:Bank 45",
+      "Expenses:ReconcileDiff -45",
+    ]);
+    expect(balanceOf(h, "Assets:Bank2", "2026-10-25")).toBe("1000");
+  });
+  it("leaves out planned and cancelled transactions", () => {
+    const h = ledger(`${ACCOUNTS}
+2026-10-10 ! "Planned deposit"
+    Assets:Bank:Sub         70 NTD
+    Equity:Opening         -70 NTD
+
+2026-10-11 # "Cancelled deposit"
+    Assets:Bank             80 NTD
+    Equity:Opening         -80 NTD
+
+2026-10-25 balance Assets:Bank 155 NTD
+`);
+    expect(codes(h)).toEqual([]);
+  });
+  it("a pad leaves out planned and cancelled transactions", () => {
+    const h = ledger(`${ACCOUNTS}
+2026-10-10 ! "Planned deposit"
+    Assets:Bank:Sub         70 NTD
+    Equity:Opening         -70 NTD
+
+2026-10-11 # "Cancelled deposit"
+    Assets:Bank             80 NTD
+    Equity:Opening         -80 NTD
+
+2026-10-25 balance Assets:Bank 200 NTD pad -> Expenses:ReconcileDiff
+2026-10-25 balance Assets:Bank 200 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    expect(generated(h)[0]?.postings.map((p) => p.amount.value)).toEqual(["45", "-45"]);
+  });
+});

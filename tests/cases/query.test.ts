@@ -422,6 +422,41 @@ describe("clauses", () => {
       ["Coffee"],
     );
   });
+  it("does not filter on a clause given no values, and drops what an earlier call set", () => {
+    const g = ledger(`
+2026-10-05 * %t_coffee "Coffee" @seven #daily
+    Expenses:Food       90 NTD
+        - Latte  = 90 NTD
+    Assets:Cash        -90 NTD
+
+2026-10-08 * "Exchange"
+    Assets:Cash        -1000 NTD
+    Bank:Checking       4500 JPY @@ 1000 NTD
+
+2026-11-02 "Groceries" @pxmart
+    * Expenses:Groceries  300 NTD
+    Bank:Checking        -300 NTD
+`);
+    expect(codes(g)).toEqual([]);
+    const all = query(g).postings();
+    expect(all).toHaveLength(6);
+    expect(query(g).ids().postings()).toEqual(all);
+    expect(query(g).accounts().postings()).toEqual(all);
+    expect(query(g).entities().postings()).toEqual(all);
+    expect(query(g).tags().postings()).toEqual(all);
+    expect(query(g).status().postings()).toEqual(all);
+    expect(query(g).breakdown().postings()).toEqual(all);
+    expect(query(g).involves().postings()).toEqual(all);
+
+    expect(query(g).ids("t_coffee").ids().postings()).toEqual(all);
+    expect(query(g).accounts("Assets:Cash").accounts().postings()).toEqual(all);
+    expect(query(g).entities("seven").entities().postings()).toEqual(all);
+    expect(query(g).tags("tag:daily").tags().postings()).toEqual(all);
+    expect(query(g).status("cleared").status().postings()).toEqual(all);
+    expect(query(g).breakdown("Latte").breakdown().postings()).toEqual(all);
+    expect(query(g).involves("JPY").involves().postings()).toEqual(all);
+    expect(query(g).accounts("Assets:Cash").postings()).toHaveLength(2);
+  });
   it("lists planned and cancelled transactions for occurrence with no arguments", () => {
     expect(descriptions(query(h).occurrence())).toEqual(["Cancelled lunch", "Planned dinner"]);
     expect(descriptions(query(h).occurrence("cancelled"))).toEqual(["Cancelled lunch"]);
@@ -933,12 +968,133 @@ describe("period labels", () => {
     expect(periodLabel(sunday, "2026-12-28", "week")).toBe("2027-W01");
   });
 
+  it.each([
+    ["monday", "2023-12-24", "2023-W52"],
+    ["monday", "2023-12-25", "2023-W53"],
+    ["monday", "2023-12-31", "2023-W53"],
+    ["monday", "2024-01-01", "2024-W01"],
+    ["monday", "2024-12-29", "2024-W52"],
+    ["monday", "2024-12-30", "2025-W01"],
+    ["monday", "2026-12-31", "2027-W01"],
+    ["monday", "2027-01-01", "2027-W01"],
+    ["sunday", "2022-12-24", "2022-W52"],
+    ["sunday", "2022-12-25", "2022-W53"],
+    ["sunday", "2022-12-31", "2022-W53"],
+    ["sunday", "2023-01-01", "2023-W01"],
+    ["sunday", "2023-12-31", "2024-W01"],
+    ["sunday", "2024-01-06", "2024-W01"],
+    ["sunday", "2024-01-07", "2024-W02"],
+    ["saturday", "2027-12-24", "2027-W52"],
+    ["saturday", "2027-12-25", "2027-W53"],
+    ["saturday", "2027-12-31", "2027-W53"],
+    ["saturday", "2028-01-01", "2028-W01"],
+    ["saturday", "2022-12-31", "2023-W01"],
+    ["saturday", "2023-01-06", "2023-W01"],
+    ["saturday", "2023-01-07", "2023-W02"],
+  ])("labels a day around a new year with week-start %s: %s is %s", (start, date, label) => {
+    expect(periodLabel(ledger(`option week-start ${start}`), date, "week")).toBe(label);
+  });
+
   it("throws on text that is not a day", () => {
     expect(() => periodLabel(h, "2026-11", "month")).toThrow("parse.invalid-time");
     expect(() => periodLabel(h, "2026-02-30", "day")).toThrow("parse.invalid-time");
   });
   it("throws parse.invalid-time on a time of day too", () => {
     expect(() => periodLabel(h, "2026-11-03T10:00", "day")).toThrow("parse.invalid-time");
+  });
+});
+
+describe("week groups around a new year", () => {
+  const LINES = ["2023-12-24", "2023-12-25", "2023-12-31", "2024-01-01", "2024-01-06", "2024-01-07"]
+    .map(
+      (date, i) =>
+        `${date} * "Day ${String(i + 1)}"\n    Expenses:Food  ${String(10 ** i)} NTD\n    Assets:Cash  -${String(10 ** i)} NTD\n`,
+    )
+    .join("\n");
+  /** Each week group as "label: value". */
+  const weeks = (h: ReturnType<typeof ledger>) =>
+    query(h)
+      .accounts("Expenses")
+      .groupBy("week")
+      .sum()
+      .map((g) => `${String(g.key.week)}: ${g.value.map((a) => a.value).join(", ")}`);
+
+  it.each([
+    ["monday", ["2023-W52: 1", "2023-W53: 110", "2024-W01: 111000"]],
+    ["sunday", ["2023-W52: 11", "2024-W01: 11100", "2024-W02: 100000"]],
+    ["saturday", ["2023-W52: 11", "2024-W01: 1100", "2024-W02: 110000"]],
+  ])("groups by week with week-start %s", (start, expected) => {
+    const h = ledger(`option week-start ${start}\n${LINES}`);
+    expect(codes(h)).toEqual([]);
+    expect(weeks(h)).toEqual(expected);
+  });
+  it("labels each group as periodLabel labels its days", () => {
+    for (const start of ["monday", "sunday", "saturday"]) {
+      const h = ledger(`option week-start ${start}\n${LINES}`);
+      const labels = query(h)
+        .accounts("Expenses")
+        .postings()
+        .map((p) => periodLabel(h, p.effective.localDate, "week"));
+      expect(weeks(h).map((w) => w.slice(0, 8))).toEqual([...new Set(labels)]);
+    }
+  });
+});
+
+describe("day and week groups of a record spanning several days", () => {
+  const h = ledger(`
+2026-11-29=2026-11-29..2026-12-02 * "Hotel"
+    Expenses:Lodging     400 NTD
+    Bank:Checking       -400 NTD
+
+2026-12-30=2026-12-30..2027-01-02 * "New year trip"
+    Expenses:Travel      800 NTD
+    Bank:Checking       -800 NTD
+`);
+  const q = () => query(h).axis("accounting").accounts("Expenses");
+  /** Each group as "key: value". */
+  const sums = (grouped: ReturnType<ReturnType<typeof q>["groupBy"]>) =>
+    grouped
+      .sum()
+      .map((g) => `${Object.values(g.key).join(", ")}: ${g.value.map((a) => a.value).join(", ")}`);
+
+  it("counts the record in full on each day, across a month end and a year end", () => {
+    expect(codes(h)).toEqual([]);
+    expect(sums(q().within("2026-11-01..2027-01-31").groupBy("day"))).toEqual([
+      "2026-11-29: 400",
+      "2026-11-30: 400",
+      "2026-12-01: 400",
+      "2026-12-02: 400",
+      "2026-12-30: 800",
+      "2026-12-31: 800",
+      "2027-01-01: 800",
+      "2027-01-02: 800",
+    ]);
+  });
+  it("counts it in each week and year it overlaps", () => {
+    expect(sums(q().within("2026-11-01..2027-01-31").groupBy("week"))).toEqual([
+      "2026-W48: 400",
+      "2026-W49: 400",
+      "2027-W01: 800",
+    ]);
+    expect(sums(q().groupBy("year"))).toEqual(["2026: 1200", "2027: 800"]);
+  });
+  it("lists only the days inside the query's range", () => {
+    expect(sums(q().overlaps("2026-12").groupBy("day"))).toEqual([
+      "2026-12-01: 400",
+      "2026-12-02: 400",
+      "2026-12-30: 800",
+      "2026-12-31: 800",
+    ]);
+    expect(sums(q().overlaps("2026-12-31..2027-01-01").groupBy("day"))).toEqual([
+      "2026-12-31: 800",
+      "2027-01-01: 800",
+    ]);
+    expect(sums(q().within("2026-11-29..2026-12-02").groupBy("day"))).toEqual([
+      "2026-11-29: 400",
+      "2026-11-30: 400",
+      "2026-12-01: 400",
+      "2026-12-02: 400",
+    ]);
   });
 });
 
@@ -1037,6 +1193,16 @@ describe("breakdown lines", () => {
         .breakdownLines()
         .map((r) => r.line.name),
     ).toEqual(["Bento", "Egg", "Ramen", "Black tea"]);
+  });
+  it("lists every line after a breakdown clause given no names", () => {
+    expect(query(h).breakdown().breakdownLines()).toEqual(query(h).breakdownLines());
+    expect(
+      query(h)
+        .breakdown("Black tea")
+        .breakdown()
+        .breakdownLines()
+        .map((r) => r.line.name),
+    ).toEqual(["Bento", "Egg", "Black tea", "Black tea", "Ramen", "Black tea"]);
   });
   it("gives no rows for postings without lines of their own", () => {
     expect(query(h).accounts("Assets:Cash").breakdownLines()).toEqual([]);

@@ -10,6 +10,7 @@ export { timeOnAxis } from "./data/model/axis.js";
 export { compareValues, multiplyValues, negateValue, sumValues } from "./data/values/decimal.js";
 export { parse } from "./io/parser/parse.js";
 export { serialize } from "./io/format/serialize.js";
+export { setOption } from "./io/format/option.js";
 export { Hueke, check, type HuekeOptions } from "./engine/hueke.js";
 export {
   query,

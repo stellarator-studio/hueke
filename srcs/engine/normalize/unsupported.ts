@@ -3,13 +3,13 @@
 // syntax.unsupported and dropped, so a ledger never computes as if the line were not there.
 // An entry goes when its feature is built.
 
+import { UNSUPPORTED_SCOPES } from "../../data/raw/anchor.js";
 import type { ItemData, PostingData, TagData } from "../../data/raw/model.js";
 import type { Diagnostic, SourcePath } from "../../data/source/source.js";
 import { diagnostic } from "../../data/source/diagnostics.js";
 
 const DECLARATIONS = new Set(["schedule", "installment", "rule", "module"]);
 const ROOT_TYPES = new Set(["shared"]);
-const SCOPES = new Set(["installment", "statement", "fulfills", "rule", "shared"]);
 const PROPERTIES = new Set([
   "entity type",
   "account active",
@@ -69,7 +69,7 @@ function posting(p: PostingData): string | undefined {
 
 function tags(list: readonly TagData[]): string | undefined {
   for (const t of list) {
-    if (t.scope !== undefined && SCOPES.has(t.scope)) return `the tag scope ${t.scope}`;
+    if (t.scope !== undefined && UNSUPPORTED_SCOPES.has(t.scope)) return `the tag scope ${t.scope}`;
     if (t.ref.period !== undefined) return "a period after an anchor";
   }
   return undefined;
