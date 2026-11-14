@@ -42,9 +42,9 @@ Each line has its leading whitespace removed and is split at the first `;` outsi
 
 | Kind | Keywords |
 | --- | --- |
-| Declarations | `option`, `account-root`, `commodity`, `account`, `entity`, `include`; reserved: `schedule`, `installment`, `rule`, `module` |
+| Declarations | `option`, `account-root`, `commodity`, `account`, `entity`, `include`, `rule`, `module`; reserved: `schedule`, `installment` |
 | In date lines | `balance`, `pad` |
-| Properties | `item`, `precision`, `alias`, `primary`, `display-name`, `obligation`, `pad-account`; reserved: `type`, `active`, `allow`, `deny`, `statement`, `source`, `self`, `map`, `from`, `every`, `count`, `until`, `follows`, `skip`, `due`, `override`, `principal`, `method`, `rate`, `periodic-rate`, `first-period`, `rounding`, `absorb`, `fee`, `split`, `paid-by`, `share`, `into`, `cap`, `minimum`, `cap-group`, `fixed` |
+| Properties | `item`, `precision`, `alias`, `primary`, `display-name`, `obligation`, `pad-account`, `active`, `allow`, `deny`, `source`, `self`, `map`, `split`, `paid-by`, `share`, `into`, `rate`, `fixed`, `cap`, `minimum`, `cap-group`, `rounding`; reserved: `type`, `statement`, `from`, `every`, `count`, `until`, `follows`, `skip`, `due`, `override`, `principal`, `method`, `periodic-rate`, `first-period`, `absorb`, `fee` |
 
 - An account root cannot be a keyword; otherwise a one-segment account would read as a declaration or property.
 - A commodity code or alias cannot be a keyword either, reserved ones included, so that keywords stay free for features to come: `commodity fixed`, `alias fee suffix` and the amounts `5 fixed` and `(100 + 50)fixed`, in a posting, a price, a cost or a Balance, are `parse.syntax`, and the block is not loaded. A breakdown line's figures are not checked, since a commodity written there is not a use of it (see [../core/transactions.md](../core/transactions.md), "Breakdowns").
@@ -57,20 +57,24 @@ Date lines and declarations are top-level: each opens a block and ends the previ
 
 | Current record | Accepts |
 | --- | --- |
-| Transaction header | Metadata, postings; reserved: `share`, `into` |
-| Posting | Metadata, breakdown lines; reserved: `split`, `paid-by`. Until the next posting |
+| Transaction header | Metadata, `share`, `into`, postings |
+| Posting | Metadata, breakdown lines, `split`, `paid-by`. Until the next posting |
 | `balance` | Metadata |
 | `commodity` | `item`, `precision`, `alias`, metadata |
-| `account` | `display-name`, `obligation`, `pad-account`, `primary`, metadata; reserved: `active`, `allow`, `deny`, `statement`, `source`, `self`, `map` |
+| `account` | `display-name`, `active`, `obligation`, `pad-account`, `primary`, `allow`, `deny`, `source`, `self`, `map`, metadata; reserved: `statement` |
 | `entity` | `display-name`, metadata; reserved: `type` |
+| `rule` | `active`, `rate`, `fixed`, `cap`, `minimum`, `cap-group`, `rounding`, metadata, template lines; reserved: `follows`, `every` |
+| Template line | Metadata, breakdown lines. Until the next template line |
+| `module` | `share`, metadata |
 | `option`, `account-root`, `include` | Nothing |
 
 - A transaction's whole-line metadata must stand before its first posting, or at the end of the header line; after a posting, it belongs to that posting.
 - Metadata after a breakdown line, at its end or on its own line after it, still belongs to the posting, but is `parse.metadata-after-breakdown` (warning): a posting's metadata should stand before its breakdown lines.
 - Reserved lines are read into the Raw model and then reported as `syntax.unsupported` (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax").
 - A line with no record to belong to is `parse.orphan-line`. A line before the first block, or metadata in a block that accepts none, is skipped. A breakdown line before its block's first posting drops the block.
-- A property the record does not accept is `parse.unexpected-property`, and so is a posting line under a Balance or under `option`, `account-root`, `include`, `commodity` or `account`. A property after the first posting is also `parse.unexpected-property`. The block is not loaded.
-- A property written twice in one record is `parse.duplicate-property`, unless it may repeat: `alias` and metadata; among reserved properties, `map` on an account, `share` on a transaction or a module, `from`, `every` and `override` on a schedule or an installment, and `active`, `cap` and `minimum` on a rule. On a rule, each `active` starts a new segment, and `rate`, `fixed` and `rounding` are once per segment.
+- A property the record does not accept is `parse.unexpected-property`, and so is a posting line under a Balance or under `option`, `account-root`, `include`, `commodity`, `account`, `entity` or `module`. A property after the first posting, or after a rule's first template line, is also `parse.unexpected-property`; so is `split` or `paid-by` under a template line. The block is not loaded.
+- A property written twice in one record is `parse.duplicate-property`, unless it may repeat: `alias`, metadata, `map` on an account, `share` on a transaction or a module, and `active`, `cap` and `minimum` on a rule; among reserved properties, `from`, `every` and `override` on a schedule or an installment. On a rule, each `active` starts a new segment, and `rate`, `fixed` and `rounding` are once per segment.
+- A rule's properties come before its template lines, and its first property is `active` or `cap-group`; a segment property before the first `active` is `parse.syntax`.
 
 ### Whitespace
 
@@ -150,7 +154,7 @@ Status: `implemented`
 | Commodity code | A letter, then letters, digits, `_`, `-`, `.`; not a keyword | `NTD`, `camera-01`, `BRK.B` |
 | Entity | A letter or `_`, then letters, digits, `_`, `-` | `NAT`, `xx_breakfast` |
 | Role | As an entity | `person` |
-| Anchor | Letters, digits, `_`, `-`; no `/`, `.`, `:`; not `self`. A `/` after the name starts a period, which is not part of the anchor (see [README.md](README.md), "Reserved syntax") | `t_book`, `deposit-1011`, `t8f3k2q` |
+| Anchor | Letters, digits, `_`, `-`; no `/`, `.`, `:`; not `self`. A group ledger's name follows the same rule. A `/` after the name starts a period, which is not part of the anchor (see [README.md](README.md), "Reserved syntax") | `t_book`, `deposit-1011`, `t8f3k2q` |
 | Commodity alias | No whitespace or digits; none of `;` `"` `,` `%` `#` `^` `@` `*` `×` `[` `]` `{` `}` `=` `(` `)` `+` `/`; does not start with `-`, `.`, `'`; not a keyword | `NT$`, `$`, `dollars` |
 | Tag scope | Lowercase ASCII letters and `-` | `system` |
 | Metadata key | A letter, then letters, Unicode digits, `_`, `-` | `invoice_number` |

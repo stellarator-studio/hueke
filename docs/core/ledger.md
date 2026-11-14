@@ -43,6 +43,8 @@ A **module** is the parsed text of one file, identified by a **logical path** (s
 | `entities` | Every entity, declared ones first, then those used without a declaration (see [entities.md](entities.md)). |
 | `transactions` | Every transaction, in order (see [transactions.md](transactions.md), "Order of transactions"), including generated ones. |
 | `balances` | Every Balance assertion (see [balance.md](balance.md)). |
+| `rules` | Every rule, in source order (see [generators.md](generators.md)). [specified] |
+| `groups` | Every group ledger that shared accounts refer to and that converts (see [group-ledgers.md](group-ledgers.md)), in the order of their shared accounts. [specified] |
 
 **Text patch**: one change to a module's text, returned by Core for the platform to apply.
 
@@ -104,19 +106,20 @@ Initialization turns the Raw models into the derived model in fixed steps. The r
 ```mermaid
 flowchart TD
     m["1. Modules: root, includes, parse diagnostics, unsupported syntax"] --> d["2. Declarations: roots, settings, commodities, accounts, entities"]
-    d --> r["3–5. Records: values and times, names, anchors and tags, inheritance, totals, omitted amounts"]
-    r --> e["6. Expansion: pads, sorting, undeclared objects, inferred precision"]
+    d --> r["3–5. Records: values and times, names, anchors and tags, inheritance, totals"]
+    r --> e["6. Expansion: group ledgers, splits, rules, omitted amounts, pads, sorting, undeclared objects, inferred precision"]
     e -. first check .-> v["7. Validation"]
 ```
 
 | Step | What happens |
 | --- | --- |
-| 1. Modules | Find the root, follow its `include`s (see [modules.md](modules.md)), collect parse diagnostics, and drop unsupported syntax (see [diagnostics.md](diagnostics.md), "Unsupported syntax"). |
-| 2. Declarations | Read the root module's account roots (built-in and declared), then its ledger settings; then its commodities with their aliases, its accounts, with what obligation sub-accounts inherit, and its entities. Declarations in included modules are not read (see [modules.md](modules.md)). |
-| 3–5. Records | Read numbers, amounts and times now that the settings are known. Resolve names and roles. Collect anchors and resolve tags and primary tags, skipping tags with scope errors (see [anchors.md](anchors.md)). Inherit times, status and tags. Turn prices and costs into totals. Fill in omitted amounts. |
-| 6. Expansion | Expand `pad` Balances point by point (see [balance.md](balance.md)). Sort transactions. Create undeclared accounts, commodities and entities, and infer precisions. |
-| 7. Validation | Balancing, precision, item rules, `hard` Balance assertions; obligation postings and refunds. |
+| 1. Modules | Find the root, follow its `include`s, and find the group ledgers its shared accounts refer to (see [modules.md](modules.md)); collect parse diagnostics, and drop unsupported syntax (see [diagnostics.md](diagnostics.md), "Unsupported syntax"). |
+| 2. Declarations | Read the root module's account roots (built-in and declared), then its ledger settings; then its commodities with their aliases, its accounts, with what obligation sub-accounts inherit, its entities and its rules. Declarations in included modules are not read (see [modules.md](modules.md)). Each group ledger's declarations are read the same way, in its own namespace (see [group-ledgers.md](group-ledgers.md)). |
+| 3–5. Records | Read numbers, amounts and times now that the settings are known. Resolve names and roles. Collect anchors and resolve tags and primary tags, skipping tags with scope errors (see [anchors.md](anchors.md)). Inherit times, status and tags. Turn prices and costs into totals. The same for each group ledger's transactions. |
+| 6. Expansion | In this order: convert group transactions (see [group-ledgers.md](group-ledgers.md), "Conversion"); expand splits, then rules (see [generators.md](generators.md)); fill in omitted amounts (see [transactions.md](transactions.md), "Filling in an omitted amount"); expand `pad` Balances point by point (see [balance.md](balance.md)). Sort transactions. Create undeclared accounts, commodities and entities, and infer precisions. |
+| 7. Validation | Balancing, precision, item rules, `hard` Balance assertions; obligation postings and refunds; allowed commodities and active periods. |
 
+- Group ledgers, splits and rules in these steps, filling in omitted amounts after them, and the checks of allowed commodities and active periods are not implemented yet. [specified]
 - Steps 1 to 6 run during initialization, because every other result depends on them.
 - Step 7 only flags problems and never changes what is computed. It runs on the first call to `check`, and its result is kept.
 - `check` is the only way to get diagnostics. It returns the parse diagnostics, those found during initialization, and step 7's, in that order.
@@ -132,6 +135,8 @@ Status: `implemented`
 | Posting with a `%anchor` | The anchor |
 | Posting without one | `<transaction ID>.<n>`, numbered within the transaction from 1 |
 | Transaction generated by `pad` | `~balance.<n>`, numbered in expansion order; its postings `~balance.<n>.<k>` |
+| Posting generated by a split or a rule | `<transaction ID>.<n>`, numbered after the transaction's written postings (see [generators.md](generators.md), "Generated postings") [specified] |
+| Transaction converted from a group ledger | `<group ledger name>:<anchor>`, or `<group ledger name>:~<n>` for one without an anchor; its postings numbered under it (see [group-ledgers.md](group-ledgers.md), "Conversion") [specified] |
 
 - Generated IDs start with `~`, which an anchor cannot contain, so they never collide with anchors.
 - A transaction dropped while loading still takes its number, whether it is dropped during normalization, such as one with `txn.amount-not-inferable`, or for syntax reported as `syntax.unsupported`. So IDs do not shift when that syntax becomes supported. A block that could not be parsed takes none.

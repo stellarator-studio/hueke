@@ -13,7 +13,7 @@ A ledger file is plain UTF-8 text with the extension `.hueke`, holding records, 
 
 ## Concepts
 
-**Records** are transactions and Balance assertions; **declarations** are settings, account roots, commodities, accounts, entities and includes. The parser turns one file into its Raw model (see [../core/ledger.md](../core/ledger.md), "Concepts"); what the records mean is described in the core documents (see [../README.md](../README.md), "Documents"). The details of the format are in [lexical.md](lexical.md), [records.md](records.md) and [formatting.md](formatting.md).
+**Records** are transactions and Balance assertions; **declarations** are settings, account roots, commodities, accounts, entities, includes, rules and `module` declarations. The parser turns one file into its Raw model (see [../core/ledger.md](../core/ledger.md), "Concepts"); what the records mean is described in the core documents (see [../README.md](../README.md), "Documents"). The details of the format are in [lexical.md](lexical.md), [records.md](records.md) and [formatting.md](formatting.md).
 
 ## Behavior
 
@@ -47,7 +47,9 @@ An index of the symbols; where each may stand, and how symbols that look alike a
 | `#[scope:]anchor`, `^[tag:]anchor` | A tag, the primary tag | [records.md](records.md), "Transaction headers" |
 | `@[role:]entity` | An entity reference | [records.md](records.md), "Transaction headers" |
 | `@`, `@@`, `{…}`, `{{…}}` | Unit or total price, unit or total cost | [records.md](records.md), "Amounts" |
-| `->` | The counter-account of a pad | [records.md](records.md), "Balance assertions" |
+| `->` | The counter-account of a pad; a split's obligation; a mapping's target [specified] | [records.md](records.md), "Balance assertions", "Splits", "Group ledgers and shared accounts" |
+| `*`, `×` before a number in a split or split table member | A ratio [specified] | [records.md](records.md), "Splits" |
+| `%` after a number | A percentage in a rule's `rate` [specified] | [records.md](records.md), "Rules" |
 | `- ` at the start of a line | A breakdown line; inside it, `*` or `×` comes before the unit price and `=` before the total | [records.md](records.md), "Breakdowns" |
 | `( … )` | Arithmetic in place of a number | [../core/values.md](../core/values.md), "Arithmetic" |
 | `;; key:`, `;` | Metadata, a comment | [lexical.md](lexical.md), "Comments and metadata" |
@@ -61,9 +63,14 @@ Status: `implemented`
 | `option` | A ledger setting | [../core/settings.md](../core/settings.md) |
 | `account-root` | An account root | [../core/accounts.md](../core/accounts.md), "Account roots" |
 | `commodity` | A commodity, with precision, item mode, aliases and metadata | [../core/commodities.md](../core/commodities.md) |
-| `account` | An account, with its anchor, display name, obligation and pad settings, primary commodity and metadata | [../core/accounts.md](../core/accounts.md) |
+| `account` | An account, with its anchor, display name, obligation and pad settings, primary commodity, allowed commodities and active period [specified], group ledger and mappings for a shared account [specified], and metadata | [../core/accounts.md](../core/accounts.md), [../core/group-ledgers.md](../core/group-ledgers.md) |
 | `entity` | An entity, with its display name and metadata; `type` is reserved | [../core/entities.md](../core/entities.md) |
 | `include` | Another module of the same ledger | [../core/modules.md](../core/modules.md) |
+| `rule` [specified] | A rule, with its segments and posting template | [../core/generators.md](../core/generators.md) |
+| `module` [specified] | A group ledger's declaration: its name and members | [../core/group-ledgers.md](../core/group-ledgers.md) |
+| `split`, `paid-by` under a posting [specified] | Shares of the posting, and the postings they generate | [../core/generators.md](../core/generators.md) |
+| `share`, `into` under a transaction [specified] | A split table | [../core/generators.md](../core/generators.md), "Split tables" |
+| `#rule:<id>`, `#shared:<module>:<anchor>` [specified] | An input of a rule; the actual payment for a group transaction | [../core/anchors.md](../core/anchors.md), "Scopes" |
 | A transaction header | A transaction; one with no postings is valid | [../core/transactions.md](../core/transactions.md) |
 | `EFF[=ACC]` on a header, `[EFF]` on a posting | Effective and accounting times | [../core/time.md](../core/time.md), "Time axes" |
 | A header mark, a posting's `*` | Occurrence and status | [../core/transactions.md](../core/transactions.md), "Status and occurrence" |

@@ -9,6 +9,7 @@ A **query** selects transactions and postings, then optionally groups and aggreg
 | Filtering | `implemented` |
 | Matched postings | `implemented` |
 | Axis of a query | `implemented` |
+| Metadata axes | `specified` |
 | Ordering | `implemented` |
 | Grouping | `implemented` |
 | Period labels | `implemented` |
@@ -54,7 +55,7 @@ Status: `implemented`
 
 | Clause | Level | Meaning |
 | --- | --- | --- |
-| `axis` | — | Which time the time clauses compare: `accounting`, `effective` or `txn-effective` (see [time.md](time.md), "Time axes"). |
+| `axis` | — | Which time the time clauses compare: `accounting`, `effective` or `txn-effective` (see [time.md](time.md), "Time axes"), or `meta:<key>`, a time written in metadata (see "Metadata axes"). |
 | `within`, `overlaps`, `covers`, `until` | By axis | Time predicates (see [time.md](time.md), "Time predicates"). |
 | `accounts` | Posting | Account IDs, sub-accounts included. |
 | `entities` | Posting | Entity IDs in the posting's references (see "Matched postings"). |
@@ -99,7 +100,18 @@ Status: `implemented`
 
 Status: `implemented`
 
-- Without an axis, every use of a query (listing transactions, listing postings, grouping, `balance` and `register`) uses `effective`. The `accounting` and `txn-effective` axes are used only when the query sets them.
+- Without an axis, every use of a query (listing transactions, listing postings, grouping, `balance` and `register`) uses `effective`. The `accounting` and `txn-effective` axes, and metadata axes, are used only when the query sets them.
+
+### Metadata axes
+
+Status: `specified`
+
+A time that is not one of the two time axes, such as the date on an invoice, is written in metadata (`;; invoice_date: 2026-10-13`). The axis `meta:<key>` lets time clauses, ordering and time keys use it.
+
+- A posting's time on `meta:<key>` is its metadata value for `key`, else its transaction's (see "Matched postings"), read as a time value of the ledger (see [../dsl/records.md](../dsl/records.md), "Time values"), with the ledger's time zone and week start.
+- A posting with no value, or with a value that is not a time, has no time on this axis: no time clause on it matches, it sorts after the postings that have one, and time keys put it in the "none" group. Metadata is free text, so this is never a diagnostic.
+- It is a posting-level axis: each posting is checked with its own value.
+- The key follows the rule for metadata keys (see [../dsl/lexical.md](../dsl/lexical.md), "Identifiers"); `meta:` with no key, or a key that breaks the rule, throws.
 
 ### Ordering
 
@@ -107,8 +119,8 @@ Status: `implemented`
 
 | Output | Ordered by |
 | --- | --- |
-| Transactions | The transaction's time on the axis: its accounting time for `accounting`, its effective time otherwise |
-| Postings | The posting's time on the axis: its own effective time for `effective`, its transaction's time otherwise |
+| Transactions | The transaction's time on the axis: its accounting time for `accounting`, its effective time otherwise, including for `meta:<key>` |
+| Postings | The posting's time on the axis: its own effective time for `effective`, its metadata time for `meta:<key>` (see "Metadata axes"), its transaction's time otherwise |
 
 - Each time sorts at its end, and ties are broken, as in [transactions.md](transactions.md), "Order of transactions".
 - A running balance is built by the presentation layer: start from `balance` at the beginning of the range and add each posting in order.
@@ -220,6 +232,7 @@ Which axis suits which use is described in [time.md](time.md), "Time axes".
 | Register of an account in a period | `query(ledger).accounts(id).within(period)` |
 | Register laid out by account | `register(ledger, query(ledger).within(period))` |
 | Calendar view | `query(ledger).axis("txn-effective").overlaps(month)` |
+| Invoices dated in a month | `query(ledger).axis("meta:invoice_date").within(month)` |
 | Members of a group | `query(ledger).tags("<scope>:<anchor>")` or `query(ledger).primaryTag(name)`; the anchor's record with `query(ledger).ids(anchor)` (see [anchors.md](anchors.md), "Groups") |
 | One item's prices over time | `query(ledger).breakdown(name).within(period).breakdownLines()`; with `entities(…)`, at given shops |
 
@@ -402,3 +415,29 @@ Period labels, with the default `week-start monday`:
 | `query(ledger).accounts("Assets:Cash").breakdownLines()` | No rows: the cash postings have no lines of their own |
 | `query(ledger).breakdown("black tea").breakdownLines()` | No rows: names match exactly |
 | `query(ledger).breakdown("Black tea").groupBy("account").sum()` | `Expenses:Drinks` 125 NTD; `Expenses:Food` 1200 JPY: the postings' amounts, not the lines' totals |
+
+**Metadata axes**
+
+```hueke
+2026-10-12 * "Bookstore"
+    ;; invoice_date: 2026-10-13
+    Expenses:Other     500 NTD
+    Assets:Cash       -500 NTD
+
+2026-10-31 * "Stationery"
+    Expenses:Other     120 NTD
+        ;; invoice_date: 2026-11-02
+    Assets:Cash       -120 NTD
+
+2026-11-01 * "Lunch"
+    ;; invoice_date: not issued
+    Expenses:Food      180 NTD
+    Assets:Cash       -180 NTD
+```
+
+| Call | Result |
+| --- | --- |
+| `query(ledger).axis("meta:invoice_date").within("2026-10").postings()` | Both postings of the bookstore, which take the transaction's value |
+| `query(ledger).axis("meta:invoice_date").within("2026-11").postings()` | The stationery's `Expenses:Other` posting only: its own value is 2026-11-02, while its cash posting takes no value and has no time on this axis |
+| `query(ledger).accounts("Expenses").axis("meta:invoice_date").groupBy("month").sum()` | "none" 180 NTD (the lunch: `not issued` is not a time); `2026-10` 500 NTD; `2026-11` 120 NTD |
+| `query(ledger).axis("meta:").postings()` | Throws: the key is missing |
