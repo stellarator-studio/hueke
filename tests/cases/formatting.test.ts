@@ -499,3 +499,49 @@ account Bank:Checking %main-bank
     expect(strip(again.accounts)).toEqual(strip(h.accounts));
   });
 });
+
+describe("commodity forms", () => {
+  it("puts commodity properties in order: display-name, item, precision, format, alias", () => {
+    const text = `commodity TWSE
+    ;; market: Taipei
+    alias tw suffix
+    format {amount} shares ({leaf})
+    precision 0
+    display-name Taiwan Stock Exchange
+`;
+    const FORMATTED = `commodity TWSE
+    display-name Taiwan Stock Exchange
+    precision 0
+    format {amount} shares ({leaf})
+    alias tw suffix
+    ;; market: Taipei
+`;
+    expect(canonical(text)).toEqual([FORMATTED]);
+    expect(canonical(FORMATTED)).toEqual([FORMATTED]);
+    expect(canonical("commodity CAM\n    format {amount} x {name}\n    item\n")).toEqual([
+      "commodity CAM\n    item\n    format {amount} x {name}\n",
+    ]);
+  });
+  it("quotes a format only when it must be", () => {
+    expect(canonical('commodity CELSIUS\n    format "{amount} degrees Celsius"\n')).toEqual([
+      "commodity CELSIUS\n    format {amount} degrees Celsius\n",
+    ]);
+    expect(canonical('commodity CELSIUS\n    format "{amount} C "\n')).toEqual([
+      'commodity CELSIUS\n    format "{amount} C "\n',
+    ]);
+  });
+  it("writes a code with segments as it is, and never the format", () => {
+    const text = `commodity TWSE
+    precision 0
+    format {amount} shares ({leaf})
+
+2026-11-03 * "Buy"
+    Assets:Broker  1000 TWSE:0050 @ 190 NTD
+    Bank:Checking  -190000 NTD
+`;
+    expect(canonical(text)[1]).toBe(`2026-11-03 * "Buy"
+    Assets:Broker     1,000 TWSE:0050 @ 190 NTD
+    Bank:Checking  -190,000 NTD
+`);
+  });
+});

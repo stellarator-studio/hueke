@@ -153,7 +153,7 @@ Status: `implemented`
 | --- | --- | --- |
 | Setting | `option <name> <value>`; the value runs to the end of the line | None |
 | Account root | `account-root <name> <type>` | None |
-| Commodity | `commodity <code>` | `item` (no value), `precision <whole number>`, `alias <text> prefix` or `alias <text> suffix` (may repeat), metadata |
+| Commodity | `commodity <code>` | `display-name <text>`, `item` (no value), `precision <whole number>`, `format <template>`, `alias <text> prefix` or `alias <text> suffix` (may repeat), metadata |
 | Account | `account <name> [%anchor]` | `display-name <text>`, `obligation receivable` or `obligation payable`, `pad-account <account>`; `primary <commodity>`; `active`, `allow`, `deny` (see "Account restrictions") [specified]; for a shared account, `source`, `self`, `map` (see "Group ledgers and shared accounts") [specified]; metadata |
 | Entity | `entity <id>` | `display-name <text>`, metadata; `type` is reserved (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax") |
 | Include | `include <path>`; the path is one token | None |
@@ -162,7 +162,7 @@ Status: `implemented`
 
 - Declarations have no time; their order does not matter. Only the root module's declarations take effect (see [../core/modules.md](../core/modules.md), "Declarations in included modules").
 - The settings and their values are listed in [../core/settings.md](../core/settings.md), "Settings".
-- `precision` must be a whole number without marks, and `alias` must have exactly a text and `prefix` or `suffix`; otherwise `parse.syntax`, and the declaration is not loaded.
+- `precision` must be a whole number without marks, and `alias` must have exactly a text and `prefix` or `suffix`; otherwise `parse.syntax`, and the declaration is not loaded. A `format` template is checked as described in [../core/commodities.md](../core/commodities.md), "Display names and formats".
 - `display-name` runs to the end of the line and may contain spaces; with no text, it is `parse.syntax`, and the declaration is not loaded. `obligation` takes exactly `receivable` or `payable`, `pad-account` exactly one account name; otherwise `parse.syntax`, and the declaration is not loaded.
 
 ```hueke
@@ -178,6 +178,11 @@ commodity NTD
 commodity camera-01
     item
     ;; category: camera
+commodity TWSE
+    precision 0
+    format {amount} shares ({leaf})
+commodity TWSE:0050
+    display-name Yuanta Taiwan 50
 
 account Bank:Checking %main-bank
     display-name Main checking account

@@ -44,10 +44,10 @@ Each line has its leading whitespace removed and is split at the first `;` outsi
 | --- | --- |
 | Declarations | `option`, `account-root`, `commodity`, `account`, `entity`, `include`, `rule`, `module`; reserved: `schedule`, `installment` |
 | In date lines | `balance`, `pad` |
-| Properties | `item`, `precision`, `alias`, `primary`, `display-name`, `obligation`, `pad-account`, `active`, `allow`, `deny`, `source`, `self`, `map`, `split`, `paid-by`, `share`, `into`, `rate`, `fixed`, `cap`, `minimum`, `cap-group`, `rounding`; reserved: `type`, `statement`, `from`, `every`, `count`, `until`, `follows`, `skip`, `due`, `override`, `principal`, `method`, `periodic-rate`, `first-period`, `absorb`, `fee` |
+| Properties | `item`, `precision`, `alias`, `format`, `primary`, `display-name`, `obligation`, `pad-account`, `active`, `allow`, `deny`, `source`, `self`, `map`, `split`, `paid-by`, `share`, `into`, `rate`, `fixed`, `cap`, `minimum`, `cap-group`, `rounding`; reserved: `type`, `statement`, `from`, `every`, `count`, `until`, `follows`, `skip`, `due`, `override`, `principal`, `method`, `periodic-rate`, `first-period`, `absorb`, `fee` |
 
 - An account root cannot be a keyword; otherwise a one-segment account would read as a declaration or property.
-- A commodity code or alias cannot be a keyword either, reserved ones included, so that keywords stay free for features to come: `commodity fixed`, `alias fee suffix` and the amounts `5 fixed` and `(100 + 50)fixed`, in a posting, a price, a cost or a Balance, are `parse.syntax`, and the block is not loaded. A breakdown line's figures are not checked, since a commodity written there is not a use of it (see [../core/transactions.md](../core/transactions.md), "Breakdowns").
+- A commodity code or alias cannot be a keyword either, nor can any segment of a code, reserved ones included, so that keywords stay free for features to come: `commodity fixed`, `alias fee suffix` and the amounts `5 fixed` and `(100 + 50)fixed`, in a posting, a price, a cost or a Balance, are `parse.syntax`, and the block is not loaded. A breakdown line's figures are not checked, since a commodity written there is not a use of it (see [../core/transactions.md](../core/transactions.md), "Breakdowns").
 
 ### Ownership
 
@@ -60,7 +60,7 @@ Date lines and declarations are top-level: each opens a block and ends the previ
 | Transaction header | Metadata, `share`, `into`, postings |
 | Posting | Metadata, breakdown lines, `split`, `paid-by`. Until the next posting |
 | `balance` | Metadata |
-| `commodity` | `item`, `precision`, `alias`, metadata |
+| `commodity` | `display-name`, `item`, `precision`, `format`, `alias`, metadata |
 | `account` | `display-name`, `active`, `obligation`, `pad-account`, `primary`, `allow`, `deny`, `source`, `self`, `map`, metadata; reserved: `statement` |
 | `entity` | `display-name`, metadata; reserved: `type` |
 | `rule` | `active`, `rate`, `fixed`, `cap`, `minimum`, `cap-group`, `rounding`, metadata, template lines; reserved: `follows`, `every` |
@@ -151,7 +151,7 @@ Status: `implemented`
 | --- | --- | --- |
 | Account name | Segments separated by `:`, none empty; no whitespace, `;`, `"`, `,`, `[`, `]`, `{`, `}`; does not start with `%`, `#`, `^`, `@` | `Assets:Cash`, `Expenses:CoffeeShop` |
 | Account root | The first segment; starts with a letter; not a keyword | `Assets`, `Bank` |
-| Commodity code | A letter, then letters, digits, `_`, `-`, `.`; not a keyword | `NTD`, `camera-01`, `BRK.B` |
+| Commodity code | Segments separated by `:`. The first segment is a letter, then letters, digits, `_`, `-`, `.`; each other segment is one or more letters, digits, `_`, `-`, `.`. No segment is a keyword | `NTD`, `camera-01`, `BRK.B`, `TWSE:0050` |
 | Entity | A letter or `_`, then letters, digits, `_`, `-` | `NAT`, `xx_breakfast` |
 | Role | As an entity | `person` |
 | Anchor | Letters, digits, `_`, `-`; no `/`, `.`, `:`; not `self`. A group ledger's name follows the same rule. A `/` after the name starts a period, which is not part of the anchor (see [README.md](README.md), "Reserved syntax") | `t_book`, `deposit-1011`, `t8f3k2q` |
@@ -183,7 +183,7 @@ Status: `implemented`
 | `#` | After a header's time, followed by whitespace or the end of the line: cancelled. Joined to text (`#x`): a tag. `##x`: `parse.syntax`. At the start of a posting line: `parse.syntax`. So `2026-10-12 # "Lunch"` is cancelled, and `2026-10-12 #travel` is an unchecked transaction with a tag |
 | `-` | At the start of a line, not joined to a digit or a word: a breakdown (see "Line classes"). Joined to a number: a minus sign. Inside an identifier: an ordinary character |
 | `%`, `#`, `^`, `@` | Symbols only outside quotes and at the start of a token; `10%` and `AB-1#2` are not affected |
-| `:` | Inside an account name: a segment separator. In `#scope:`, `^tag:` and `@role:`: a separator. In `;; key:`: ends the key |
+| `:` | Inside an account name or a commodity code: a segment separator. In `#scope:`, `^tag:` and `@role:`: a separator. In `;; key:`: ends the key |
 | `[` | A lone token after a posting's amount: the posting's time. Joined to a point: its zone. Brackets pair up, so `[2026-06-02T09:00[Asia/Tokyo]]` is unambiguous |
 | `=` | Inside the time of a transaction header or a Balance assertion; in a breakdown, before the total |
 

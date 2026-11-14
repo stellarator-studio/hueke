@@ -151,7 +151,7 @@ Status: `implemented`
 Status: `implemented`
 
 - A posting line holds only a total. Quantity times unit price is written as a breakdown.
-- An amount with more decimal places than its commodity's **declared** precision is `posting.excess-precision` (warning) and is used as written. Inferred precision never triggers it; item commodities, prices, costs and filled-in amounts are never checked.
+- An amount with more decimal places than its commodity's **declared** precision, written on it or inherited from a commodity above (see [commodities.md](commodities.md), "Commodity hierarchy"), is `posting.excess-precision` (warning) and is used as written. Inferred precision never triggers it; item commodities, prices, costs and filled-in amounts are never checked.
 
 ### Breakdowns
 

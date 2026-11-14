@@ -40,6 +40,7 @@ import {
   amountError,
   anchorError,
   commodityError,
+  templateError,
   entityError,
   KEYWORDS,
   referenceError,
@@ -83,7 +84,7 @@ import {
 const CYCLE = ["from", "every", "count", "until", "follows", "skip"];
 const ACCEPTS: Partial<Record<DeclarationKind | "transaction", readonly string[]>> = {
   transaction: ["share", "into"],
-  commodity: ["item", "precision", "alias"],
+  commodity: ["display-name", "item", "precision", "format", "alias"],
   account: [
     "display-name",
     "active",
@@ -761,6 +762,10 @@ class Builder {
             `alias needs a text and prefix or suffix: "${line.value}"`,
           );
         identifier(aliasError(m[1]));
+      }
+      if (key === "format") {
+        const error = templateError(line.value);
+        if (error !== undefined) throw new BlockError("parse.syntax", error);
       }
     }
     if (block.kind === "account" && key === "primary") identifier(commodityError(line.value));

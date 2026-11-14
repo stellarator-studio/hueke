@@ -62,7 +62,7 @@ Status: `implemented`
 | --- | --- | --- |
 | `option` | A ledger setting | [../core/settings.md](../core/settings.md) |
 | `account-root` | An account root | [../core/accounts.md](../core/accounts.md), "Account roots" |
-| `commodity` | A commodity, with precision, item mode, aliases and metadata | [../core/commodities.md](../core/commodities.md) |
+| `commodity` | A commodity, with its display name, precision, item mode, format, aliases and metadata | [../core/commodities.md](../core/commodities.md) |
 | `account` | An account, with its anchor, display name, obligation and pad settings, primary commodity, allowed commodities and active period [specified], group ledger and mappings for a shared account [specified], and metadata | [../core/accounts.md](../core/accounts.md), [../core/group-ledgers.md](../core/group-ledgers.md) |
 | `entity` | An entity, with its display name and metadata; `type` is reserved | [../core/entities.md](../core/entities.md) |
 | `include` | Another module of the same ledger | [../core/modules.md](../core/modules.md) |

@@ -82,7 +82,7 @@ Accounts, commodities and entities may be declared, or used without a declaratio
 | Kind | Normal mode | Strict mode |
 | --- | --- | --- |
 | `account` | Any account can be used; an unknown root leaves it untyped (see [accounts.md](accounts.md), "Untyped accounts") | Only declared accounts can be used, and their root must be known |
-| `commodity` | Any commodity can be used; its precision is inferred and `name.inferred-commodity` (info) is reported (see [commodities.md](commodities.md), "Inferred precision") | Must be declared first |
+| `commodity` | Any commodity can be used; it inherits from the commodities above it (see [commodities.md](commodities.md), "Commodity hierarchy"), its precision is otherwise inferred (see [commodities.md](commodities.md), "Inferred precision"), and `name.inferred-commodity` (info) is reported | Must be declared first; declaring a commodity above it is not enough |
 | `entity` | Any entity can be referenced; it has no display name (see [entities.md](entities.md)) | Must be declared first |
 
 - Objects used without a declaration are created during normalization, after the declared ones, in the order of their first use in the source. The info diagnostics about them follow the same order.

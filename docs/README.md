@@ -26,7 +26,7 @@ Every feature carries one status.
 | --- | --- |
 | [architecture.md](architecture.md) | What the package provides, modules, dependency direction, source layout, which document drives which code and tests, rules for the public API |
 | [core/values.md](core/values.md) | Amounts, numbers as written, arithmetic in amounts and on values, prices and costs |
-| [core/commodities.md](core/commodities.md) | Commodities, aliases, declared and inferred precision, item mode |
+| [core/commodities.md](core/commodities.md) | Commodities, the commodity hierarchy, aliases, declared and inferred precision, item mode, display names and formats |
 | [core/time.md](core/time.md) | Time values, time zones, weeks, the two time axes, comparing times, time predicates |
 | [core/accounts.md](core/accounts.md) | Accounts, the account hierarchy, account roots, account anchors and display names, obligation and pad settings, allowed commodities, active periods, combined income and expense, untyped accounts |
 | [core/anchors.md](core/anchors.md) | Anchors, tags and scopes, primary tags, groups, refunds, looking records up by ID |

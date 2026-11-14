@@ -134,7 +134,7 @@ export function parseAmount(text: string, format: NumberFormat, aliases: AliasTa
   let commodity: Id;
   if (suffix !== undefined) commodity = suffix;
   else if (aliases.prefix.has(unit)) throw new NumberError(`"${unit}" is a prefix alias`);
-  else if (/^\p{L}[\p{L}\p{N}_.-]*$/u.test(unit)) commodity = unit;
+  else if (/^\p{L}[\p{L}\p{N}_.-]*(?::[\p{L}\p{N}_.-]+)*$/u.test(unit)) commodity = unit;
   else throw new NumberError(`"${unit}" is not a commodity`);
   return sign(parseBody(numberText, format), commodity);
 }

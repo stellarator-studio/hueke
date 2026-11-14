@@ -63,9 +63,10 @@ Status: `implemented`
 | `time.ambiguous-local-time` | error | Local time repeated by daylight saving time | Same | `implemented` |
 | `time.nonexistent-week` | error | The week does not exist in that year under `week-start` | Same | `implemented` |
 | `time.offset-mismatch` | error | A written UTC offset is not one the time zone has at that local time | Same | `implemented` |
+| `commodity.item-precision` | warning | A commodity under an item commodity writes `precision` (see [commodities.md](commodities.md), "Commodity hierarchy") | Precision not used; the commodity is an item with precision 0 | `implemented` |
 | `commodity.alias-conflict` | warning | An alias equals a declared commodity's code or another alias (see [commodities.md](commodities.md), "Commodity aliases") | Alias not loaded; amounts are read as if it were never declared | `implemented` |
 | `name.unknown-root` | info | An account's root is unknown (normal mode) | Computed; the account has no type | `implemented` |
-| `name.inferred-commodity` | info | An undeclared commodity is used (normal mode) | Computed; precision inferred | `implemented` |
+| `name.inferred-commodity` | info | An undeclared commodity is used (normal mode) | Computed; precision inherited, else inferred | `implemented` |
 | `strict.undeclared` | error | Strict mode: an undeclared account, commodity or entity is used | Computed as in normal mode | `implemented` |
 | `strict.unknown-root` | error | Strict mode: a declared account's root is unknown | Computed; the account has no type | `implemented` |
 | `declaration.duplicate` | error | The root module declares a commodity, account, account root or entity again, in any mode | The first declaration is used; the later one is ignored | `implemented` |
@@ -82,7 +83,7 @@ Status: `implemented`
 | `txn.amount-not-inferable` | error | More than one omitted amount, or the other weights are in several commodities | Transaction not loaded | `implemented` |
 | `posting.pnl-effective` | error | An income or expense posting has its own effective time | Computed; the posting uses the transaction's time | `implemented` |
 | `posting.invalid-effective` | error | The effective time a posting uses, its own or its transaction's, is not one day or one moment; the message says which | Transaction not loaded | `implemented` |
-| `posting.excess-precision` | warning | More decimal places than the declared precision | Computed as written | `implemented` |
+| `posting.excess-precision` | warning | More decimal places than the declared precision, written or inherited | Computed as written | `implemented` |
 | `obligation.missing-entity` | error | No posting of an obligation names anyone; reported once per obligation (see [obligations.md](obligations.md), "Entities of an obligation") | Computed as written | `implemented` |
 | `obligation.root-posting` | error | A posting is on an obligation account itself, not on an obligation | Computed as written; it belongs to no obligation | `implemented` |
 | `obligation.nested` | error | A posting, an `account` declaration or a Balance is on an account inside an obligation, or an account inside an obligation account declares `obligation` (see [obligations.md](obligations.md), "Obligation accounts") | Computed as written; a posting there belongs to no obligation, and the inner `obligation` takes no effect | `implemented` |

@@ -25,6 +25,7 @@ const SEVERITY = {
   "parse.invalid-number": "error",
   "parse.metadata-after-breakdown": "warning",
   "commodity.alias-conflict": "warning",
+  "commodity.item-precision": "warning",
   "name.unknown-root": "info",
   "name.inferred-commodity": "info",
   "strict.undeclared": "error",

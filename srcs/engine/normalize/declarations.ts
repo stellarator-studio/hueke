@@ -2,7 +2,8 @@
 // declared. Only the root module's declarations take effect (docs/core/modules.md, "Declarations
 // in included modules"). A commodity, account, account root or entity declared twice keeps its
 // first declaration (docs/core/ledger.md, "Duplicate declarations"). Accounts inside an obligation
-// account inherit its settings (docs/core/accounts.md, "Obligation and pad settings").
+// account inherit its settings (docs/core/accounts.md, "Obligation and pad settings"); commodities
+// inherit from the commodities above them (docs/core/commodities.md, "Commodity hierarchy").
 
 import type {
   Account,
@@ -217,17 +218,39 @@ export function collectDeclarations(
         aliasEntries.push({ ...alias, owner: id, at });
       }
     }
-    const commodity: Commodity = {
+    const displayName = property(at.d, "display-name");
+    const format = property(at.d, "format");
+    commodities.set(
       id,
-      ...(at.d.span && { span: at.d.span }),
-      item,
-      precision: item ? 0 : (precision ?? 0),
-      precisionWritten: item || precision !== undefined,
-      aliases,
-      meta: metaFrom(at.d.lines, at.d.trailer),
-    };
-    commodities.set(id, commodity);
-    sources.set(commodity, at.source);
+      makeCommodity(id, {
+        ...(at.d.span && { span: at.d.span }),
+        item,
+        precision: item ? 0 : (precision ?? 0),
+        precisionWritten: item || precision !== undefined,
+        aliases,
+        ...(displayName !== undefined && { displayName }),
+        ...(format !== undefined && { format }),
+        meta: metaFrom(at.d.lines, at.d.trailer),
+      }),
+    );
+  }
+  // Commodities above come first, so each takes what they have already inherited.
+  const commoditiesByDepth = [...commodities.values()].sort(
+    (a, b) => a.id.split(":").length - b.id.split(":").length,
+  );
+  const own = new Map(commodities);
+  for (const c of commoditiesByDepth) commodities.set(c.id, inheritCommodity(c, commodities));
+  for (const [id, at] of commodityDeclared) {
+    const c = commodities.get(id);
+    const written = own.get(id);
+    if (!c || !written) continue;
+    sources.set(c, at.source);
+    if (c.item && !written.item && written.precisionWritten)
+      report(
+        "commodity.item-precision",
+        `${id} is under an item commodity; its precision is not used`,
+        at,
+      );
   }
   // A conflicting alias is not loaded for any declaration; amounts read as if it were not declared.
   const { table: aliasTable, conflicts } = aliasTableOf(aliasEntries, (t) => commodities.has(t));
@@ -352,6 +375,43 @@ export function inherit(account: Account, obligations: ReadonlyMap<Id, Account>)
     obligation: root.obligation,
     ...(padAccount !== undefined && { padAccount }),
   };
+}
+
+/** A commodity with its parent; the other fields are as for one used without a declaration. */
+export function makeCommodity(id: Id, extra: Partial<Commodity> = {}): Commodity {
+  const colon = id.lastIndexOf(":");
+  return {
+    id,
+    ...(colon > 0 && { parent: id.slice(0, colon) }),
+    item: false,
+    precision: 0,
+    precisionWritten: false,
+    aliases: [],
+    meta: {},
+    ...extra,
+  };
+}
+
+/**
+ * `c` with `item`, `precision` and `format` taken from the nearest declared commodity above it
+ * when it does not have them (docs/core/commodities.md, "Commodity hierarchy"). `declared` holds
+ * the declared commodities, those above `c` already with what they inherit.
+ */
+export function inheritCommodity(c: Commodity, declared: ReadonlyMap<Id, Commodity>): Commodity {
+  let above: Commodity | undefined;
+  for (let id = c.parent; id !== undefined && !above; id = parentOf(id)) above = declared.get(id);
+  if (!above) return c;
+  const out: { -readonly [K in keyof Commodity]: Commodity[K] } = { ...c };
+  if (above.item) Object.assign(out, { item: true, precision: 0, precisionWritten: true });
+  else if (!c.precisionWritten && above.precisionWritten)
+    Object.assign(out, { precision: above.precision, precisionWritten: true });
+  if (c.format === undefined && above.format !== undefined) out.format = above.format;
+  return out;
+}
+
+function parentOf(id: Id): Id | undefined {
+  const colon = id.lastIndexOf(":");
+  return colon > 0 ? id.slice(0, colon) : undefined;
 }
 
 export function makeAccount(

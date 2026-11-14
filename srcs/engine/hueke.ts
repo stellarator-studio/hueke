@@ -28,7 +28,9 @@ import { duplicateAnchors, resolveTags } from "./normalize/anchors.js";
 import {
   collectDeclarations,
   inherit,
+  inheritCommodity,
   makeAccount,
+  makeCommodity,
   type Declarations,
 } from "./normalize/declarations.js";
 import { collectModules } from "./normalize/modules.js";
@@ -186,7 +188,10 @@ export class Hueke {
 
     // Step 6: pad balances, sorting, undeclared objects and inferred precision
     const precision = (id: Id): number =>
-      settledPrecision(declared.commodities.get(id), usedDecimals.get(id));
+      settledPrecision(
+        declared.commodities.get(id) ?? inheritCommodity(makeCommodity(id), declared.commodities),
+        usedDecimals.get(id),
+      );
     const generated = expandPads(
       balances,
       transactions,
@@ -323,20 +328,19 @@ export class Hueke {
         }
       }
       if (commodity === undefined || commodity === "" || commodities.has(commodity)) continue;
-      commodities.set(commodity, {
-        id: commodity,
-        item: false,
-        precision: usedDecimals.get(commodity) ?? 0,
-        precisionWritten: false,
-        aliases: [],
-        meta: {},
-      });
+      const c = inheritCommodity(makeCommodity(commodity), declared.commodities);
+      commodities.set(
+        commodity,
+        c.precisionWritten ? c : { ...c, precision: usedDecimals.get(commodity) ?? 0 },
+      );
       out.push(
         strictCommodity
           ? diagnostic("strict.undeclared", `commodity ${commodity} is not declared`, source, span)
           : diagnostic(
               "name.inferred-commodity",
-              `commodity ${commodity} is not declared: its precision is inferred`,
+              c.precisionWritten
+                ? `commodity ${commodity} is not declared: its settings come from the commodities above it`
+                : `commodity ${commodity} is not declared: its precision is inferred`,
               source,
               span,
             ),
