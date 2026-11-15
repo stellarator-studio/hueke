@@ -21,13 +21,21 @@ export interface CommodityAlias {
 }
 
 export interface Commodity {
-  readonly id: Id;
+  readonly id: Id; // the full code, e.g. "TWSE:0050"
   readonly span?: SourceSpan; // absent when used without a declaration
+  readonly parent?: Id;
+  /** Declared, or inherited from a commodity above. */
   readonly item: boolean;
   readonly precision: number; // fixed at 0 for items
-  /** `precision` was written; only then is posting.excess-precision reported. */
+  /**
+   * `precision` was written, on the commodity or a commodity above; only then is
+   * posting.excess-precision reported.
+   */
   readonly precisionWritten: boolean;
   readonly aliases: readonly CommodityAlias[];
+  readonly displayName?: string;
+  /** Declared, or inherited from a commodity above. */
+  readonly format?: string;
   readonly meta: Metadata;
 }
 

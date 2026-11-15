@@ -50,7 +50,7 @@ breakdownLine : DASH (~NL)* ;                                    // text and fig
 timeSpec      : NUMWORD (NUMWORD | WORD | LBRACK (WORD | NUMWORD) RBRACK)* ;   // adjacency (no spaces inside) is checked by the builder
 amount        : (WORD | NUMWORD | keyword) (WORD | NUMWORD | keyword)? ;      // numbers and aliases are read after declarations are collected
 
-propKeyword   : KW_ITEM | KW_PRECISION | KW_ALIAS | KW_ACTIVE | KW_OBLIGATION | KW_PAD_ACCOUNT | KW_PRIMARY
+propKeyword   : KW_ITEM | KW_PRECISION | KW_ALIAS | KW_FORMAT | KW_ACTIVE | KW_OBLIGATION | KW_PAD_ACCOUNT | KW_PRIMARY
               | KW_ALLOW | KW_DENY | KW_STATEMENT | KW_SOURCE | KW_SELF | KW_MAP | KW_DISPLAY_NAME | KW_TYPE
               | KW_FROM | KW_EVERY | KW_COUNT | KW_UNTIL | KW_FOLLOWS | KW_SKIP | KW_DUE | KW_OVERRIDE
               | KW_PRINCIPAL | KW_METHOD | KW_RATE | KW_PERIODIC_RATE | KW_FIRST_PERIOD | KW_ROUNDING
@@ -83,6 +83,7 @@ KW_PAD          : 'pad' ;
 KW_ITEM         : 'item' ;
 KW_PRECISION    : 'precision' ;
 KW_ALIAS        : 'alias' ;
+KW_FORMAT       : 'format' ;
 KW_ACTIVE       : 'active' ;
 KW_OBLIGATION   : 'obligation' ;
 KW_PAD_ACCOUNT  : 'pad-account' ;

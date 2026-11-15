@@ -1,6 +1,6 @@
 # Command line
 
-`hueke` is a command-line shell around the API: each command reads one ledger, calls the API and prints the result. This document covers how `hueke` loads a ledger, its commands and filter options, its output formats and its exit status.
+`hueke` is a command-line shell around the API: each command reads one ledger, calls the API and prints the result. This document covers how `hueke` loads a ledger, its commands and filter options, valuation, metadata columns, its output formats and its exit status.
 
 ## Features
 
@@ -11,6 +11,8 @@
 | `obligations` and `group` | `implemented` |
 | Filters | `implemented` |
 | Settled obligations and display names | `implemented` |
+| `trades` and `holdings` | `specified` |
+| Metadata columns | `specified` |
 | Output | `implemented` |
 | Exit status | `implemented` |
 
@@ -35,7 +37,7 @@ Status: `implemented`
 | `--strict` | Strict mode for every kind, whatever the ledger says, as when creating the ledger with strict mode. |
 
 - Files are read as UTF-8 and parsed. Each is loaded under its path relative to `--root`, with `/` separators.
-- Starting from the root file, `hueke` reads every file the modules include, as described in [core/modules.md](core/modules.md), "Modules and `include`"; then it initializes the ledger from the root file. An included file that cannot be read is left out, so Core reports `module.missing` for it. A root file that cannot be read is a usage error (see "Exit status").
+- Starting from the root file, `hueke` reads every file the modules include, and every group ledger that shared accounts refer to [specified], as `referencedSources` lists them (see [core/modules.md](core/modules.md), "API"); then it initializes the ledger from the root file. An included file that cannot be read is left out, so Core reports `module.missing` for it; a group ledger that cannot be read, `shared.unknown-module`. A root file that cannot be read is a usage error (see "Exit status").
 - When the ledger has diagnostics of severity `warning` or `error`, every command except `check` still runs and prints its result to standard output. After the result, it prints those diagnostics to standard error, in the format `check` uses in a table, so that the user can find what went wrong; `info` diagnostics are left out. The exit status is not changed.
 
 ### Commands
@@ -81,7 +83,7 @@ Status: `implemented`
 | `--period <time>` | `within` |
 | `--overlaps <time>` | `overlaps` |
 | `--covers <time>` | `covers` |
-| `--axis <axis>` | `axis`: `accounting`, `effective` or `txn-effective` |
+| `--axis <axis>` | `axis`: `accounting`, `effective`, `txn-effective`, or `meta:<key>` [specified] (see [core/query.md](core/query.md), "Metadata axes") |
 | `--status <status,…>` | `status`: `none`, `cleared` |
 | `--involves <commodity,…>` | `involves` |
 | `--planned`, `--cancelled` | `occurrence`; both together list both |
@@ -105,6 +107,36 @@ Status: `implemented`
 - `--name` (`balance`, `register`, `query` and `obligations`) shows each account's and entity's display name in place of its ID, when it has one (see [core/entities.md](core/entities.md), "Display names"). It changes only what is shown; arguments and filters still take IDs.
 - `--balance` (`reconcile` only) adds the balance after each of the period's postings, and moves opening and closing into that balance column. It changes only what is shown.
 
+### `trades` and `holdings`
+
+Status: `specified`
+
+| Command | Arguments | API |
+| --- | --- | --- |
+| `trades` | The held commodity, then accounts, sub-accounts included; no accounts means all | `trades` |
+| `holdings` | Optionally the held commodity, then accounts, sub-accounts included; no accounts means all | `holdings` |
+
+| Option | Commands | Meaning |
+| --- | --- | --- |
+| `--in <commodity>` | Both; required | The quote commodity |
+| `--period <time>` | `trades` | The range of rows listed |
+| `--at <time>` | `holdings`; required | The point |
+| `--convert` | Both | Convert costs in other commodities to the quote |
+| `--value ledger`, `--value cost` | `holdings` | Value from the ledger's prices, or at cost |
+| `--price <commodity>=<unit price>` | `holdings`; may repeat | A price table entry, such as `--price AAPL=175`; commodities not listed are valued from the ledger. Not together with `--value` |
+
+- The first argument of `holdings` is the held commodity when its first segment is not the first segment of any account of the ledger; otherwise every argument is an account, and every commodity held is listed.
+- What they compute is described in [core/valuation.md](core/valuation.md). The `valuation.*` warnings of the result are printed to standard error after it, in the format of ledger diagnostics, without a place.
+- `--price` and `--value` written together, or a price that is not a number, is a usage error.
+
+### Metadata columns
+
+Status: `specified`
+
+- `--meta <key,…>` (`query`, `register` and `group`) adds one column per key, after `description`, with each posting's metadata value for the key, else its transaction's (see [core/query.md](core/query.md), "Matched postings"); empty when neither has one. It changes only what is shown.
+- Without `--meta`, the keys come from the metadata `view_meta`, a comma-separated list of keys, such as `;; view_meta: summary,memo`: in `query` and `register` with exactly one account argument, that account's; in `group`, the anchor's record's. Otherwise no column is added. Core keeps `view_meta` as any other metadata and gives it no meaning.
+- In CSV, each column's header is `meta:<key>`.
+
 ### Output
 
 Status: `implemented`
@@ -116,15 +148,18 @@ Status: `implemented`
 | `check` | Diagnostic | `source`, `line`, `column`, `severity`, `code`, `message` |
 | `balance` | Row of `balance`, in its order, and then one line per commodity | `account`, `subtotal`, `depth`, `value`, `commodity` |
 | `register` | Row of `register`, in its order, and then one line per commodity; after a row, its postings as `query` rows | Table only |
-| `query` | Matched posting, in query order | `date`, `transaction`, `posting`, `occurrence`, `status`, `account`, `value`, `commodity`, `description` |
+| `query` | Matched posting, in query order | `date`, `transaction`, `posting`, `occurrence`, `status`, `account`, `value`, `commodity`, `description`, then the metadata columns [specified] |
+| `trades` [specified] | Trade row, in its order | `date`, `transaction`, `posting`, `quantity`, `commodity`, `unit_price`, `total`, `cost`, `realized`, `average_cost`, `quote` |
+| `holdings` [specified] | Holding, in its order | `commodity`, `quantity`, `cost`, `average_cost`, `unit_price`, `value`, `unrealized`, `value_source`, `quote` |
 | `obligations` | Row of `obligations`, in its order | `account`, `commodity`, `entities` (separated by `,`), `original`, `repaid`, `remaining`, `settled`, `last_repaid` |
 | `group` | The anchor's record, then each member transaction in query order | `role` (`anchor` or `member`), `date`, `kind`, `id`, `description`. The date is the effective time, a posting's own for a posting; a posting's `description` is its transaction's; for an account, `date` and `description` are empty. A table shows the same columns, without a header |
 | `reconcile` | View, one per commodity | The account, commodity and range, opening, the period's postings, closing, asserted, difference, then the uncleared postings as `query` rows. With `--balance`, each posting of the period also shows the balance after it, and the amounts of opening and closing are shown in that column |
 
 - `date` is the posting's time on the query's axis, as written, as `timeOnAxis` gives it (see [core/time.md](core/time.md), "API"). In `reconcile`, it is always the posting's effective time.
-- **Tables.** Each table is aligned on its own: in `register`, the account rows share one alignment and each row's postings another; in `reconcile`, each view has its own. Amounts are written with the ledger's decimal mark and group mark (see [core/settings.md](core/settings.md)), padded with zeros to the commodity's precision and never rounded: `12,300 NTD`, or `12.300,50 EUR` with decimal mark `,` and group mark `.`. A value that is a fraction is written as its numerator and denominator, each grouped, without padding: `28,300/3 NTD`. `balance` indents each account two spaces per segment after the first and marks subtotal rows `(total)`. `query` shows a mark: `!` planned, `#` cancelled, `*` cleared. `check` prints `<source>:<line>:<column>: <severity> <code>: <message>`. Several `reconcile` views are separated by a blank line.
+- **Tables.** Each table is aligned on its own: in `register`, the account rows share one alignment and each row's postings another; in `reconcile`, each view has its own. Amounts are written with the ledger's decimal mark and group mark (see [core/settings.md](core/settings.md)), padded with zeros to the commodity's precision and never rounded: `12,300 NTD`, or `12.300,50 EUR` with decimal mark `,` and group mark `.`. A value that is a fraction is written as its numerator and denominator, each grouped, without padding: `28,300/3 NTD`. An amount whose commodity has a format is written through it, with the value written as above in place of `{amount}`: `1,000 shares (0050)` (see [core/commodities.md](core/commodities.md), "Display names and formats"). Where the commodity has a column of its own, as in `obligations`, the value is written alone and no format is used; a `reconcile` view names its commodity in its heading by code, and its amounts still use the format. `balance` indents each account two spaces per segment after the first and marks subtotal rows `(total)`. `query` shows a mark: `!` planned, `#` cancelled, `*` cleared. `check` prints `<source>:<line>:<column>: <severity> <code>: <message>`. Several `reconcile` views are separated by a blank line.
 - In `obligations`, `settled` is shown as `settled` or `open` in tables, and as `true` or `false` in CSV; `last_repaid` is the time as written, empty when there is none.
 - **CSV.** A header row, then the fields as plain text; amounts are the API's values, with `.` as the decimal mark, no group mark and no padding. Fields containing `,`, `"` or a line break are quoted.
+- In `trades` and `holdings`, a field the API leaves out is empty. [specified]
 - JSON output is not available.
 
 ### Exit status
@@ -313,3 +348,39 @@ With these lines also added to `main.hueke`:
 | `hueke balance Expenses --file main.hueke --breakdown 'Black tea'` | `Expenses (total)` and `Expenses:Drinks`, each 125 NTD: the postings' amounts, not the lines' totals |
 | `hueke query Assets --file main.hueke --breakdown 'Black tea'` | No postings: the cash postings have no lines of their own |
 | `hueke query --file main.hueke --breakdown 'black tea'` | No postings: names match exactly |
+
+**Valuation and metadata columns** [specified]
+
+With these lines added to `main.hueke`:
+
+```hueke
+commodity USD
+    precision 2
+commodity AAPL
+    precision 0
+
+2026-10-01 * %buy "Buy"
+    Assets:Broker    10 AAPL @ 150 USD
+    Bank:USD       -1500 USD
+
+2026-10-10 * %sell "Sell"
+    Assets:Broker    -5 AAPL @ 180 USD
+    Bank:USD         900 USD
+
+2026-10-28 * "Rent"
+    ;; memo: October rent
+    Expenses:Housing   15000 NTD
+    Bank:Checking     -15000 NTD
+```
+
+| Command | Result |
+| --- | --- |
+| `hueke trades AAPL Assets:Broker --in USD --file main.hueke --format csv` | A header, then `2026-10-01,buy,buy.1,10,AAPL,150,1500,1500,,150,USD` and `2026-10-10,sell,sell.1,-5,AAPL,180,900,750,150,150,USD` |
+| `hueke holdings AAPL Assets:Broker --in USD --at 2026-10-31 --file main.hueke` | 5 AAPL, cost 750 USD, average cost 150 USD |
+| The same with `--value ledger` | Also unit price 180 USD, value 900 USD, unrealized 150 USD, source `ledger` |
+| The same with `--price AAPL=200` | Unit price 200 USD, value 1,000 USD, unrealized 250 USD, source `table` |
+| `hueke holdings Assets:Broker --in USD --at 2026-10-31 --file main.hueke` | The same row: `Assets` is an account's first segment, so every argument is an account |
+| `hueke holdings AAPL --in USD --file main.hueke` | Status 2: `--at` is required |
+| `hueke holdings AAPL --in USD --at 2026-10-31 --value ledger --price AAPL=200 --file main.hueke` | Status 2 |
+| `hueke query Bank:Checking --file main.hueke --meta memo` | The `query` rows of `Bank:Checking` with a `memo` column: `October rent` for the rent, empty for the others |
+| `hueke query Bank:Checking --file main.hueke`, with `;; view_meta: memo` under `account Bank:Checking` | The same `memo` column |

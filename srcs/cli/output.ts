@@ -21,10 +21,25 @@ export function valueText(hueke: Hueke): (a: Amount) => string {
   };
 }
 
-/** Writes an amount for a table: its value as `valueText` writes it, then its commodity. */
+/**
+ * Writes an amount for a table: its value as `valueText` writes it, through the commodity's format,
+ * or followed by its commodity when it has none (docs/core/commodities.md, "Display names and
+ * formats").
+ */
 export function amountText(hueke: Hueke): (a: Amount) => string {
   const value = valueText(hueke);
-  return (a) => `${value(a)} ${a.commodity}`;
+  const commodities = new Map(hueke.commodities.map((c) => [c.id, c]));
+  return (a) => {
+    const c = commodities.get(a.commodity);
+    if (c?.format === undefined) return `${value(a)} ${a.commodity}`;
+    const fields: Record<string, string> = {
+      amount: value(a),
+      code: c.id,
+      leaf: c.id.slice(c.id.lastIndexOf(":") + 1),
+      name: c.displayName ?? c.id,
+    };
+    return c.format.replace(/\{(amount|code|leaf|name)\}/g, (_, key: string) => fields[key] ?? "");
+  };
 }
 
 function number(value: string, precision: number, marks: Marks): string {

@@ -274,6 +274,93 @@ describe("balance", () => {
   });
 });
 
+describe("commodity formats", () => {
+  const STOCKS = `option timezone Asia/Taipei
+account-root Bank asset
+commodity NTD
+    precision 0
+commodity TWSE
+    display-name Taiwan Stock Exchange
+    precision 0
+    format {amount} shares ({leaf})
+commodity TWSE:0050
+    display-name Yuanta Taiwan 50
+commodity CELSIUS
+    format "{amount} degrees Celsius"
+commodity FUND
+    display-name Funds
+    precision 2
+    format {name}: {amount} [{code}]
+
+2026-11-03 * "Buy"
+    Assets:Broker:A    1000 TWSE:0050 @ 190 NTD
+    Bank:Checking   -190000 NTD
+
+2026-11-04 * "Buy"
+    Assets:Broker:B    2000 TWSE:00878 @ 22 NTD
+    Bank:Checking    -44000 NTD
+
+2026-11-05 * "Cold"
+    Assets:Weather       -5 CELSIUS
+    Equity:Weather        5 CELSIUS
+
+2026-11-06 * "Fund"
+    Assets:Fund        12.5 FUND:x
+    Bank:Checking      -125 NTD
+`;
+  const files = { "/ledger/main.hueke": STOCKS };
+  it("writes table amounts through the format, inherited by declared and undeclared codes", () => {
+    expect(hueke("balance Assets:Broker --file main.hueke", files).stdout).toBe(
+      " 1,000 shares (0050)  Assets (total)\n" +
+        "2,000 shares (00878)\n" +
+        " 1,000 shares (0050)    Assets:Broker (total)\n" +
+        "2,000 shares (00878)\n" +
+        " 1,000 shares (0050)      Assets:Broker:A\n" +
+        "2,000 shares (00878)      Assets:Broker:B\n",
+    );
+  });
+  it("writes a negative amount with its sign in place of {amount}", () => {
+    expect(hueke("balance Assets:Weather --file main.hueke", files).stdout).toBe(
+      "-5 degrees Celsius  Assets (total)\n-5 degrees Celsius    Assets:Weather\n",
+    );
+  });
+  it("writes {name} as the code when the commodity has no display name, padded as usual", () => {
+    expect(hueke("balance Assets:Fund --file main.hueke", files).stdout).toBe(
+      "FUND:x: 12.50 [FUND:x]  Assets (total)\nFUND:x: 12.50 [FUND:x]    Assets:Fund\n",
+    );
+  });
+  it("writes {name} as the display name of the commodity shown, not of the one with the format", () => {
+    const named = {
+      "/ledger/main.hueke": `${STOCKS}commodity FUND:y\n    display-name Fund Y\n\n2026-11-07 * "Fund"\n    Assets:Fund   1 FUND:y\n    Equity:Fund\n`,
+    };
+    expect(hueke("query Assets:Fund --file main.hueke", named).stdout).toBe(
+      "2026-11-06  *  Assets:Fund  FUND:x: 12.50 [FUND:x]  Fund\n" +
+        "2026-11-07  *  Assets:Fund   Fund Y: 1.00 [FUND:y]  Fund\n",
+    );
+  });
+  it("writes amounts without a format as before", () => {
+    expect(hueke("balance Bank --file main.hueke", files).stdout).toBe(
+      "-234,125 NTD  Bank (total)\n-234,125 NTD    Bank:Checking\n",
+    );
+  });
+  it("uses the format in query rows", () => {
+    expect(hueke("query Assets:Broker:A --file main.hueke", files).stdout).toBe(
+      "2026-11-03  *  Assets:Broker:A  1,000 shares (0050)  Buy\n",
+    );
+  });
+  it("leaves CSV unchanged", () => {
+    expect(hueke("balance Assets:Broker --file main.hueke --format csv", files).stdout).toBe(
+      "account,subtotal,depth,value,commodity\n" +
+        "Assets,true,1,1000,TWSE:0050\n" +
+        "Assets,true,1,2000,TWSE:00878\n" +
+        "Assets:Broker,true,2,1000,TWSE:0050\n" +
+        "Assets:Broker,true,2,2000,TWSE:00878\n" +
+        "Assets:Broker:A,false,3,1000,TWSE:0050\n" +
+        "Assets:Broker:B,false,3,2000,TWSE:00878\n",
+    );
+  });
+});
+
 describe("query", () => {
   it("lists matched postings with the time on the axis", () => {
     expect(
@@ -639,6 +726,20 @@ describe("obligations", () => {
       hueke("obligations --file main.hueke", files).stdout,
     );
     expect(hueke("obligations Bank --file main.hueke", files).stdout).toBe("");
+  });
+  it("writes the value alone, without the commodity's format", () => {
+    const formatted = {
+      "/ledger/main.hueke": OBLIGATIONS.replace(
+        "commodity NTD\n    precision 0\n",
+        "commodity NTD\n    precision 0\n    format NT$ {amount}\n",
+      ),
+    };
+    expect(hueke("obligations --file main.hueke", formatted).stdout).toBe(
+      "Assets:Receivable:lunch-1011  NTD  NAT  400  250  150  open  2026-10-20\n",
+    );
+    expect(hueke("balance Assets:Receivable --file main.hueke", formatted).stdout).toContain(
+      "NT$ 150  ",
+    );
   });
   it("groups the values of a table but not of CSV", () => {
     const large = withObligations(`

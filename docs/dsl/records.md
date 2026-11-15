@@ -1,6 +1,6 @@
 # Records and declarations
 
-Each record and declaration is written as a fixed sequence of parts. This document gives that sequence for time values, amounts, transaction headers, postings, breakdowns, Balance assertions, declarations and `include`.
+Each record and declaration is written as a fixed sequence of parts. This document gives that sequence for time values, amounts, transaction headers, postings, breakdowns, Balance assertions, declarations, `include`, splits and split tables, rules, and group ledgers with their shared accounts.
 
 ## Features
 
@@ -14,6 +14,11 @@ Each record and declaration is written as a fixed sequence of parts. This docume
 | Balance assertions | `implemented` |
 | Declarations | `implemented` |
 | `include` | `implemented` |
+| Account restrictions | `specified` |
+| Splits | `specified` |
+| Split tables | `specified` |
+| Rules | `specified` |
+| Group ledgers and shared accounts | `specified` |
 
 ## Concepts
 
@@ -148,14 +153,16 @@ Status: `implemented`
 | --- | --- | --- |
 | Setting | `option <name> <value>`; the value runs to the end of the line | None |
 | Account root | `account-root <name> <type>` | None |
-| Commodity | `commodity <code>` | `item` (no value), `precision <whole number>`, `alias <text> prefix` or `alias <text> suffix` (may repeat), metadata |
-| Account | `account <name> [%anchor]` | `display-name <text>`, `obligation receivable` or `obligation payable`, `pad-account <account>`; `primary <commodity>`; metadata |
+| Commodity | `commodity <code>` | `display-name <text>`, `item` (no value), `precision <whole number>`, `format <template>`, `alias <text> prefix` or `alias <text> suffix` (may repeat), metadata |
+| Account | `account <name> [%anchor]` | `display-name <text>`, `obligation receivable` or `obligation payable`, `pad-account <account>`; `primary <commodity>`; `active`, `allow`, `deny` (see "Account restrictions") [specified]; for a shared account, `source`, `self`, `map` (see "Group ledgers and shared accounts") [specified]; metadata |
 | Entity | `entity <id>` | `display-name <text>`, metadata; `type` is reserved (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax") |
 | Include | `include <path>`; the path is one token | None |
+| Rule [specified] | `rule %<id> ["description"]` | See "Rules" |
+| Module [specified] | `module shared <name> ["description"]` | See "Group ledgers and shared accounts" |
 
 - Declarations have no time; their order does not matter. Only the root module's declarations take effect (see [../core/modules.md](../core/modules.md), "Declarations in included modules").
 - The settings and their values are listed in [../core/settings.md](../core/settings.md), "Settings".
-- `precision` must be a whole number without marks, and `alias` must have exactly a text and `prefix` or `suffix`; otherwise `parse.syntax`, and the declaration is not loaded.
+- `precision` must be a whole number without marks, and `alias` must have exactly a text and `prefix` or `suffix`; otherwise `parse.syntax`, and the declaration is not loaded. A `format` template is checked as described in [../core/commodities.md](../core/commodities.md), "Display names and formats".
 - `display-name` runs to the end of the line and may contain spaces; with no text, it is `parse.syntax`, and the declaration is not loaded. `obligation` takes exactly `receivable` or `payable`, `pad-account` exactly one account name; otherwise `parse.syntax`, and the declaration is not loaded.
 
 ```hueke
@@ -171,6 +178,11 @@ commodity NTD
 commodity camera-01
     item
     ;; category: camera
+commodity TWSE
+    precision 0
+    format {amount} shares ({leaf})
+commodity TWSE:0050
+    display-name Yuanta Taiwan 50
 
 account Bank:Checking %main-bank
     display-name Main checking account
@@ -195,3 +207,187 @@ include 2026/10.hueke
 
 - `include <path>` is a top-level line with no child lines. The path is one token; quote it when it contains whitespace or any of `;` `"` `[` `]` `{` `}`. A path with `(` or `)` may be written with or without quotes; Core writes it quoted (see [formatting.md](formatting.md), "Canonical form"). A missing path or an extra token is `parse.syntax`, and the line is not loaded.
 - How paths resolve and how included modules join the ledger is described in [../core/modules.md](../core/modules.md).
+
+### Account restrictions
+
+Status: `specified`
+
+```hueke
+account Assets:Wallet
+    allow NTD, JPY
+account Assets:CoinPurse
+    deny USD
+account Bank:Taishin
+    active 2026-03-01..2026-10-15
+account Liabilities:OldCard
+    active ..2025-12
+```
+
+- `allow` and `deny` take commodity codes or aliases, separated by `,`, with optional spaces around it; an empty list or an empty item is `parse.syntax`.
+- `active` takes one time value (see "Time values"): an interval, open at one end or not, such as `2026-01-01..` or `..2025-12`, or a single time, such as `2026`. An interval open at both ends, `..`, is `parse.syntax`.
+- What they mean is described in [../core/accounts.md](../core/accounts.md), "Allowed commodities" and "Active periods".
+
+### Splits
+
+Status: `specified`
+
+A split is a child line of a posting.
+
+```text
+split <member> … [paid-by @<entity>] [-> <obligation>]
+split <table anchor> [paid-by @<entity>] [-> <obligation>]
+paid-by @<entity> [-> <obligation>]
+```
+
+| Member | Meaning |
+| --- | --- |
+| `@AMY` | AMY, ratio 1 |
+| `@AMY 500` | AMY, 500 in the settlement commodity; the number takes no commodity |
+| `@AMY *2`, `@AMY ×2`, `@AMY * 2` | AMY, ratio 2 |
+| `self *2` | The owner, ratio 2; without it, the owner's ratio is 1 |
+
+```hueke
+2026-10-13 * "Dinner"
+    Expenses:Food   1200 NTD
+        split @AMY @BOB -> Assets:Receivable:dinner-1013
+    Assets:Cash    -1200 NTD
+
+2026-10-12 * "Lunch, AMY paid"
+    Expenses:Food   180 NTD
+        paid-by @AMY -> Liabilities:Payable:lunch-1012
+```
+
+- The parts keep the order shown. A split names members or one table, never both: a member after a table anchor is `parse.syntax`. A split with no member and no table is `parse.syntax`.
+- `self` is written at most once, and each entity once; a repeat is `parse.syntax`.
+- A ratio is a number zero or greater, without a commodity, and may have decimals; a negative ratio is `parse.syntax`. A member's amount follows the ledger's number rules and may be an expression.
+- A posting takes at most one `split` or `paid-by` line; a second is `parse.duplicate-property`.
+- What a split means is described in [../core/generators.md](../core/generators.md), "Splits" and "Paid by someone else".
+
+### Split tables
+
+Status: `specified`
+
+A split table is written on a transaction with no postings that defines an anchor.
+
+```hueke
+2026-10-18 %tokyo-trip "Tokyo trip"
+    ;; budget: 60000 NTD
+    share self 1
+    share @AMY 1
+    share @BOB 2
+    into Assets:Receivable
+```
+
+| Property | Value |
+| --- | --- |
+| `share` | `self` or `@<entity>`, then a ratio; may repeat, one line per member |
+| `into` | The obligation account that receivables go under; optional |
+
+- `share` and `into` stand before the transaction's first posting; after it, they are `parse.unexpected-property` (see [lexical.md](lexical.md), "Ownership"). A ratio follows the rule for split ratios. A member listed twice is `parse.syntax`.
+- `split <anchor>` names the table by the transaction's anchor. What it means is described in [../core/generators.md](../core/generators.md), "Split tables".
+
+### Rules
+
+Status: `specified`
+
+A rule is a declaration: a header, properties, then a posting template.
+
+```text
+rule %<id> ["description"]
+    [cap-group <rule>]
+    active <time>
+    rate <percent> | rate <number> [<commodity>] per <number> [<commodity>] | fixed <amount> [per <window>]
+    [cap <amount> per <window>] …
+    [minimum <amount> per <window>] …
+    [rounding [per <window>] [half-up | half-even | down]]
+    [active <time> …]
+    <account> [<amount> | [-]<slot>] [@entity …] [#tag …]
+    …
+```
+
+```hueke
+rule %withhold-5 "Income tax withheld"
+    active 2026-01-01..
+    rate 5%
+    Expenses:Tax  -amount
+
+rule %miles "Miles"
+    active 2026-01-01..
+    rate 1 MILE per 30 NTD
+    rounding per posting down
+    Assets:Miles   -amount
+    Income:Miles    amount
+
+rule %cashback "Card cashback"
+    active 2026-01-01..2026-06-30
+    rate 1%
+    cap 100 NTD per month
+    active 2026-07-01..
+    rate 0.5%
+    cap 100 NTD per month
+    Income:Cashback   amount
+    Assets:CashbackDue
+```
+
+- The `%id` is required; without it, `parse.syntax`. The header takes no time, mark, references or tags; `@`, `^` and `#` there are reserved (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax").
+- Each `active` starts a segment; `rate` or `fixed`, `cap`, `minimum` and `rounding` after it belong to that segment (see [lexical.md](lexical.md), "Ownership"). `active` is written as on an account (see "Account restrictions").
+- `rate <percent>` is a number followed directly by `%`, such as `1%` or `1.5%`. `rate <Y> per <X>` writes a ratio that is not a round percentage; Y and X are numbers, each optionally followed by a commodity. When either has a commodity, both must; otherwise `parse.syntax`.
+- `fixed <amount>` is an amount with its commodity, optionally followed by `per <window>`.
+- A window after `per` is `posting`, `day`, `week`, `month`, `quarter`, `year`, or a time interval such as `2026-10-01..2026-12-31`. Any other word is the anchor of a cycle, which is reserved.
+- `rounding` takes an optional window and an optional mode, in that order; with neither, it is `parse.syntax`.
+- **Template lines** are written as postings (see "Postings"), without a leading `*`, a cost or a `[time]`; a template line with any of them is `parse.syntax`. In place of an amount, a template line may hold a **slot**: `amount`, `interest` or `fee`, optionally preceded by `-` for its negation. A slot is never a commodity, since a commodity cannot be a keyword or a lone word without a number.
+- A template line takes metadata and breakdown lines; `split` or `paid-by` under it is `parse.unexpected-property`.
+- What a rule means is described in [../core/generators.md](../core/generators.md), "Per-posting rules" and "Posting templates".
+
+### Group ledgers and shared accounts
+
+Status: `specified`
+
+A group ledger is a file whose first record is its `module` declaration:
+
+```hueke
+module shared tokyo-trip "Tokyo trip"
+    share @SUBANG 1
+    share @AMY 1
+    share @BOB 1
+
+account-root Pay asset
+
+2026-10-19 * %dinner "Dinner, BOB was not there"
+    Expenses:Food   3000 NTD
+        split @SUBANG @AMY
+    Pay:Cash       -3000 NTD @SUBANG
+```
+
+| Part | Written |
+| --- | --- |
+| `module shared <name> ["description"]` | The kind, `shared`; the name, which follows the rule for anchors (see [lexical.md](lexical.md), "Identifiers"); an optional description. Another kind is `parse.syntax` |
+| `share @<entity> <ratio>` | A member and its default ratio; may repeat. `self` is `parse.syntax` |
+
+A shared account is declared in the owner's ledger, under a root of type `shared`:
+
+```hueke
+account-root Shared shared
+
+account Shared:tokyo-trip
+    source trips/tokyo.hueke
+    self @SUBANG
+    map Expenses -> Expenses:Travel
+    map Pay:Cash -> Assets:Cash
+    map Pay:Card -> Liabilities:Card
+    map @AMY -> @AMY_CHEN
+    map commodity TWD -> NTD
+    pad-account Expenses:Rounding
+```
+
+| Property | Written |
+| --- | --- |
+| `source <path> [as <name>]` | The group ledger's path, one token as in `include` (see "`include`"), so `as` after it is never ambiguous: `source "trips/tokyo trip.hueke" as tokyo`. The name follows the rule for anchors |
+| `self @<entity>` | The owner's member entity |
+| `map <group account> -> <account>` | An account mapping; may repeat |
+| `map @<group entity> -> @<entity>` | An entity mapping |
+| `map commodity <group commodity> -> <commodity>` | A commodity mapping |
+
+- `source`, `self` and `map` belong only on an account whose root has type `shared`. The parser cannot know the type, so on any other account they are `shared.wrong-account` (error), found during normalization, and they are ignored; the rest of the declaration loads.
+- A transaction of the owner's ledger names a group transaction with `#shared:<name>:<anchor>` (see "Transaction headers").
+- What these mean is described in [../core/group-ledgers.md](../core/group-ledgers.md).

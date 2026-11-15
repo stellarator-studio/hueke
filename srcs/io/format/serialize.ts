@@ -39,7 +39,7 @@ const RECORD = "    ";
 const CHILD = "        ";
 /** Properties in their canonical order; others belong to features not supported yet. */
 const PROPERTY_ORDER: Partial<Record<DeclarationData["kind"], readonly string[]>> = {
-  commodity: ["item", "precision", "alias"],
+  commodity: ["display-name", "item", "precision", "format", "alias"],
   account: ["display-name", "obligation", "pad-account", "primary"],
   entity: ["display-name"],
 };
