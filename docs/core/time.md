@@ -104,7 +104,7 @@ Status: `implemented`
   - A transaction with no postings may have any effective time. The accounting time is not restricted.
 - Postings have no accounting time of their own: all postings of a transaction share one accounting period, so income, expenses and equity agree.
 - Postings on income and expense accounts (types `income` and `expense`) cannot have their own effective time, because they follow only the transaction's accounting time. Writing one is `posting.pnl-effective`; the written time is ignored. Accounts without a type are not checked.
-- Metadata may hold dates, but a metadata date is never a time axis.
+- Metadata may hold dates, but a metadata date is never one of these axes: it changes no balance and no inheritance. A query may still compare and group by it, with the axis `meta:<key>` (see [query.md](query.md), "Metadata axes"). [specified]
 
 **Axis by use**
 

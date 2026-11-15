@@ -12,7 +12,7 @@ export const KEYWORDS: ReadonlyMap<string, number> = new Map(
 );
 
 const ROOT = /^\p{L}/u;
-const COMMODITY = /^\p{L}[\p{L}0-9_.-]*$/u;
+const COMMODITY = /^\p{L}[\p{L}0-9_.-]*(?::[\p{L}0-9_.-]+)*$/u;
 const ENTITY = /^[\p{L}_][\p{L}0-9_-]*$/u;
 const ANCHOR = /^[\p{L}0-9_-]+$/u;
 const SCOPE = /^[a-z-]+$/;
@@ -33,7 +33,26 @@ export function rootError(root: string): string | undefined {
 
 export function commodityError(code: string): string | undefined {
   if (!COMMODITY.test(code)) return `"${code}" is not a commodity code`;
-  return KEYWORDS.has(code) ? keywordError(code) : undefined;
+  const keyword = code.split(":").find((segment) => KEYWORDS.has(segment));
+  return keyword === undefined ? undefined : keywordError(keyword);
+}
+
+/**
+ * A commodity's `format` (docs/core/commodities.md, "Display names and formats"): `{amount}`
+ * exactly once, and only the placeholders `{amount}`, `{code}`, `{leaf}` and `{name}`.
+ */
+export function templateError(template: string): string | undefined {
+  let amounts = 0;
+  const rest = template.replace(/\{([^{}]*)\}/g, (whole, name: string) => {
+    if (name === "amount") amounts++;
+    else if (name !== "code" && name !== "leaf" && name !== "name") return whole;
+    return "";
+  });
+  const unknown = /\{[^{}]*\}/.exec(rest);
+  if (unknown) return `${unknown[0]} is not a placeholder of a format`;
+  if (/[{}]/.test(rest)) return `"${template}" has a { or } without its pair`;
+  if (amounts !== 1) return `a format must write {amount} once: "${template}"`;
+  return undefined;
 }
 
 const keywordError = (word: string): string =>
@@ -41,17 +60,19 @@ const keywordError = (word: string): string =>
 
 /**
  * An amount, price or cost as written, such as `5 NTD`, `5NTD` or `((100 + 50) * 2)NTD`: the word
- * that ends each of its pieces, a commodity code or suffix alias, must not be a keyword.
+ * that ends each of its pieces, a commodity code or suffix alias, must not be a keyword, nor may any
+ * segment of a code.
  */
 export function amountError(text: string): string | undefined {
   for (const piece of text.split(/\s+/)) {
-    const word = TRAILING_WORD.exec(piece)?.[0];
-    if (word !== undefined && KEYWORDS.has(word)) return keywordError(word);
+    const code = TRAILING_CODE.exec(piece)?.[0];
+    const word = code?.split(":").find((segment) => KEYWORDS.has(segment));
+    if (word !== undefined) return keywordError(word);
   }
   return undefined;
 }
 
-const TRAILING_WORD = /\p{L}[\p{L}0-9_.-]*$/u;
+const TRAILING_CODE = /\p{L}[\p{L}0-9_.-]*(?::[\p{L}0-9_.-]+)*$/u;
 
 export const entityError = (id: string): string | undefined =>
   ENTITY.test(id) ? undefined : `"${id}" is not an entity`;

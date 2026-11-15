@@ -9,6 +9,7 @@ An **anchor** names a record: it is the record's ID, and other records refer to 
 | Anchors | `implemented` |
 | Resolving tags | `implemented` |
 | Scopes | `implemented` |
+| Scopes `rule` and `shared` | `specified` |
 | Primary tags | `implemented` |
 | Groups | `implemented` |
 | Refunds | `implemented` |
@@ -17,14 +18,14 @@ An **anchor** names a record: it is the record's ID, and other records refer to 
 
 ## Concepts
 
-**Anchor**: a name written after `%`, such as `%t_book`. Transactions, postings and accounts may define one. A transaction's or posting's anchor is its ID (see [ledger.md](ledger.md), "IDs"); an account keeps its full name as its ID and has the anchor besides. Which names are allowed is in [../dsl/lexical.md](../dsl/lexical.md), "Identifiers".
+**Anchor**: a name written after `%`, such as `%t_book`. Transactions, postings, accounts and rules may define one; a rule must. A transaction's, posting's or rule's anchor is its ID (see [ledger.md](ledger.md), "IDs"); an account keeps its full name as its ID and has the anchor besides. Which names are allowed is in [../dsl/lexical.md](../dsl/lexical.md), "Identifiers".
 
 **Tag**
 
 | Field | Meaning |
 | --- | --- |
 | `scope` | What the tag means, one of the scopes in "Scopes"; `tag` unless written. |
-| `ref` | The anchor it names. |
+| `ref` | The anchor it names: its `name`; for a `shared` tag, also `module`, the group ledger's name (see [group-ledgers.md](group-ledgers.md)); `period` is reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax"). |
 | `target` | The ID of the record that defines the anchor; absent when no record does. |
 
 - A tag with a `target` is **anchored**; one without is **plain**. A plain tag is a tag like any other: it is in the record's tags, groups its members, and is filtered, grouped and listed exactly as an anchored one. The only difference is that no record is linked, so a listing of its group has no anchor record first.
@@ -54,7 +55,7 @@ An **anchor** names a record: it is the record's ID, and other records refer to 
 
 Status: `implemented`
 
-- Anchors share one namespace across the whole ledger: transactions, postings and accounts, in the root module and in every included module.
+- Anchors share one namespace across the whole ledger: transactions, postings, accounts and rules, in the root module and in every included module. A group ledger has a namespace of its own; from the ledger that refers to it, its anchors are named with the group ledger's name, as in `#shared:tokyo-trip:hotel` (see [group-ledgers.md](group-ledgers.md), "Actual payments").
 - An anchor is defined at most once. When it is defined more than once, each definition after the first in source order is `anchor.duplicate` (error), naming the first as `<module>:<line>`. **None** of the definitions defines the anchor: each transaction or posting takes the ID it would have without one, an account has no anchor, and tags naming it are plain. So the result does not depend on which definition comes first.
 - Anchors are compared by their text (see `anchorKey` in [ledger.md](ledger.md), "API"), case included.
 - A transaction dropped while loading, such as one with `txn.amount-not-inferable` or with syntax reported as `syntax.unsupported`, still defines its anchors and those of its postings, so they count toward `anchor.duplicate` and serve as IDs (see [ledger.md](ledger.md), "IDs"). No record is linked, though: tags naming such an anchor are plain, and a tag whose scope needs a record, such as `#refund:<anchor>`, is `tag.wrong-target`. A block that could not be parsed defines nothing.
@@ -80,14 +81,17 @@ Scopes are defined by Core; a ledger cannot add any.
 | --- | --- | --- | --- |
 | `tag` (default) | Transaction, posting | Any record, or none | None |
 | `refund` | Transaction | An `occurred` transaction, or a posting of one | See "Refunds" |
-| `system` | Transaction, posting | Nothing | Only on generated transactions, such as `system:balance` (see [transactions.md](transactions.md), "System-generated transactions") |
+| `system` | Transaction, posting | Nothing | Only on generated transactions and postings, such as `system:balance` (see [transactions.md](transactions.md), "System-generated transactions") |
+| `rule` [specified] | Posting | A rule | The posting is an input of the rule (see [generators.md](generators.md), "Per-posting rules") |
+| `shared` [specified] | Transaction | A transaction of a group ledger, written `<module>:<anchor>` | The transaction is the actual payment for it (see [group-ledgers.md](group-ledgers.md), "Actual payments") |
 
 - A scope that Core does not define, such as `#category:camera`, is `tag.unknown-scope` (error).
 - A tag written where its scope may not stand, such as `#refund:x` on a posting, is `tag.wrong-level` (error). Only where a tag is written counts: a transaction's tags are also a posting's tags, and are not checked again there.
-- A tag whose anchor does not name the record its scope needs is `tag.wrong-target` (error). For `refund`, this includes an anchor no record defines, and one that names an account, a `planned` or `cancelled` transaction or a posting of one, or a posting of the transaction the tag is written on.
+- A tag whose anchor does not name the record its scope needs is `tag.wrong-target` (error). For `refund`, this includes an anchor no record defines, and one that names an account, a `planned` or `cancelled` transaction or a posting of one, or a posting of the transaction the tag is written on. For `rule`, an anchor that names no rule. For `shared`, a group ledger this ledger does not have, or an anchor its group ledger does not define on a transaction. Only a `shared` tag names a module: in any other tag, `:` after the scope is part of the anchor, and an anchor cannot contain it (`anchor.invalid-name`).
 - A `system` tag written in a ledger is `tag.reserved-scope` (error).
 - In all four cases the tag is skipped: it is not in the derived record's tags, and the record loads. The Raw record keeps it, as written (see [ledger.md](ledger.md), "Concepts"). The diagnostic is reported on the record the tag is written on: the transaction for a tag on its header, the posting for a tag on a posting line.
-- The scopes `installment`, `statement`, `fulfills`, `rule` and `shared` are reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
+- A `rule` tag on a rule's template line is `tag.wrong-level`, since generated postings never chain (see [generators.md](generators.md), "Posting templates").
+- The scopes `installment`, `statement` and `fulfills` are reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
 
 ### Primary tags
 

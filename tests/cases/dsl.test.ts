@@ -928,3 +928,132 @@ describe("keywords as commodity codes and aliases", () => {
     },
   );
 });
+
+describe("hierarchical commodity codes", () => {
+  const posting = (amount: string) =>
+    `2026-10-12 * "x"\n    Assets:Broker  ${amount}\n    Assets:Cash  -5 NTD\n`;
+  it.each([
+    [
+      "segments after the first starting with a digit",
+      "commodity TWSE:0050\ncommodity TWSE:00878\n",
+    ],
+    ["several segments with dots and dashes", "commodity TWSE:0050:a-1.b\n"],
+    ["a code with segments in an amount", posting("5 TWSE:0050")],
+    ["a code with segments joined to its number", posting("5TWSE:0050")],
+    [
+      "a code with segments as a primary commodity",
+      "account Assets:Broker\n    primary TWSE:0050\n",
+    ],
+  ])("accepts %s", (_, text) => {
+    expect(parse("main.hueke", text).diagnostics).toEqual([]);
+  });
+  it.each([
+    ["a first segment starting with a digit", "commodity 0050\n"],
+    ["a first segment starting with a digit before a segment", "commodity 0050:TWSE\n"],
+    ["an empty segment", "commodity TWSE::0050\n"],
+    ["an empty last segment", "commodity TWSE:\n"],
+    ["an empty first segment", "commodity :0050\n"],
+    ["a segment with a symbol", "commodity TWSE:00$0\n"],
+  ])("rejects %s", (_, text) => {
+    const h = ledger(text);
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.commodities.some((c) => c.id.includes("0050") || c.id.startsWith("TWSE"))).toBe(false);
+  });
+  it.each(["TWSE:fixed", "fee:x", "TWSE:item:x"])(
+    "rejects a keyword as any segment of a declared code: %s",
+    (code) => {
+      const h = ledger(`commodity ${code}\n`);
+      expect(codes(h)).toEqual(["parse.syntax"]);
+      expect(h.commodities.some((c) => c.id === code)).toBe(false);
+    },
+  );
+  it("rejects a keyword segment in an amount, and the transaction is not loaded", () => {
+    const h = ledger(posting("5 TWSE:fixed"));
+    expect(check(h).map((d) => [d.code, d.message])).toEqual([
+      ["parse.syntax", `"fixed" is a keyword and cannot be a commodity code or alias`],
+    ]);
+    expect(h.transactions).toEqual([]);
+  });
+  it.each([
+    ["fixed", "a posting's first segment", posting("10 fixed:X")],
+    ["rate", "a posting's middle segment", posting("10 TW:rate:X")],
+    ["rate", "a price", posting("5 NTD @ 5 TW:rate:X")],
+  ])("rejects keyword %s in %s, and the transaction is not loaded", (word, _, text) => {
+    const h = ledger(text);
+    expect(check(h).map((d) => [d.code, d.message])).toEqual([
+      ["parse.syntax", `"${word}" is a keyword and cannot be a commodity code or alias`],
+    ]);
+    expect(h.transactions).toEqual([]);
+  });
+  it("rejects a keyword segment in a Balance amount, and the Balance is not loaded", () => {
+    const h = ledger("2026-10-14 balance Assets:Broker 10 TW:rate:X\n");
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.balances).toEqual([]);
+  });
+  it("accepts a segment that only contains a keyword", () => {
+    const h = ledger(posting("10 TWSE:fixed-income"));
+    expect(codes(h).filter((c) => c.startsWith("parse."))).toEqual([]);
+    expect(descriptions(h.transactions)).toEqual(["x"]);
+  });
+});
+
+describe("commodity display names and formats", () => {
+  it("reads display-name and format", () => {
+    const h = ledger(
+      "commodity TWSE\n    display-name  Taiwan  Stock Exchange  ; a market\n    format {name}: {amount} ({code}, {leaf}) {name}\n",
+    );
+    expect(codes(h)).toEqual([]);
+    expect(h.commodities.find((c) => c.id === "TWSE")).toMatchObject({
+      displayName: "Taiwan  Stock Exchange",
+      format: "{name}: {amount} ({code}, {leaf}) {name}",
+    });
+  });
+  it("reads a quoted format, keeping its spaces", () => {
+    const h = ledger('commodity TWSE\n    format "  {amount} ; shares "\n');
+    expect(codes(h)).toEqual([]);
+    expect(h.commodities.find((c) => c.id === "TWSE")?.format).toBe("  {amount} ; shares ");
+  });
+  it.each([
+    ["{amount} {amount}"],
+    ["{qty} shares"],
+    ["shares"],
+    [""],
+    ["{amount} {}"],
+    ["{ amount }"],
+    ["{Amount}"],
+    ["{amount"],
+    ["amount}"],
+    ["{amount} }"],
+    ["{ {amount}"],
+    ["{{amount}}"],
+    ['"{amount} {code"'],
+  ])("rejects format %j, and the declaration is not loaded", (template) => {
+    const h = ledger(`commodity TWSE\n    precision 0\n    format ${template}\n`);
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.commodities.some((c) => c.id === "TWSE")).toBe(false);
+  });
+  it("rejects display-name without text on a commodity", () => {
+    const h = ledger("commodity TWSE\n    display-name\n");
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.commodities.some((c) => c.id === "TWSE")).toBe(false);
+  });
+  it.each(["display-name Taiwan Stock Exchange", "format {amount} shares"])(
+    "rejects %s written twice",
+    (line) => {
+      const h = ledger(`commodity TWSE\n    ${line}\n    ${line}\n`);
+      expect(codes(h)).toEqual(["parse.duplicate-property"]);
+      expect(h.commodities.some((c) => c.id === "TWSE")).toBe(false);
+    },
+  );
+  it("format is taken only by a commodity", () => {
+    expect(codes(ledger("account Assets:Broker\n    format {amount}\n"))).toEqual([
+      "parse.unexpected-property",
+    ]);
+    expect(codes(ledger("entity NAT\n    format {amount}\n"))).toEqual([
+      "parse.unexpected-property",
+    ]);
+  });
+  it("format is a keyword and cannot be a commodity code", () => {
+    expect(codes(ledger("commodity format\n"))).toEqual(["parse.syntax"]);
+  });
+});

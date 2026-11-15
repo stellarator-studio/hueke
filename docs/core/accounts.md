@@ -1,6 +1,6 @@
 # Accounts
 
-An **account** is a named place that holds amounts, in any number of commodities. Account names form a hierarchy, and the first segment of a name, the **root**, decides the account's type. This document covers the hierarchy, account and root declarations, combined income and expense accounts, and accounts whose root is unknown. Obligation accounts are described in [obligations.md](obligations.md). Declarations of accounts and commodities alike, strict mode and duplicates, are described in [ledger.md](ledger.md); only the root module's declarations take effect (see [modules.md](modules.md), "Declarations in included modules").
+An **account** is a named place that holds amounts, in any number of commodities. Account names form a hierarchy, and the first segment of a name, the **root**, decides the account's type. This document covers the hierarchy, account and root declarations, which commodities an account may hold and when it may be posted to, combined income and expense accounts, and accounts whose root is unknown. Obligation accounts are described in [obligations.md](obligations.md), shared accounts in [group-ledgers.md](group-ledgers.md). Declarations of accounts and commodities alike, strict mode and duplicates, are described in [ledger.md](ledger.md); only the root module's declarations take effect (see [modules.md](modules.md), "Declarations in included modules").
 
 ## Features
 
@@ -10,13 +10,15 @@ An **account** is a named place that holds amounts, in any number of commodities
 | Account declarations | `implemented` |
 | Account anchors and display names | `implemented` |
 | Obligation and pad settings | `implemented` |
+| Allowed commodities | `specified` |
+| Active periods | `specified` |
 | Account roots | `implemented` |
 | Combined income and expense | `implemented` |
 | Untyped accounts | `implemented` |
 
 ## Concepts
 
-**Account types**: `asset`, `liability`, `equity`, `income`, `expense`.
+**Account types**: `asset`, `liability`, `equity`, `income`, `expense`, `shared` (see [group-ledgers.md](group-ledgers.md)).
 
 **Account root**
 
@@ -39,6 +41,10 @@ An **account** is a named place that holds amounts, in any number of commodities
 | `primaryCommodity` | The default commodity for display, if declared. |
 | `obligation` | `receivable` or `payable`, declared or inherited from an obligation account (see [obligations.md](obligations.md)); absent otherwise. |
 | `padAccount` | The default counter-account of a pad on this account, declared or inherited from an obligation account; absent otherwise. |
+| `allowed` | The commodities the account may hold, if declared; any commodity otherwise. |
+| `denied` | The commodities the account may not hold, if declared. |
+| `active` | When the account may be posted to: `from`, `until`, or both, if declared (see "Active periods"). |
+| `shared` | For a shared account, its group ledger, self and mappings (see [group-ledgers.md](group-ledgers.md), "Concepts"); absent otherwise. |
 | `meta` | Metadata written under the declaration. |
 
 ## Behavior
@@ -58,7 +64,7 @@ Status: `implemented`
 - An account is declared with `account <name>`, optionally followed by `%anchor` (see "Account anchors and display names").
 - `primary <commodity>` sets `primaryCommodity`.
 - Metadata lines under the declaration go to the account's `meta`, apart from any posting's metadata.
-- `display-name`, `obligation` and `pad-account` are described below. Other account properties are reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
+- `display-name`, `obligation`, `pad-account`, `allow`, `deny` and `active` are described below; `source`, `self` and `map`, which only a shared account takes, in [group-ledgers.md](group-ledgers.md), "Shared accounts". `statement` is reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
 
 ### Account anchors and display names
 
@@ -76,12 +82,35 @@ Status: `implemented`
 - `pad-account <account>` sets `padAccount`: the counter-account of a pad on this account that names none, before the ledger's `pad-account` (see [balance.md](balance.md), "`pad` assertions"). It is kept as written and not checked when read.
 - An obligation's sub-accounts inherit both from the obligation account (see [obligations.md](obligations.md), "Obligation accounts"). Other sub-accounts inherit neither: a pad on `Bank:Checking` does not use the `pad-account` of `Bank`.
 
+### Allowed commodities
+
+Status: `specified`
+
+- `allow <commodity>, …` lists the only commodities the account may hold; `deny <commodity>, …` lists commodities it may not hold. Either may be written alone.
+- A posting on the account in a commodity that `deny` lists, or that `allow` does not list, is `posting.commodity-not-allowed` (error). It counts as written.
+- Every posting is checked: generated ones too (pads, splits, rules, conversions), and those of `planned` and `cancelled` transactions. Only the posting's amount is checked, not its price or cost. Balance assertions are not checked.
+- A commodity listed in both `allow` and `deny`, or a `primary` commodity that is not allowed, is `account.commodity-conflict` (error). The whole declaration is not loaded, so the account behaves as if it were never declared.
+- Sub-accounts do not inherit either list.
+
+### Active periods
+
+Status: `specified`
+
+`active` limits when an account may be posted to, so that a record dated before the account was opened, or after it was closed, stands out.
+
+- It is written as an interval with one or both ends, `2026-03-01..2026-10-15`, `2026-01..` or `..2025-12`, or as one time value, `active 2026`, meaning that time's whole span. Both ends are included: `..2025-12` includes all of December. Dates and months compare by local date (see [time.md](time.md), "Comparing times").
+- Each posting's effective time is compared, its own or inherited (see [time.md](time.md), "Time axes"); an income or expense posting uses its transaction's. The accounting time is not looked at, so a 2025 tax paid in 2026 is fine as long as it is paid while the account is active.
+- A posting outside the period is `account.inactive` (error). It counts as written.
+- Generated postings are checked too, and those of `planned` and `cancelled` transactions.
+- Balance assertions are not limited: a closed account can still be asserted to be zero.
+- Sub-accounts do not inherit it.
+
 ### Account roots
 
 Status: `implemented`
 
 - **Built-in roots**: `Assets` (asset), `Liabilities` (liability), `Equity` (equity), `Income` (income), `Expenses` (expense).
-- Other roots, such as `Bank`, are declared with `account-root <name> <type>`, where type is `asset`, `liability`, `equity`, `income` or `expense`. Several roots may share a type.
+- Other roots, such as `Bank`, are declared with `account-root <name> <type>`, where type is `asset`, `liability`, `equity`, `income`, `expense` or `shared`. Several roots may share a type.
 - A declaration may also change the type of a built-in root; the root is then no longer `builtin`.
 - The type is never declared on the account itself.
 - An `account-root` with a missing part, an extra word, or a type that is neither one of these nor reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax") is `parse.syntax`, and the declaration is ignored.
@@ -116,6 +145,53 @@ Unless strict mode covers accounts (see [ledger.md](ledger.md), "Declarations an
 | Postings on `Spending:Food`, `Spending` not declared | `name.unknown-root` naming `Spending`; the account has no type and still totals 180 NTD |
 | `account Bank:Checking %main-bank` with `display-name Main checking account` | The account's ID is `Bank:Checking`, its `anchor` `main-bank`, its `displayName` "Main checking account" |
 | `account Assets:Receivable` with `obligation receivable` and `pad-account Expenses:WriteOff`, and a posting on `Assets:Receivable:lunch-1011` | `Assets:Receivable:lunch-1011` has `obligation` `receivable` and `padAccount` `Expenses:WriteOff`; with `option strict account`, it is not `strict.undeclared` |
+
+**Allowed commodities and active periods**
+
+```hueke
+account Assets:Wallet
+    allow NTD, JPY
+account Assets:CoinPurse
+    deny USD
+account Assets:TravelFund
+    allow NTD, USD
+    deny USD
+account Bank:Taishin
+    active 2026-03-01..2026-10-15
+account Liabilities:OldCard
+    active ..2025-12
+
+2026-02-27 * "Transfer before the account was opened (wrong date)"
+    Bank:Taishin    1000 NTD
+    Assets:Cash    -1000 NTD
+
+2026-10-12 * "Got dollars"
+    Assets:Wallet    100 USD
+    Income:Other    -100 USD
+
+2026-10-14 * "Got euros"
+    Assets:CoinPurse    50 EUR
+    Income:Other       -50 EUR
+
+2026-10-15 * "Closed, moved back"
+    Bank:Checking    1000 NTD
+    Bank:Taishin    -1000 NTD
+
+2026-10-16 balance Bank:Taishin 0 NTD
+
+2026-01-05=2025-12 * "December's annual fee, booked in January"
+    Expenses:Fees          300 NTD
+    Liabilities:OldCard   -300 NTD
+```
+
+| Result | Why |
+| --- | --- |
+| `posting.commodity-not-allowed` on 2026-10-12 | `Assets:Wallet` allows only NTD and JPY |
+| No diagnostic for the euros, apart from `name.inferred-commodity` | `Assets:CoinPurse` denies only USD |
+| `account.commodity-conflict` on `Assets:TravelFund` | USD is both allowed and denied; the declaration is not loaded |
+| `account.inactive` on 2026-02-27 | Before `Bank:Taishin` was active |
+| No diagnostic on 2026-10-15 or for the Balance on 2026-10-16 | The last day is included; Balances are not limited |
+| `account.inactive` on 2026-01-05 | The posting's effective time is after December 2025, whatever its accounting time |
 
 ```hueke
 option income-expense on

@@ -69,9 +69,9 @@ Status: `implemented`
 
 Status: `implemented`
 
-- Accounts (see [accounts.md](accounts.md), "Account declarations") and entities may have a display name, written `display-name`, so it is not mistaken for the ID.
+- Accounts (see [accounts.md](accounts.md), "Account declarations"), commodities (see [commodities.md](commodities.md), "Display names and formats") and entities may have a display name, written `display-name`, so it is not mistaken for the ID.
 - A display name is only for showing. It never identifies anything: records, queries and the API always use the ID. It may contain spaces.
-- The CLI shows display names instead of IDs with `--name` (see [../cli.md](../cli.md)).
+- The CLI shows account and entity display names instead of IDs with `--name` (see [../cli.md](../cli.md)). A commodity's display name is shown only through its format (see [commodities.md](commodities.md), "Display names and formats").
 - Renaming an account or merging two entities has no mechanism of its own: change the text.
 
 ## Examples

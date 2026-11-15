@@ -272,3 +272,312 @@ commodity TWD
     expect(balanceOf(h, "Assets:Cash", "2026-10-12")).toBe("-180");
   });
 });
+
+describe("commodity hierarchy", () => {
+  const EXAMPLE = `
+commodity TWSE
+    display-name Taiwan Stock Exchange
+    precision 0
+    format {amount} shares ({leaf})
+commodity TWSE:0050
+    display-name Yuanta Taiwan 50
+commodity CELSIUS
+    format "{amount} degrees Celsius"
+
+2026-11-03 * "Buy"
+    Assets:Broker      1000 TWSE:0050 @ 190 NTD
+    Bank:Checking   -190000 NTD
+
+2026-11-04 * "Buy"
+    Assets:Broker      2000 TWSE:00878 @ 22 NTD
+    Bank:Checking    -44000 NTD
+`;
+  const commodity = (h: ReturnType<typeof ledger>, id: string) =>
+    h.commodities.find((c) => c.id === id);
+
+  it("a declared commodity under another takes its precision and format, not its name", () => {
+    const h = ledger(EXAMPLE);
+    expect(codes(h, true)).toEqual(["name.inferred-commodity"]);
+    expect(diagnostics(h, "name.inferred-commodity")[0]?.message).toContain("TWSE:00878");
+    const c = commodity(h, "TWSE:0050");
+    expect(c).toMatchObject({
+      parent: "TWSE",
+      item: false,
+      precision: 0,
+      precisionWritten: true,
+      format: "{amount} shares ({leaf})",
+      displayName: "Yuanta Taiwan 50",
+    });
+    expect(c?.span).toBeDefined();
+  });
+  it("an undeclared commodity under a declared one inherits too", () => {
+    const c = commodity(ledger(EXAMPLE), "TWSE:00878");
+    expect(c).toMatchObject({
+      parent: "TWSE",
+      precision: 0,
+      precisionWritten: true,
+      format: "{amount} shares ({leaf})",
+    });
+    expect(c).not.toHaveProperty("displayName");
+    expect(c).not.toHaveProperty("span");
+  });
+  it("a commodity of one segment has no parent, and without a format has none", () => {
+    const h = ledger(EXAMPLE);
+    const ntd = commodity(h, "NTD");
+    expect(ntd).toMatchObject({ precision: 0, precisionWritten: true });
+    expect(ntd).not.toHaveProperty("parent");
+    expect(ntd).not.toHaveProperty("format");
+    expect(ntd).not.toHaveProperty("displayName");
+    expect(commodity(h, "TWSE")).not.toHaveProperty("parent");
+    expect(commodity(h, "TWSE")?.displayName).toBe("Taiwan Stock Exchange");
+  });
+  it("reads a quoted format without its quotes", () => {
+    expect(commodity(ledger(EXAMPLE), "CELSIUS")?.format).toBe("{amount} degrees Celsius");
+  });
+  it("the parent is the code without its last segment, and need not be declared or used", () => {
+    const h = ledger(`
+2026-11-03 * "Buy"
+    Assets:Broker      5 FUND:A:B @ 10 NTD
+    Bank:Checking    -50 NTD
+`);
+    expect(commodity(h, "FUND:A:B")?.parent).toBe("FUND:A");
+    expect(commodity(h, "FUND:A")).toBeUndefined();
+    expect(commodity(h, "FUND")).toBeUndefined();
+  });
+  it("skips a commodity above that is not declared", () => {
+    const h = ledger(`
+commodity FUND
+    precision 2
+    format {code}: {amount}
+commodity FUND:A:B
+
+2026-11-03 * "Buy"
+    Assets:Broker      5 FUND:A:B @ 10 NTD
+    Assets:Broker      1 FUND:A @ 10 NTD
+    Bank:Checking    -60 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    expect(commodity(h, "FUND:A:B")).toMatchObject({
+      parent: "FUND:A",
+      precision: 2,
+      precisionWritten: true,
+      format: "{code}: {amount}",
+    });
+    expect(commodity(h, "FUND:A")).toMatchObject({ precision: 2, precisionWritten: true });
+  });
+  it("takes each setting from the nearest declared commodity that has it", () => {
+    const h = ledger(`
+commodity FUND
+    precision 2
+    format {amount} units of {code}
+commodity FUND:A
+    precision 4
+commodity FUND:A:B
+commodity FUND:A:C
+    precision 1
+    format {code} {amount}
+`);
+    expect(codes(h)).toEqual([]);
+    expect(commodity(h, "FUND:A")).toMatchObject({
+      precision: 4,
+      format: "{amount} units of {code}",
+    });
+    expect(commodity(h, "FUND:A:B")).toMatchObject({
+      precision: 4,
+      precisionWritten: true,
+      format: "{amount} units of {code}",
+    });
+    expect(commodity(h, "FUND:A:C")).toMatchObject({ precision: 1, format: "{code} {amount}" });
+  });
+  it("does not pass on display names, aliases or metadata", () => {
+    const h = ledger(`
+commodity FUND
+    display-name Funds
+    precision 2
+    alias fu suffix
+    ;; issuer: bank
+commodity FUND:A
+`);
+    expect(codes(h)).toEqual([]);
+    const a = commodity(h, "FUND:A");
+    expect(a).toMatchObject({ precision: 2, aliases: [], meta: {} });
+    expect(a).not.toHaveProperty("displayName");
+  });
+  it("an inherited precision makes more decimal places posting.excess-precision", () => {
+    const h = ledger(`
+commodity TWSE
+    precision 0
+
+2026-11-03 * "Buy"
+    Assets:Broker      1.5 TWSE:0050 @ 190 NTD
+    Bank:Checking     -285 NTD
+`);
+    expect(codes(h)).toEqual(["posting.excess-precision"]);
+    expect(commodity(h, "TWSE:0050")).toMatchObject({ precision: 0, precisionWritten: true });
+  });
+  it("never passes on an inferred precision", () => {
+    const h = ledger(`
+commodity MILE
+
+2026-11-03 * "Miles"
+    Assets:Miles       1.25 MILE
+    Assets:Miles       1 MILE:gold
+    Income:Rewards    -1.25 MILE
+    Income:Rewards    -1 MILE:gold
+
+2026-11-04 * "Points"
+    Assets:Points      1.5 POINT
+    Assets:Points      1 POINT:x
+    Income:Rewards    -1.5 POINT
+    Income:Rewards    -1 POINT:x
+`);
+    expect(codes(h)).toEqual([]);
+    expect(commodity(h, "MILE")).toMatchObject({ precision: 2, precisionWritten: false });
+    expect(commodity(h, "MILE:gold")).toMatchObject({ precision: 0, precisionWritten: false });
+    expect(commodity(h, "POINT")).toMatchObject({ precision: 1, precisionWritten: false });
+    expect(commodity(h, "POINT:x")).toMatchObject({ precision: 0, precisionWritten: false });
+  });
+  it("a commodity under an item commodity is an item", () => {
+    const h = ledger(`
+commodity CAM
+    item
+commodity CAM:a7
+
+2026-11-03 * "Bought half a camera"
+    Assets:Equipment       0.5 CAM:a7 @@ 15000 NTD
+    Bank:Checking       -15000 NTD
+
+2026-11-04 * "Bought half a lens"
+    Assets:Equipment       0.5 CAM:lens:x @@ 5000 NTD
+    Bank:Checking        -5000 NTD
+`);
+    expect(codes(h)).toEqual(["item.fractional", "item.fractional"]);
+    for (const id of ["CAM:a7", "CAM:lens:x"])
+      expect(commodity(h, id)).toMatchObject({ item: true, precision: 0, precisionWritten: true });
+  });
+  it("a precision written under an item commodity is commodity.item-precision", () => {
+    const h = ledger(`
+commodity CAM
+    item
+commodity CAM:a7
+    precision 2
+`);
+    expect(codes(h)).toEqual(["commodity.item-precision"]);
+    const [d] = diagnostics(h, "commodity.item-precision");
+    expect(d?.severity).toBe("warning");
+    expect(d?.message).toContain("CAM:a7");
+    const decl = h.data
+      .get("main.hueke")
+      ?.items.find((i) => i.kind === "commodity" && i.args[0] === "CAM:a7");
+    expect(d?.span?.start).toBe(decl?.span?.start);
+    expect(commodity(h, "CAM:a7")).toMatchObject({
+      item: true,
+      precision: 0,
+      precisionWritten: true,
+    });
+  });
+  it("reports commodity.item-precision in the order the declarations are written", () => {
+    const h = ledger(`
+commodity CAM
+    item
+commodity CAM:a:b
+    precision 2
+commodity CAM:a
+    precision 1
+`);
+    expect(codes(h)).toEqual(["commodity.item-precision", "commodity.item-precision"]);
+    const messages = diagnostics(h, "commodity.item-precision").map((d) => d.message);
+    expect(messages[0]).toContain("CAM:a:b");
+    expect(messages[1]).toContain("CAM:a");
+    expect(messages[1]).not.toContain("CAM:a:b");
+  });
+  it("an undeclared commodity under an item commodity cannot go negative", () => {
+    const h = ledger(`
+commodity CAM
+    item
+
+2026-11-03 * "Sold a lens never bought"
+    Bank:Checking       5000 NTD
+    Assets:Equipment      -1 CAM:lens @@ 5000 NTD
+`);
+    expect(codes(h)).toEqual(["item.invalid-balance"]);
+    const [d] = diagnostics(h, "item.invalid-balance");
+    expect(d?.message).toContain("Assets:Equipment");
+    expect(d?.message).toContain("2026-11-03");
+  });
+  // An alias has no digits (docs/dsl/lexical.md, "Identifiers"), so the code here has none.
+  it("a code under a declared commodity may be another commodity's alias", () => {
+    const h = ledger(`
+commodity TWSE
+    precision 0
+commodity Y
+    alias TWSE:etf suffix
+
+2026-11-03 * "Buy"
+    Assets:Broker   10 TWSE:etf
+    Equity:Opening
+`);
+    expect(codes(h, true)).toEqual([]);
+    expect(balanceOf(h, "Assets:Broker", "2026-11-03", "Y")).toBe("10");
+    expect(h.commodities.find((c) => c.id === "TWSE:etf")).toBeUndefined();
+  });
+  it("declaring that code makes the alias a conflict", () => {
+    const h = ledger(`
+commodity TWSE
+    precision 0
+commodity TWSE:etf
+commodity Y
+    alias TWSE:etf suffix
+
+2026-11-03 * "Buy"
+    Assets:Broker   10 TWSE:etf
+    Equity:Opening
+`);
+    expect(codes(h)).toEqual(["commodity.alias-conflict"]);
+    expect(diagnostics(h, "commodity.alias-conflict")[0]?.message).toContain("Y");
+    expect(balanceOf(h, "Assets:Broker", "2026-11-03", "TWSE:etf")).toBe("10");
+    expect(balanceOf(h, "Assets:Broker", "2026-11-03", "Y")).toBe("0");
+  });
+  it("keeps the commodities under one code apart", () => {
+    const h = ledger(`
+commodity TWSE
+    precision 0
+
+2026-11-03 * "Buy"
+    Assets:Broker      1000 TWSE:0050 @ 190 NTD
+    Assets:Broker        10 TWSE @ 1 NTD
+    Bank:Checking   -190010 NTD
+`);
+    expect(codes(h)).toEqual([]);
+    expect(rows(balance(h, query(h).accounts("Assets:Broker").until("2026-11-03")))).toEqual([
+      "Assets:Broker 10 TWSE",
+      "Assets:Broker 1000 TWSE:0050",
+    ]);
+  });
+  it("in strict mode, declaring a commodity above is not enough", () => {
+    const h = ledger(`
+option strict commodity
+commodity TWSE
+    precision 0
+
+2026-11-03 * "Buy"
+    Assets:Broker      1000 TWSE:0050 @ 190 NTD
+    Bank:Checking   -190000 NTD
+`);
+    const undeclared = diagnostics(h, "strict.undeclared").map((d) => d.message);
+    expect(undeclared).toHaveLength(1);
+    expect(undeclared[0]).toContain("TWSE:0050");
+  });
+});
+
+describe("formats", () => {
+  it.each([
+    ["{amount} {amount}", "{amount} is written twice"],
+    ["{qty} shares", "{qty} is not a placeholder"],
+    ["shares", "there is no {amount}"],
+  ])("format %s is parse.syntax: %s, and the declaration is not loaded", (template) => {
+    const h = ledger(`commodity TWSE\n    precision 0\n    format ${template}\n`);
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.commodities.find((c) => c.id === "TWSE")).toBeUndefined();
+  });
+});
