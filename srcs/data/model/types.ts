@@ -41,7 +41,7 @@ export interface Commodity {
 
 // ---------- Accounts ----------
 
-export type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
+export type AccountType = "asset" | "liability" | "equity" | "income" | "expense" | "shared";
 
 export interface AccountRoot {
   readonly name: string;
@@ -63,7 +63,38 @@ export interface Account {
   readonly obligation?: ObligationKind;
   /** Declared, or inherited from the obligation account it is inside. */
   readonly padAccount?: Id;
+  /** Only on a shared account declared with `source` and `self`. */
+  readonly shared?: SharedAccount;
   readonly meta: Metadata;
+}
+
+/** What a shared account refers to (docs/core/group-ledgers.md, "Concepts"). */
+export interface SharedAccount {
+  readonly source: string; // the path as written
+  readonly as: string;
+  /** Written `as ^<name>`: converted transactions take the primary tag `^shared:<name>`. */
+  readonly primary?: true;
+  readonly self: Id;
+  /** Group accounts to accounts of this ledger, in written order. */
+  readonly accountMap: readonly (readonly [Id, Id])[];
+  readonly entityMap: Readonly<Record<Id, Id>>;
+  readonly commodityMap: Readonly<Record<Id, Id>>;
+}
+
+// ---------- Group ledgers ----------
+
+export interface GroupShare {
+  readonly entity: Id;
+  readonly ratio: Decimal;
+}
+
+/** A group ledger that a shared account refers to and that converts. */
+export interface GroupLedger {
+  readonly path: SourcePath;
+  readonly name: string;
+  readonly description?: string;
+  readonly shares: readonly GroupShare[];
+  readonly account: Id;
 }
 
 // ---------- Entities ----------
@@ -139,6 +170,8 @@ export interface Transaction {
   readonly tags: readonly Tag[];
   readonly refs: readonly Reference[];
   readonly meta: Metadata;
+  readonly payment?: Id; // converted from a group ledger: the actual payment replacing its money
+  readonly pays?: Id; // an actual payment: the converted transaction whose money it replaced
   readonly postings: readonly Posting[];
 }
 

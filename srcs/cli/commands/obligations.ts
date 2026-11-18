@@ -1,8 +1,8 @@
 // `hueke obligations`: the rows of the API's `obligations`.
 
-import { obligations, type Amount, type Hueke } from "../../index.js";
+import { obligations, timeText, valueText, type Amount, type Hueke } from "../../index.js";
 import { UsageError, type CliIO } from "../io.js";
-import { csv, table, valueText } from "../output.js";
+import { csv, table } from "../output.js";
 import { list, shownName, type Command, type Options } from "./command.js";
 
 export const obligationsCommand: Command = {
@@ -32,7 +32,7 @@ export const obligationsCommand: Command = {
       value(r.repaid),
       value(r.remaining),
       csvFormat ? String(r.settled) : r.settled ? "settled" : "open",
-      r.lastRepaid?.literal ?? "",
+      r.lastRepaid ? timeText(r.lastRepaid, hueke.settings.timezone) : "",
     ]);
     io.stdout(
       csvFormat

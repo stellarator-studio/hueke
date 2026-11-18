@@ -31,7 +31,7 @@ Status: `implemented`
 | Splits [specified] | `split`, then members, `paid-by @<entity>`, `-> <obligation>`, with single spaces. A ratio is written `*` joined to its number: `split @AMY *2 @BOB`, `share @AMY 2` |
 | Lists [specified] | `allow NTD, JPY`: `, ` between items; aliases written as codes |
 | References | `@NAT`, never `@person:NAT`; another role is kept: `@payer:KEN`. On a Balance, the entity follows the account: `balance Bank:Checking @acme 52000 NTD` |
-| Tags | `#travel`, `^trip`, never `#tag:travel`, `^tag:trip`; another scope is kept: `#refund:t_book`. `#rule:withhold-5`, `#shared:tokyo-trip:hotel` [specified]. A tag with a reserved scope or a period is unsupported syntax and has no canonical form (see below) |
+| Tags | `#travel`, `^trip`, `%lunch`, never `#tag:travel`, `^tag:trip`, `%tag:lunch`; another scope is kept: `#refund:t_book`, `%shared:tokyo-trip`, `^shared:tokyo-trip`, `#shared:tokyo-trip`. `#rule:withhold-5`, `#shared:tokyo-trip:hotel` [specified]. A tag with a reserved scope or a period is unsupported syntax and has no canonical form (see below) |
 | Numbers | The ledger's decimal mark; the ledger's group mark between every three digits before the decimal mark (none with `group-mark none`); the decimal places as written. An expression is kept exactly as written |
 | Commodities | Always the code: `180 NTD`, never an alias |
 | Omitted amounts | Stay omitted |

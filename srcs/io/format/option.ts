@@ -8,7 +8,7 @@ import type { SourcePath, TextPatch } from "../../data/source/source.js";
 import { serialize, type SerializeLedger } from "./serialize.js";
 
 /** What setOption reads from an initialized ledger. */
-export interface OptionLedger extends SerializeLedger {
+interface OptionLedger extends SerializeLedger {
   readonly root: SourcePath;
   readonly data: ReadonlyMap<SourcePath, ModuleData>;
 }

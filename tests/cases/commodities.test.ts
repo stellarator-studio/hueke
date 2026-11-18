@@ -1,6 +1,6 @@
 // docs/core/commodities.md
 import { describe, expect, it } from "vitest";
-import { balance, check, query } from "../../srcs/index.js";
+import { balance, check, formatText, query, valueText } from "../../srcs/index.js";
 import { balanceOf, codes, diagnostics, ledger, rows } from "./ledger.js";
 
 describe("commodities without precision", () => {
@@ -579,5 +579,102 @@ describe("formats", () => {
     const h = ledger(`commodity TWSE\n    precision 0\n    format ${template}\n`);
     expect(codes(h)).toEqual(["parse.syntax"]);
     expect(h.commodities.find((c) => c.id === "TWSE")).toBeUndefined();
+  });
+});
+
+describe("writing amounts for showing", () => {
+  const commodity = (h: ReturnType<typeof ledger>, id: string) => {
+    const c = h.commodities.find((x) => x.id === id);
+    if (!c) throw new Error(`no commodity ${id}`);
+    return c;
+  };
+  const LEDGER = `
+commodity TWSE
+    display-name Taiwan Stock Exchange
+    format {amount} shares ({leaf})
+commodity TWSE:0050
+    display-name Yuanta Taiwan 50
+commodity GOLD
+    display-name Gold
+    format {amount} oz {name}
+commodity USD
+    precision 2
+    format "\${amount}"
+commodity EUR
+    precision 2
+
+2026-11-03 * "Buy"
+    Assets:Broker      1000 TWSE:0050 @ 190 NTD
+    Bank:Checking   -190000 NTD
+`;
+
+  it("writes a value with the ledger's marks, padded to the precision", () => {
+    const value = valueText(ledger(LEDGER));
+    expect(value({ value: "1234.5", commodity: "USD" })).toBe("1,234.50");
+    expect(value({ value: "-1234.5", commodity: "USD" })).toBe("-1,234.50");
+    expect(value({ value: "1234567", commodity: "NTD" })).toBe("1,234,567");
+    expect(value({ value: "180", commodity: "NTD" })).toBe("180");
+    expect(value({ value: "0", commodity: "USD" })).toBe("0.00");
+  });
+  it("never drops digits beyond the precision", () => {
+    const value = valueText(ledger(LEDGER));
+    expect(value({ value: "1234.5678", commodity: "USD" })).toBe("1,234.5678");
+    expect(value({ value: "0.5", commodity: "NTD" })).toBe("0.5");
+  });
+  it("uses the ledger's decimal mark", () => {
+    const value = valueText(ledger(`option decimal-mark ,\n${LEDGER}`));
+    expect(value({ value: "1234.5", commodity: "USD" })).toBe("1.234,50");
+  });
+  it("leaves out the group mark when there is none", () => {
+    const value = valueText(ledger(`option group-mark none\n${LEDGER}`));
+    expect(value({ value: "1234.5", commodity: "USD" })).toBe("1234.50");
+  });
+  it("groups both parts of a fraction and does not pad it", () => {
+    const value = valueText(ledger(LEDGER));
+    expect(value({ value: "-1000/3", commodity: "NTD" })).toBe("-1,000/3");
+    expect(value({ value: "1000/3", commodity: "USD" })).toBe("1,000/3");
+    expect(value({ value: "1/3000", commodity: "USD" })).toBe("1/3,000");
+  });
+  it("gives a commodity the ledger does not list precision 0", () => {
+    const h = ledger(LEDGER);
+    expect(h.commodities.some((c) => c.id === "NOPE")).toBe(false);
+    const value = valueText(h);
+    expect(value({ value: "1234", commodity: "NOPE" })).toBe("1,234");
+    expect(value({ value: "1234.5", commodity: "NOPE" })).toBe("1,234.5");
+  });
+
+  it("puts the minus sign before the whole formatted text", () => {
+    const h = ledger(LEDGER);
+    expect(formatText(commodity(h, "USD"), "-1,234.50")).toBe("-$1,234.50");
+    expect(formatText(commodity(h, "USD"), "1,234.50")).toBe("$1,234.50");
+  });
+  it("writes the text, a space and the code without a format", () => {
+    const h = ledger(`
+2026-11-04 * "Buy"
+    Assets:Broker      12.50 TWSE:0050 @ 190 NTD
+    Bank:Checking     -2375 NTD
+`);
+    expect(commodity(h, "TWSE:0050")).not.toHaveProperty("format");
+    expect(formatText(commodity(h, "TWSE:0050"), "12.50")).toBe("12.50 TWSE:0050");
+    expect(formatText(commodity(h, "TWSE:0050"), "-12.50")).toBe("-12.50 TWSE:0050");
+    expect(formatText(commodity(h, "NTD"), "180")).toBe("180 NTD");
+    expect(formatText(commodity(ledger(LEDGER), "EUR"), "-3.00")).toBe("-3.00 EUR");
+  });
+  it("replaces {leaf} and {name} with those of the commodity shown", () => {
+    const h = ledger(LEDGER);
+    expect(formatText(commodity(h, "TWSE:0050"), "1,000")).toBe("1,000 shares (0050)");
+    expect(formatText(commodity(h, "TWSE:0050"), "-1,000")).toBe("-1,000 shares (0050)");
+    expect(formatText(commodity(h, "GOLD"), "2")).toBe("2 oz Gold");
+  });
+  it("uses the code for {name} without a display name", () => {
+    const h = ledger(`
+commodity SILVER
+    format {amount} {name} ({code})
+`);
+    expect(formatText(commodity(h, "SILVER"), "-5")).toBe("-5 SILVER (SILVER)");
+  });
+  it("uses the text as given", () => {
+    const h = ledger(LEDGER);
+    expect(formatText(commodity(h, "USD"), "1.2k")).toBe("$1.2k");
   });
 });

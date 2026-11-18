@@ -136,6 +136,10 @@ Unless strict mode covers accounts (see [ledger.md](ledger.md), "Declarations an
 - Rules that depend on type do not apply to it. In particular, its postings may have their own effective time. Otherwise it behaves like any other account: it can be posted to, queried, totalled and asserted.
 - To give it a type, declare its root with `account-root` or use a known root.
 
+## API
+
+- `inAccount(account, under)` tells whether `account` is `under` or one of its sub-accounts, at any depth, as filters and balances include sub-accounts (see "Accounts and the hierarchy"). It compares names only, so it also answers for accounts the ledger does not list: `Bank:Checking` is in `Bank`, `Bank-X` and `BankX` are not.
+
 ## Examples
 
 | Ledger | Result |

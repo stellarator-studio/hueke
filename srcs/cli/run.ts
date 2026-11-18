@@ -124,8 +124,9 @@ export function run(args: readonly string[], io: CliIO): number {
 }
 
 /**
- * Reads the root file and every file it includes, each keyed by its path relative to --root, and
- * initializes the ledger. A file that cannot be read is left out; Core reports module.missing.
+ * Reads the root file, every file it includes and every group ledger its shared accounts refer to,
+ * each keyed by its path relative to --root, and initializes the ledger. A file that cannot be
+ * read is left out; Core reports module.missing, or shared.unknown-module for a group ledger.
  * A relative --file starts from the current directory, and must be inside --root.
  */
 function load(values: { root?: string; file?: string; strict?: boolean }, io: CliIO): Hueke {

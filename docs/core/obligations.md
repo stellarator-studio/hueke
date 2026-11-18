@@ -124,6 +124,7 @@ Status: `implemented`
 ## API
 
 - `obligations(ledger, { accounts, entity, at, all })` returns the rows of "`obligations`". Every argument is optional; `at` is a time read as in [time.md](time.md), "Times given to the API". It throws when `at` is rejected, and before initialization.
+- `obligationPlace(ledger, account)` tells where an account stands among obligations (see "Obligation accounts"). Its `kind` is `root` for an obligation account itself, `obligation` for one obligation, and `nested` for an account inside an obligation, where anything written is `obligation.nested`; `root` is the obligation account, and `obligation`, for the last two, the obligation. It returns nothing for any other account. The account need not be in the ledger: `Assets:Receivable:NAT:snack-1012` is `nested` in the obligation `Assets:Receivable:NAT` whether or not anything is written on it. It throws before initialization.
 - `balance` and `register` take the option `all` (see [query.md](query.md), "API").
 
 ## Examples

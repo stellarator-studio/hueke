@@ -6,7 +6,7 @@ import { add, decimal, div, isZero, mul, neg, rational, sub, type Rational } fro
 
 export class ExpressionError extends Error {}
 
-export interface Evaluated {
+interface Evaluated {
   readonly value: Decimal;
   readonly decimals: number; // the most decimal places among the numbers written
 }

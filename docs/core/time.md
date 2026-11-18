@@ -163,6 +163,15 @@ Status: `implemented`
 ## API
 
 - `timeOnAxis(transaction, posting, axis)` returns the time a posting has on an axis: the transaction's accounting time for `accounting`, the posting's effective time for `effective` (its own, or its transaction's when it has none), and the transaction's effective time for `txn-effective`. Queries order and filter postings by this time, and the CLI prints it as `date`.
+- `timeText(value, timezone)` writes a time value for display: as written, except that when it was read in a zone other than `timezone` and its text names no zone, each of its points is followed by its zone in brackets, as a time value is written (see [../dsl/records.md](../dsl/records.md), "Time values"). A time whose text names a zone is written as it is. Given the ledger's `settings.timezone`, it shows which times are read in another zone, such as those of a group ledger with its own `timezone` (see [group-ledgers.md](group-ledgers.md)).
+
+| `timeText` of a value written | Read in | `timezone` | Result |
+| --- | --- | --- | --- |
+| `2025-01-26T20:11` | Asia/Tokyo | Asia/Taipei | `2025-01-26T20:11[Asia/Tokyo]` |
+| `2025-03-25` | Asia/Tokyo | Asia/Taipei | `2025-03-25[Asia/Tokyo]` |
+| `2025-03-01..2025-03-31` | Asia/Tokyo | Asia/Taipei | `2025-03-01[Asia/Tokyo]..2025-03-31[Asia/Tokyo]` |
+| `2025-01-26T19:11` | Asia/Taipei | Asia/Taipei | `2025-01-26T19:11` |
+| `2025-01-26T19:11[Asia/Taipei]` | Asia/Taipei | Asia/Tokyo | `2025-01-26T19:11[Asia/Taipei]` |
 
 ## Examples
 

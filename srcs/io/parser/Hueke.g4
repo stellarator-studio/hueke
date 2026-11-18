@@ -28,7 +28,7 @@ declLine      : KW_OPTION (~NL)*                                 # optionDecl
               | KW_ACCOUNT WORD ANCHOR?                          # accountDecl
               | KW_ENTITY (WORD | NUMWORD | keyword)             # entityDecl
               | (KW_SCHEDULE | KW_INSTALLMENT | KW_RULE) ANCHOR (STAR | BANG | HASH | ANCHOR | STRING | ENTITY | PRIMARY | TAG)*   # generatorDecl
-              | KW_MODULE WORD WORD STRING?                      # moduleDecl
+              | KW_MODULE WORD STRING?                           # moduleDecl
               | KW_INCLUDE (~NL)*                                # includeDecl
               ;
 

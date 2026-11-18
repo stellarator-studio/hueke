@@ -13,7 +13,7 @@ A **generator** adds postings computed from postings the user wrote. A **split**
 | Rule amounts: rate, fixed, caps, minimums, rounding | `specified` |
 | Posting templates | `specified` |
 | Generated postings | `specified` |
-| Tolerance for split fractions | `specified` |
+| Tolerance for split fractions | `implemented` |
 
 ## Concepts
 
@@ -186,7 +186,7 @@ Status: `specified`
 
 ### Tolerance for split fractions
 
-Status: `specified`
+Status: `implemented`
 
 A split, or a group ledger's conversion (see [group-ledgers.md](group-ledgers.md)), may leave fractions on an account, such as 1000/3 NTD.
 

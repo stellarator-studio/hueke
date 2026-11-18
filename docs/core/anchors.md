@@ -9,7 +9,9 @@ An **anchor** names a record: it is the record's ID, and other records refer to 
 | Anchors | `implemented` |
 | Resolving tags | `implemented` |
 | Scopes | `implemented` |
-| Scopes `rule` and `shared` | `specified` |
+| Scope `rule` | `specified` |
+| Scope `shared` | `implemented` |
+| Scoped anchors | `implemented` |
 | Primary tags | `implemented` |
 | Groups | `implemented` |
 | Refunds | `implemented` |
@@ -20,18 +22,22 @@ An **anchor** names a record: it is the record's ID, and other records refer to 
 
 **Anchor**: a name written after `%`, such as `%t_book`. Transactions, postings, accounts and rules may define one; a rule must. A transaction's, posting's or rule's anchor is its ID (see [ledger.md](ledger.md), "IDs"); an account keeps its full name as its ID and has the anchor besides. Which names are allowed is in [../dsl/lexical.md](../dsl/lexical.md), "Identifiers".
 
+**Scope of an anchor**: `%`, `^` and `#` all write `<scope>:<anchor>`. An anchor is in scope `tag` unless written otherwise; `%tag:x` is `%x`, and the short form is preferred. The only other scope an anchor may be in is `shared`, the namespace of the group ledgers (see "Scoped anchors").
+
+**Key** of an anchor: the text that identifies it, given by `anchorKey` (see [ledger.md](ledger.md), "API"). For scope `tag`, the name, such as `lunch`; in the `shared` namespace, `shared:<name>` or `shared:<name>:<anchor>`.
+
 **Tag**
 
 | Field | Meaning |
 | --- | --- |
 | `scope` | What the tag means, one of the scopes in "Scopes"; `tag` unless written. |
-| `ref` | The anchor it names: its `name`; for a `shared` tag, also `module`, the group ledger's name (see [group-ledgers.md](group-ledgers.md)); `period` is reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax"). |
+| `ref` | The anchor it names: its `name`; `scope`, `shared` for an anchor in the `shared` namespace and left out otherwise; in that namespace, `module` when the anchor is a group transaction's: the group ledger's name in this ledger, its shared account's `as` (see [group-ledgers.md](group-ledgers.md)); `period` is reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax"). |
 | `target` | The ID of the record that defines the anchor; absent when no record does. |
 
 - A tag with a `target` is **anchored**; one without is **plain**. A plain tag is a tag like any other: it is in the record's tags, groups its members, and is filtered, grouped and listed exactly as an anchored one. The only difference is that no record is linked, so a listing of its group has no anchor record first.
 - Transactions and postings carry any number of tags. A posting's tags are its own plus its transaction's (see [transactions.md](transactions.md), "Concepts"). Balances carry none.
 
-**Primary tag**: at most one per transaction, written `^name`. Its scope is always `tag`. The transaction's `primaryTag` holds the anchor's name and `primaryTarget` the ID of the record that defines it, when one does.
+**Primary tag**: at most one per transaction, written `^name`, or `^shared:<name>`. The transaction's `primaryTag` holds the anchor's key and `primaryTarget` the ID of the record that defines it, when one does.
 
 **Group**: the records that carry a tag, or a primary tag. They are its **members**. The record the anchor names is not a member.
 
@@ -55,9 +61,9 @@ An **anchor** names a record: it is the record's ID, and other records refer to 
 
 Status: `implemented`
 
-- Anchors share one namespace across the whole ledger: transactions, postings, accounts and rules, in the root module and in every included module. A group ledger has a namespace of its own; from the ledger that refers to it, its anchors are named with the group ledger's name, as in `#shared:tokyo-trip:hotel` (see [group-ledgers.md](group-ledgers.md), "Actual payments").
+- Anchors share one namespace across the whole ledger: transactions, postings, accounts and rules, in the root module and in every included module. A group ledger has a namespace of its own; in the ledger that refers to it, its transactions' anchors are under `shared:<name>:`, as in `#shared:tokyo-trip:hotel` (see "Scoped anchors" and [group-ledgers.md](group-ledgers.md), "Actual payments").
 - An anchor is defined at most once. When it is defined more than once, each definition after the first in source order is `anchor.duplicate` (error), naming the first as `<module>:<line>`. **None** of the definitions defines the anchor: each transaction or posting takes the ID it would have without one, an account has no anchor, and tags naming it are plain. So the result does not depend on which definition comes first.
-- Anchors are compared by their text (see `anchorKey` in [ledger.md](ledger.md), "API"), case included.
+- Anchors are compared by their keys, case included: `shared:tokyo-trip` and `tokyo-trip` are different anchors.
 - A transaction dropped while loading, such as one with `txn.amount-not-inferable` or with syntax reported as `syntax.unsupported`, still defines its anchors and those of its postings, so they count toward `anchor.duplicate` and serve as IDs (see [ledger.md](ledger.md), "IDs"). No record is linked, though: tags naming such an anchor are plain, and a tag whose scope needs a record, such as `#refund:<anchor>`, is `tag.wrong-target`. A block that could not be parsed defines nothing.
 - An anchor whose name breaks the rules for anchors, such as `%lunch.1005` or `#refund:lunch.1005`, is `anchor.invalid-name` (error), reported by the parser, and the block is not loaded (see [../dsl/lexical.md](../dsl/lexical.md), "Identifiers").
 - An anchor followed by a period, such as `%rent/2026-11`, is reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax").
@@ -83,11 +89,11 @@ Scopes are defined by Core; a ledger cannot add any.
 | `refund` | Transaction | An `occurred` transaction, or a posting of one | See "Refunds" |
 | `system` | Transaction, posting | Nothing | Only on generated transactions and postings, such as `system:balance` (see [transactions.md](transactions.md), "System-generated transactions") |
 | `rule` [specified] | Posting | A rule | The posting is an input of the rule (see [generators.md](generators.md), "Per-posting rules") |
-| `shared` [specified] | Transaction | A transaction of a group ledger, written `<module>:<anchor>` | The transaction is the actual payment for it (see [group-ledgers.md](group-ledgers.md), "Actual payments") |
+| `shared` | Transaction | `<name>`: a group ledger, whose anchor's record, if any, is the transaction that defines `%shared:<name>`; `<name>:<anchor>`: a transaction of a group ledger | `<name>`: none; the transaction is in the group ledger's group (see [group-ledgers.md](group-ledgers.md), "Group tags"). `<name>:<anchor>`: the transaction is the actual payment for it (see [group-ledgers.md](group-ledgers.md), "Actual payments") |
 
 - A scope that Core does not define, such as `#category:camera`, is `tag.unknown-scope` (error).
 - A tag written where its scope may not stand, such as `#refund:x` on a posting, is `tag.wrong-level` (error). Only where a tag is written counts: a transaction's tags are also a posting's tags, and are not checked again there.
-- A tag whose anchor does not name the record its scope needs is `tag.wrong-target` (error). For `refund`, this includes an anchor no record defines, and one that names an account, a `planned` or `cancelled` transaction or a posting of one, or a posting of the transaction the tag is written on. For `rule`, an anchor that names no rule. For `shared`, a group ledger this ledger does not have, or an anchor its group ledger does not define on a transaction. Only a `shared` tag names a module: in any other tag, `:` after the scope is part of the anchor, and an anchor cannot contain it (`anchor.invalid-name`).
+- A tag whose anchor does not name the record its scope needs is `tag.wrong-target` (error). For `refund`, this includes an anchor no record defines, and one that names an account, a `planned` or `cancelled` transaction or a posting of one, or a posting of the transaction the tag is written on. For `rule`, an anchor that names no rule. For `shared`, a group ledger this ledger does not have, or, with `<name>:<anchor>`, an anchor its group ledger does not define on a transaction. Only a `shared` tag names a module: in any other tag, `:` after the scope is part of the anchor, and an anchor cannot contain it (`anchor.invalid-name`).
 - A `system` tag written in a ledger is `tag.reserved-scope` (error).
 - In all four cases the tag is skipped: it is not in the derived record's tags, and the record loads. The Raw record keeps it, as written (see [ledger.md](ledger.md), "Concepts"). The diagnostic is reported on the record the tag is written on: the transaction for a tag on its header, the posting for a tag on a posting line.
 - A `rule` tag on a rule's template line is `tag.wrong-level`, since generated postings never chain (see [generators.md](generators.md), "Posting templates").
@@ -99,9 +105,26 @@ Status: `implemented`
 
 - A transaction has at most one primary tag, so primary tags never overlap: grouping by primary tag gives totals that add up to the whole, with the transactions that have none in the "none" group (see [query.md](query.md), "Grouping").
 - Tags may overlap: one transaction can carry several (see [query.md](query.md), "Grouping", for what that does to totals).
-- A primary tag resolves as a tag does (see "Resolving tags"). Like a tag, it is plain or anchored (see "Concepts"): `^trip` works the same with or without `%trip`, and `primaryTarget` only says whether the anchor is mounted on a record. It is never checked against a scope, because its scope is always `tag`.
+- A primary tag resolves as a tag does (see "Resolving tags"). Like a tag, it is plain or anchored (see "Concepts"): `^trip` works the same with or without `%trip`, and `primaryTarget` only says whether the anchor is mounted on a record. `^shared:<name>` is checked as `#shared:<name>` is (see "Scopes"); when it is skipped, `primaryTag` and `primaryTarget` are left out.
 - A primary tag naming the transaction it is written on, such as `%trip … ^trip`, is `tag.self-reference` (error): the anchor's record is never a member of its own group. `primaryTag` and `primaryTarget` are left out.
 - A second `^` on one header is `txn.multiple-primary-tag` (error), reported by the parser; the block is not loaded.
+
+### Scoped anchors
+
+Status: `implemented`
+
+- On `%` and `^`, the scope is `tag` or `shared`: `%tag:x` is `%x` and `^tag:x` is `^x`. Another scope there, such as `%refund:x`, is `parse.syntax`, and the block is not loaded. On `#`, every scope in "Scopes" may be written, as before.
+- The `shared` namespace holds the anchors of this ledger's group ledgers, each under the name its shared account gives it with `as` (see [group-ledgers.md](group-ledgers.md)):
+
+| Key | Names | Defined by |
+| --- | --- | --- |
+| `shared:<name>` | The group ledger `<name>` as a whole | A transaction of this ledger that writes `%shared:<name>`, such as the event of a trip |
+| `shared:<name>:<anchor>` | The group transaction that defines `%<anchor>` in that group ledger | Conversion only (see [group-ledgers.md](group-ledgers.md), "Conversion") |
+
+- `%shared:<name>` stands only on a transaction header; on a posting, an account or a rule it is `parse.syntax`. `%shared:<name>:<anchor>` and `^shared:<name>:<anchor>` are never written: they are `parse.syntax` wherever they stand.
+- `%shared:<name>` naming a group ledger this ledger does not have is `shared.unknown-module` (error), reported on the transaction. The anchor is still defined, so tags naming it link to it.
+- An anchor in the `shared` namespace is defined once, as any anchor (`anchor.duplicate`). A group ledger that is not converted, such as one with `module.name-conflict`, still has its name: `%shared:<name>` for it is not an error.
+- `#shared:<name>` and `^shared:<name>` may be written on any transaction of this ledger, such as one's own spending on the trip: it joins the group ledger's group (see [group-ledgers.md](group-ledgers.md), "Group tags").
 
 ### Groups
 

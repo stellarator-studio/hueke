@@ -2,6 +2,7 @@
 
 import {
   timeOnAxis,
+  timeText,
   type Amount,
   type Axis,
   type Hueke,
@@ -12,8 +13,8 @@ import {
 } from "../../index.js";
 import { amountText, table } from "../output.js";
 
-export interface PostingRow {
-  readonly date: string; // the posting's time on the axis, as written
+interface PostingRow {
+  readonly date: string; // the posting's time on the axis, as written, with its zone when it differs
   readonly transaction: Id;
   readonly posting: Id;
   readonly occurrence: Transaction["occurrence"];
@@ -39,7 +40,7 @@ export function postingRows(
     if (!t) return [];
     return [
       {
-        date: timeOnAxis(t, p, axis).literal,
+        date: timeText(timeOnAxis(t, p, axis), hueke.settings.timezone),
         transaction: t.id,
         posting: p.id,
         occurrence: t.occurrence,

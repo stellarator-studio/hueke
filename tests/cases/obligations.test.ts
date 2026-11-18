@@ -1,6 +1,14 @@
 // docs/core/obligations.md
 import { describe, expect, it } from "vitest";
-import { balance, check, Hueke, obligations, query, register } from "../../srcs/index.js";
+import {
+  balance,
+  check,
+  Hueke,
+  obligationPlace,
+  obligations,
+  query,
+  register,
+} from "../../srcs/index.js";
 import type { AccountTreeRow, ObligationProgress } from "../../srcs/index.js";
 import { balanceOf, codes, diagnostics, ledger, modules, rows } from "./ledger.js";
 
@@ -1261,5 +1269,59 @@ account Assets:Receivable:alice
     // Once on the declaration and once on the posting inside the obligation.
     expect(codes(h)).toEqual(["obligation.nested", "obligation.nested"]);
     expect(progress(h)).toEqual(["Assets:Receivable:alice NTD [NAT] 100/0/100 open -"]);
+  });
+});
+
+describe("obligationPlace", () => {
+  const TEXT = `
+2026-10-12 * "Lent to NAT"
+    Assets:Receivable:NAT    500 NTD @NAT
+    Assets:Cash             -500 NTD
+`;
+  it("tells the obligation account, an obligation and an account nested in one", () => {
+    const h = load(TEXT);
+    expect(obligationPlace(h, "Assets:Receivable")).toEqual({
+      kind: "root",
+      root: "Assets:Receivable",
+    });
+    expect(obligationPlace(h, "Assets:Receivable:NAT")).toEqual({
+      kind: "obligation",
+      root: "Assets:Receivable",
+      obligation: "Assets:Receivable:NAT",
+    });
+    expect(obligationPlace(h, "Liabilities:Payable")).toEqual({
+      kind: "root",
+      root: "Liabilities:Payable",
+    });
+  });
+  it("answers for accounts not written in the ledger", () => {
+    const h = load(TEXT);
+    expect(h.accounts.some((a) => a.id === "Assets:Receivable:NAT:snack-1012")).toBe(false);
+    expect(obligationPlace(h, "Assets:Receivable:NAT:snack-1012")).toEqual({
+      kind: "nested",
+      root: "Assets:Receivable",
+      obligation: "Assets:Receivable:NAT",
+    });
+    expect(obligationPlace(h, "Assets:Receivable:NAT:snack-1012:deeper")).toEqual({
+      kind: "nested",
+      root: "Assets:Receivable",
+      obligation: "Assets:Receivable:NAT",
+    });
+    expect(obligationPlace(h, "Liabilities:Payable:KEN")).toEqual({
+      kind: "obligation",
+      root: "Liabilities:Payable",
+      obligation: "Liabilities:Payable:KEN",
+    });
+  });
+  it("returns nothing for other accounts", () => {
+    const h = load(TEXT);
+    expect(obligationPlace(h, "Assets:Cash")).toBeUndefined();
+    expect(obligationPlace(h, "Assets")).toBeUndefined();
+    expect(obligationPlace(h, "Assets:ReceivableX")).toBeUndefined();
+    expect(obligationPlace(h, "Expenses:Unknown")).toBeUndefined();
+  });
+  it("throws before initialization", () => {
+    const h = new Hueke();
+    expect(() => obligationPlace(h, "Assets:Receivable")).toThrow();
   });
 });

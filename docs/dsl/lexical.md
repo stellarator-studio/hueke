@@ -160,7 +160,7 @@ Status: `implemented`
 | Metadata key | A letter, then letters, Unicode digits, `_`, `-` | `invoice_number` |
 | Time zone | An IANA name: ASCII letters, digits, `/`, `_`, `-`, `+` | `Asia/Taipei` |
 
-- An identifier that breaks its rule is `parse.syntax`, except an anchor: a `%`, `#`, `#scope:` or `^` joined to a name that breaks the anchor rule, such as `%lunch.1005`, is `anchor.invalid-name`. Either way the block is not loaded.
+- An identifier that breaks its rule is `parse.syntax`, except an anchor: a `%`, `#` or `^`, with or without `<scope>:`, joined to a name that breaks the anchor rule, such as `%lunch.1005`, is `anchor.invalid-name`. A scope the symbol does not take, as in `%refund:a.1`, is `parse.syntax` first. Either way the block is not loaded.
 
 ### Strings and values
 
@@ -183,7 +183,7 @@ Status: `implemented`
 | `#` | After a header's time, followed by whitespace or the end of the line: cancelled. Joined to text (`#x`): a tag. `##x`: `parse.syntax`. At the start of a posting line: `parse.syntax`. So `2026-10-12 # "Lunch"` is cancelled, and `2026-10-12 #travel` is an unchecked transaction with a tag |
 | `-` | At the start of a line, not joined to a digit or a word: a breakdown (see "Line classes"). Joined to a number: a minus sign. Inside an identifier: an ordinary character |
 | `%`, `#`, `^`, `@` | Symbols only outside quotes and at the start of a token; `10%` and `AB-1#2` are not affected |
-| `:` | Inside an account name or a commodity code: a segment separator. In `#scope:`, `^tag:` and `@role:`: a separator. In `;; key:`: ends the key |
+| `:` | Inside an account name or a commodity code: a segment separator. In `#scope:`, `%scope:`, `^scope:` and `@role:`: a separator; in `shared:<name>:<anchor>`, also between the group ledger's name and its anchor. In `;; key:`: ends the key |
 | `[` | A lone token after a posting's amount: the posting's time. Joined to a point: its zone. Brackets pair up, so `[2026-06-02T09:00[Asia/Tokyo]]` is unambiguous |
 | `=` | Inside the time of a transaction header or a Balance assertion; in a breakdown, before the total |
 
