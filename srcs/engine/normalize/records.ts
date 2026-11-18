@@ -19,7 +19,7 @@ import type {
   Transaction,
 } from "../../data/model/types.js";
 import { anchorKey } from "../../data/raw/anchor.js";
-import { obligationPlaceIn } from "../../data/model/account.js";
+import { isPnl, obligationPlaceIn } from "../../data/model/account.js";
 import type {
   AnchorRef,
   BalanceData,
@@ -57,7 +57,7 @@ import {
   type NumberFormat,
 } from "../../data/values/number.js";
 import { diagnostic, type Code } from "../../data/source/diagnostics.js";
-import { metaFrom, weightOf } from "./shared.js";
+import { metaFrom, weightOf, type SourcedItem } from "./shared.js";
 
 export interface RecordContext {
   /** The module of the record being read. */
@@ -82,8 +82,6 @@ type Written = [Id, number][];
 
 /** The record is not loaded; the diagnostic has been reported (or none is due). */
 class Dropped extends Error {}
-
-const PNL = new Set(["income", "expense"]);
 
 function fail(
   ctx: RecordContext,
@@ -172,11 +170,6 @@ function totalOf(
   return { value: decimal(value), commodity: p.commodity };
 }
 
-function isPnl(ctx: RecordContext, account: Id): boolean {
-  const type = ctx.roots.get(account.split(":")[0] ?? "")?.type;
-  return type !== undefined && PNL.has(type);
-}
-
 interface Draft {
   readonly data: PostingData;
   readonly id: Id;
@@ -189,7 +182,7 @@ interface Draft {
   breakdown: Breakdown[];
 }
 
-export function buildTransaction(
+function buildTransaction(
   data: TransactionData,
   id: Id,
   ctx: RecordContext,
@@ -223,7 +216,7 @@ function transaction(
     const amount =
       p.amount === undefined ? undefined : amountOf(ctx, p.amount, (d) => (decimals = d));
     let own = p.effective === undefined ? undefined : parseTime(p.effective, ctx.time);
-    if (own && isPnl(ctx, p.account)) {
+    if (own && isPnl(ctx.roots, p.account)) {
       ctx.out.push(
         diagnostic(
           "posting.pnl-effective",
@@ -412,7 +405,7 @@ function breakdownLine(ctx: RecordContext, line: BreakdownLine): Breakdown {
   }
 }
 
-export function buildBalance(data: BalanceData, ctx: RecordContext): Balance | undefined {
+function buildBalance(data: BalanceData, ctx: RecordContext): Balance | undefined {
   try {
     return guard(ctx, data, () => {
       const effective = parseTime(data.time, ctx.time);
@@ -458,4 +451,44 @@ export function buildBalance(data: BalanceData, ctx: RecordContext): Balance | u
     if (e instanceof Dropped) return undefined;
     throw e;
   }
+}
+
+/** The records of a ledger or a group ledger, in module order. */
+export interface Records {
+  readonly transactions: Transaction[];
+  readonly balances: Balance[];
+  /** Both, in the order they were written. */
+  readonly records: (Transaction | Balance)[];
+}
+
+/**
+ * Steps 3 to 5 for each item: transactions and Balances, `ctx` giving the context of each
+ * module. A transaction without an anchor that defines it is numbered `~1`, `~2`, … in order,
+ * dropped ones included, so that dropping one does not renumber the others
+ * (docs/core/ledger.md, "IDs").
+ */
+export function buildRecords(
+  items: readonly SourcedItem[],
+  ctx: (source: SourcePath) => RecordContext,
+): Records {
+  let auto = 0;
+  const out: Records = { transactions: [], balances: [], records: [] };
+  for (const { item, source, dropped } of items) {
+    if (item.kind === "transaction") {
+      const c = ctx(source);
+      const id =
+        item.anchor && c.defines(item.anchor) ? anchorKey(item.anchor) : `~${String(++auto)}`;
+      if (dropped) continue;
+      const t = buildTransaction(item, id, c);
+      if (!t) continue;
+      out.transactions.push(t);
+      out.records.push(t);
+    } else if (item.kind === "balance") {
+      const b = buildBalance(item, ctx(source));
+      if (!b) continue;
+      out.balances.push(b);
+      out.records.push(b);
+    }
+  }
+  return out;
 }

@@ -15,8 +15,10 @@ import type {
   Id,
   LedgerSettings,
   ObligationKind,
+  SharedAccount,
 } from "../../data/model/types.js";
-import { obligationPlaceIn } from "../../data/model/account.js";
+import { mapOf, sourceOf } from "../../data/raw/include.js";
+import { obligationPlaceIn, rootType } from "../../data/model/account.js";
 import type { DeclarationData } from "../../data/raw/model.js";
 import type { Diagnostic, SourcePath, SourceSpan } from "../../data/source/source.js";
 import {
@@ -59,14 +61,27 @@ const BUILTIN_ROOTS: readonly [string, AccountType][] = [
   ["Income", "income"],
   ["Expenses", "expense"],
 ];
-const DECLARATIONS = new Set(["option", "account-root", "commodity", "account", "entity"]);
+/** The kinds of declaration this step reads; a group ledger may hold them too. */
+export const DECLARATIONS: ReadonlySet<string> = new Set([
+  "option",
+  "account-root",
+  "commodity",
+  "account",
+  "entity",
+]);
 
+/**
+ * The declarations of the module `root` and the modules it includes. For a group ledger,
+ * `inherited` holds the referring ledger's settings, which those it does not write take
+ * (docs/core/modules.md, "Referenced modules").
+ */
 export function collectDeclarations(
   items: readonly SourcedItem[],
   root: SourcePath,
   options: HuekeOptions,
   where: Where,
   out: Diagnostic[],
+  inherited?: LedgerSettings,
 ): Declarations {
   const report = (code: Parameters<typeof diagnostic>[0], message: string, at: Sourced): void => {
     out.push(diagnostic(code, message, at.source, at.d.span));
@@ -142,7 +157,8 @@ export function collectDeclarations(
 
   let timezone = read("timezone")?.value;
   if (timezone === undefined) {
-    if (options.timezone !== undefined) timezone = options.timezone;
+    if (inherited) timezone = inherited.timezone;
+    else if (options.timezone !== undefined) timezone = options.timezone;
     else if (!byName.has("timezone"))
       out.push(diagnostic("option.missing-timezone", "no default time zone: using UTC", root));
   }
@@ -157,12 +173,28 @@ export function collectDeclarations(
     groupMark = ",";
   }
   // When only one mark takes effect, the other's default gives way to it.
-  if (decimalMark === undefined) decimalMark = groupMark === "." ? "," : ".";
-  if (groupMark === undefined) groupMark = decimalMark === "," ? "." : ",";
+  if (inherited && decimalMark === undefined && groupMark === undefined) {
+    decimalMark = inherited.decimalMark;
+    groupMark = inherited.groupMark;
+  }
+  if (decimalMark === undefined)
+    decimalMark =
+      inherited && inherited.decimalMark !== groupMark
+        ? inherited.decimalMark
+        : groupMark === "."
+          ? ","
+          : ".";
+  if (groupMark === undefined)
+    groupMark =
+      inherited && inherited.groupMark !== decimalMark
+        ? inherited.groupMark
+        : decimalMark === ","
+          ? "."
+          : ",";
 
-  const weekStart = read("week-start")?.value ?? "monday";
+  const weekStart = read("week-start")?.value ?? inherited?.weekStart ?? "monday";
 
-  let strict = read("strict")?.value ?? [];
+  let strict = read("strict")?.value ?? inherited?.strict ?? [];
   if (options.strict) strict = ["account", "commodity", "entity"];
 
   // `on [<name>]`: income and expense roots are shown under one merged root (docs/core/accounts.md).
@@ -273,6 +305,7 @@ export function collectDeclarations(
     const displayName = property(at.d, "display-name");
     const obligation = property(at.d, "obligation") as ObligationKind | undefined;
     const padAccount = property(at.d, "pad-account");
+    const shared = sharedOf(at, rootType(roots, id) === "shared", report);
     const account = makeAccount(id, roots, {
       ...(at.d.span && { span: at.d.span }),
       ...(at.d.anchor && { anchor: at.d.anchor.name }),
@@ -280,6 +313,7 @@ export function collectDeclarations(
       ...(primary !== undefined && { primaryCommodity: primary }),
       ...(obligation !== undefined && { obligation }),
       ...(padAccount !== undefined && { padAccount }),
+      ...(shared && { shared }),
       meta: metaFrom(at.d.lines, at.d.trailer),
     });
     accounts.set(id, account);
@@ -361,6 +395,63 @@ export function collectDeclarations(
   };
 }
 
+const SHARED_PROPERTIES = new Set(["source", "self", "map"]);
+
+/**
+ * What a shared account refers to (docs/core/group-ledgers.md, "Shared accounts"): undefined when
+ * `source` or `self` is missing, or when the account is not a shared account, whose `source`,
+ * `self` and `map` are ignored. The parser has checked the shape of each line.
+ */
+function sharedOf(
+  at: Sourced,
+  isShared: boolean,
+  report: (code: Parameters<typeof diagnostic>[0], message: string, at: Sourced) => void,
+): SharedAccount | undefined {
+  const id = at.d.args[0] ?? "";
+  const lines = at.d.lines.filter((l) => l.kind === "property" && SHARED_PROPERTIES.has(l.key));
+  if (!isShared) {
+    if (lines.length > 0)
+      report(
+        "shared.wrong-account",
+        `${id} is not a shared account; its source, self and map are ignored`,
+        at,
+      );
+    return undefined;
+  }
+  let source: ReturnType<typeof sourceOf>;
+  let self: Id | undefined;
+  const accountMap: (readonly [Id, Id])[] = [];
+  const entityMap: Record<Id, Id> = {};
+  const commodityMap: Record<Id, Id> = {};
+  for (const line of lines) {
+    if (line.kind !== "property") continue;
+    if (line.key === "source") source = sourceOf(line.value);
+    else if (line.key === "self") self = line.value.slice(1);
+    else {
+      const { commodity = false, from = "", to = "" } = mapOf(line.value) ?? {};
+      if (commodity) commodityMap[from] ??= to;
+      else if (from.startsWith("@")) entityMap[from.slice(1)] ??= to.slice(1);
+      else accountMap.push([from, to]);
+    }
+  }
+  if (source === undefined || self === undefined) {
+    report(
+      "shared.missing-source",
+      `shared account ${id} needs both source and self; nothing converts`,
+      at,
+    );
+    return undefined;
+  }
+  return {
+    source: source.path,
+    as: source.as,
+    self,
+    accountMap,
+    entityMap,
+    commodityMap,
+  };
+}
+
 /**
  * An account inside an obligation account takes its `obligation`, and its `pad-account` unless it
  * declares one. `obligations` holds the obligation accounts.
@@ -420,7 +511,7 @@ export function makeAccount(
   extra: Partial<Account> = {},
 ): Account {
   const colon = id.lastIndexOf(":");
-  const type = roots.get(id.split(":")[0] ?? "")?.type;
+  const type = rootType(roots, id);
   return {
     id,
     ...(type && { type }),

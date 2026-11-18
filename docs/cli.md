@@ -37,7 +37,7 @@ Status: `implemented`
 | `--strict` | Strict mode for every kind, whatever the ledger says, as when creating the ledger with strict mode. |
 
 - Files are read as UTF-8 and parsed. Each is loaded under its path relative to `--root`, with `/` separators.
-- Starting from the root file, `hueke` reads every file the modules include, and every group ledger that shared accounts refer to [specified], as `referencedSources` lists them (see [core/modules.md](core/modules.md), "API"); then it initializes the ledger from the root file. An included file that cannot be read is left out, so Core reports `module.missing` for it; a group ledger that cannot be read, `shared.unknown-module`. A root file that cannot be read is a usage error (see "Exit status").
+- Starting from the root file, `hueke` reads every file the modules include, and every group ledger that shared accounts refer to, as `referencedSources` lists them (see [core/modules.md](core/modules.md), "API"); then it initializes the ledger from the root file. An included file that cannot be read is left out, so Core reports `module.missing` for it; a group ledger that cannot be read, `shared.unknown-module`. A root file that cannot be read is a usage error (see "Exit status").
 - When the ledger has diagnostics of severity `warning` or `error`, every command except `check` still runs and prints its result to standard output. After the result, it prints those diagnostics to standard error, in the format `check` uses in a table, so that the user can find what went wrong; `info` diagnostics are left out. The exit status is not changed.
 
 ### Commands

@@ -92,8 +92,8 @@ Status: `implemented`
 | `posting.commodity-not-allowed` | error | A posting's commodity is denied by its account, or not among those it allows (see [accounts.md](accounts.md), "Allowed commodities") | Computed as written | `specified` |
 | `account.commodity-conflict` | error | An account both allows and denies one commodity, or its `primary` commodity is not allowed | The whole declaration is not loaded | `specified` |
 | `account.inactive` | error | A posting's effective time is outside its account's `active` period (see [accounts.md](accounts.md), "Active periods") | Computed as written | `specified` |
-| `split.exceeds` | error | A split's member amounts add up to more than the posting (see [generators.md](generators.md), "Splits") | The split is not expanded; the posting counts as written | `specified` |
-| `split.zero-ratio` | error | The ratios of a split, a split table or a group ledger's default shares add up to zero while an amount remains to share | The split is not expanded; for a group ledger's default shares, none of its transactions converts | `specified` |
+| `split.exceeds` | error | A split's member amounts add up to more than the posting (see [generators.md](generators.md), "Splits") | The split is not expanded; the posting counts as written | `implemented` |
+| `split.zero-ratio` | error | The ratios of a split, a split table or a group ledger's default shares add up to zero while an amount remains to share | The split is not expanded; for a group ledger's default shares, none of its transactions converts | `implemented` |
 | `split.missing-account` | error | A split or `paid-by` has no obligation: none written, and no table gives one (see [generators.md](generators.md), "Split tables") | The split is not expanded | `specified` |
 | `split.not-obligation` | error | A split's or `paid-by`'s `->` is not an obligation, or is one of the wrong direction | The split is not expanded | `specified` |
 | `split.unknown-table` | error | `split <anchor>` names no transaction with a split table | The split is not expanded | `specified` |
@@ -117,27 +117,27 @@ Status: `implemented`
 | `balance.pad-conflict` | error | Pads at the same point that affect each other, reported on each; or a pad whose counter-account is inside its own account (see [balance.md](balance.md), "Point-by-point expansion") | No record generated | `implemented` |
 | `balance.pad-commodity` | error | A pad's written padding is not in the asserted commodity | No record generated | `implemented` |
 | `balance.missing-pad-account` | error | A pad has no counter-account: the pad names none, and neither the account nor the ledger has a `pad-account` | No record generated | `implemented` |
-| `balance.pad-needs-amount` | error | A pad on an obligation account, an obligation, an account inside one, or a shared account [specified] does not write its padding (see [balance.md](balance.md), "Obligations in Balance assertions", "Shared accounts in Balance assertions") | No record generated | `implemented` |
+| `balance.pad-needs-amount` | error | A pad on an obligation account, an obligation, an account inside one, or a shared account does not write its padding (see [balance.md](balance.md), "Obligations in Balance assertions", "Shared accounts in Balance assertions") | No record generated | `implemented` |
 | `balance.obligation-entity` | error | A Balance on an obligation account or inside one has an entity, other than a pad on one obligation (see [balance.md](balance.md), "Obligations in Balance assertions") | Record not loaded | `implemented` |
 | `balance.ambiguous` | error | A pad on an obligation account itself, not on one obligation | No record generated | `implemented` |
 | `module.missing` | error | The root, or a module named by `include`, was not loaded | Root: the ledger is empty. `include`: ignored | `implemented` |
 | `module.ignored-declaration` | warning | A declaration (`option`, `account-root`, `commodity`, `account`, `entity`) stands in an included module; only the root's take effect | The declaration is ignored | `implemented` |
-| `module.duplicate` | error | A module is included when it is already in the ledger (twice, or in a cycle); or a module is both included and referred to, or referred to twice [specified] (see [modules.md](modules.md), "Referenced modules") | The `include` is ignored; a module referred to: no `include` or `source` naming it takes effect | `implemented` |
-| `module.missing-declaration` | error | A referenced module does not start with exactly one `module` declaration | The module is not loaded | `specified` |
-| `include.module-file` | error | An included module has a `module` declaration | The `include` is ignored | `specified` |
-| `module.forbidden-record` | error | A record its module's kind does not allow, such as a Balance in a group ledger; a module referring to other modules; a `module` declaration in the root | Record not loaded | `specified` |
-| `module.name-conflict` | error | Two group ledgers have the same name in a ledger | Neither converts | `specified` |
-| `shared.wrong-account` | error | `source`, `self` or `map` on an account whose type is not `shared` | Skipped: those properties are ignored | `specified` |
-| `shared.missing-source` | error | A shared account has no `source` or no `self` (see [group-ledgers.md](group-ledgers.md), "Shared accounts") | The account loads; nothing converts | `specified` |
-| `shared.unknown-module` | error | A shared account's `source` names no loaded group ledger, or `self` is not one of its members | The account loads; nothing converts | `specified` |
-| `shared.invalid-split` | error | A split in a group ledger has `self`, a table, `paid-by` or `->` | Skipped: the posting is shared by the default ratios | `specified` |
-| `shared.missing-member` | error | A member-money posting in a group ledger names no entity | The group transaction does not convert | `specified` |
-| `shared.unknown-member` | error | A member-money posting names an entity that is not a member | The group transaction does not convert | `specified` |
-| `shared.unmapped-account` | error | Conversion needs a group account that no mapping maps | The group transaction does not convert | `specified` |
-| `shared.payment-mismatch` | error | An actual payment's postings on the shared account differ from the owner's money in the group transaction (see [group-ledgers.md](group-ledgers.md), "Actual payments") | Computed as written; it still replaces | `specified` |
-| `shared.multiple-replacement` | error | Several transactions are the actual payment for one group transaction | Computed as written; the conversion is still replaced | `specified` |
-| `path.invalid` | error | An `include` or `source` [specified] path is empty, names a folder or has a scheme (see [modules.md](modules.md), "Paths") | The `include` or `source` is ignored | `implemented` |
-| `path.outside-root` | error | An `include` or `source` [specified] path resolves above the root directory | The `include` or `source` is ignored | `implemented` |
+| `module.duplicate` | error | A module is included when it is already in the ledger (twice, or in a cycle); or a module is both included and referred to, or referred to twice (see [modules.md](modules.md), "Referenced modules") | The `include` is ignored; a module referred to: no `include` or `source` naming it takes effect | `implemented` |
+| `module.missing-declaration` | error | A referenced module does not start with exactly one `module` declaration | The module is not loaded | `implemented` |
+| `include.module-file` | error | An included module has a `module` declaration | The `include` is ignored | `implemented` |
+| `module.forbidden-record` | error | A record its module's kind does not allow, such as a Balance in a group ledger; a module referring to other modules; a `module` declaration in the root other than its first record | Record not loaded | `implemented` |
+| `module.name-conflict` | error | Two group ledgers have the same name in a ledger | Neither converts | `implemented` |
+| `shared.wrong-account` | error | `source`, `self` or `map` on an account whose type is not `shared` | Skipped: those properties are ignored | `implemented` |
+| `shared.missing-source` | error | A shared account has no `source` or no `self` (see [group-ledgers.md](group-ledgers.md), "Shared accounts") | The account loads; nothing converts | `implemented` |
+| `shared.unknown-module` | error | A shared account's `source` names no loaded group ledger, or `self` is not one of its members | The account loads; nothing converts | `implemented` |
+| `shared.invalid-split` | error | A split in a group ledger has `self`, a table, `paid-by` or `->` | Skipped: the posting is shared by the default ratios | `implemented` |
+| `shared.missing-member` | error | A member-money posting in a group ledger names no entity, or more than one | The group transaction does not convert | `implemented` |
+| `shared.unknown-member` | error | A member-money posting, or a split in a group ledger, names an entity that is not a member | The group transaction does not convert | `implemented` |
+| `shared.unmapped-account` | error | Conversion needs a group account that no mapping maps | The group transaction does not convert | `implemented` |
+| `shared.payment-mismatch` | error | An actual payment's postings on the shared account differ from the weights of the owner's money in the group transaction, beyond the tolerance (see [group-ledgers.md](group-ledgers.md), "Actual payments") | Computed as written; it still replaces | `implemented` |
+| `shared.multiple-replacement` | error | Several transactions are the actual payment for one group transaction | Computed as written; the conversion is still replaced | `implemented` |
+| `path.invalid` | error | An `include` or `source` path is empty, names a folder or has a scheme (see [modules.md](modules.md), "Paths") | The `include` or `source` is ignored | `implemented` |
+| `path.outside-root` | error | An `include` or `source` path resolves above the root directory | The `include` or `source` is ignored | `implemented` |
 | `syntax.unsupported` | error | Syntax that is parsed but not supported yet; see "Unsupported syntax" | Record not loaded | `implemented` |
 
 ### Codes used only by the API
@@ -181,7 +181,7 @@ The parser reads the whole language. Syntax whose feature is not supported yet i
 | `schedule`, `installment` | The declaration |
 | A `rule` with `follows` or `every`; with `per <anchor>` as a window; with `@`, `^` or `#` on its header | The declaration |
 
-`include` is supported (see [modules.md](modules.md)). This list is `specified`: until they are implemented, splits, `paid-by`, split tables (`share`, `into`), per-posting rules, `module`, `account-root` of type `shared`, the account properties `active`, `allow`, `deny`, `source`, `self` and `map`, and the scopes `rule` and `shared` are also `syntax.unsupported`.
+`include` is supported (see [modules.md](modules.md)). This list is `specified`: until they are implemented, splits, `paid-by`, split tables (`share`, `into`), per-posting rules, the account properties `active`, `allow` and `deny`, and the scope `rule` are also `syntax.unsupported`. In a group ledger, a posting's `split` and `paid-by` are read by conversion (see [group-ledgers.md](group-ledgers.md), "Group ledgers").
 
 ## Examples
 

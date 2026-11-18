@@ -11,7 +11,6 @@ export const UNSUPPORTED_SCOPES: ReadonlySet<string> = new Set([
   "statement",
   "fulfills",
   "rule",
-  "shared",
 ]);
 
 /**

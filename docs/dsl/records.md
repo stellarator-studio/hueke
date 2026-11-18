@@ -18,7 +18,7 @@ Each record and declaration is written as a fixed sequence of parts. This docume
 | Splits | `specified` |
 | Split tables | `specified` |
 | Rules | `specified` |
-| Group ledgers and shared accounts | `specified` |
+| Group ledgers and shared accounts | `implemented` |
 
 ## Concepts
 
@@ -83,7 +83,7 @@ Status: `implemented`
 - At most one header mark: none (recorded, not checked), `*` (status cleared), `!` (occurrence planned) or `#` (occurrence cancelled). Two marks are `parse.token-order`.
 - At most one `%anchor`, at most one `^`; any number of `@` references and `#` tags, in that order. A second `^` is `txn.multiple-primary-tag`, reported by the parser, and the block is not loaded.
 - `^tag:x` is the same as `^x`; a primary tag with another scope is `parse.syntax`.
-- `#scope:x` gives a tag a scope; `#x` is `#tag:x`. `#shared:<module>:x` names the anchor `x` of another module. `@role:x` gives a reference a role; `@x` is `@person:x`.
+- `#scope:x` gives a tag a scope; `#x` is `#tag:x`. `#shared:<name>:x` names the anchor `x` of the group ledger this ledger names `<name>` with `as`. `@role:x` gives a reference a role; `@x` is `@person:x`.
 
 ### Postings
 
@@ -154,11 +154,11 @@ Status: `implemented`
 | Setting | `option <name> <value>`; the value runs to the end of the line | None |
 | Account root | `account-root <name> <type>` | None |
 | Commodity | `commodity <code>` | `display-name <text>`, `item` (no value), `precision <whole number>`, `format <template>`, `alias <text> prefix` or `alias <text> suffix` (may repeat), metadata |
-| Account | `account <name> [%anchor]` | `display-name <text>`, `obligation receivable` or `obligation payable`, `pad-account <account>`; `primary <commodity>`; `active`, `allow`, `deny` (see "Account restrictions") [specified]; for a shared account, `source`, `self`, `map` (see "Group ledgers and shared accounts") [specified]; metadata |
+| Account | `account <name> [%anchor]` | `display-name <text>`, `obligation receivable` or `obligation payable`, `pad-account <account>`; `primary <commodity>`; `active`, `allow`, `deny` (see "Account restrictions") [specified]; for a shared account, `source`, `self`, `map` (see "Group ledgers and shared accounts"); metadata |
 | Entity | `entity <id>` | `display-name <text>`, metadata; `type` is reserved (see [../core/diagnostics.md](../core/diagnostics.md), "Unsupported syntax") |
 | Include | `include <path>`; the path is one token | None |
 | Rule [specified] | `rule %<id> ["description"]` | See "Rules" |
-| Module [specified] | `module shared <name> ["description"]` | See "Group ledgers and shared accounts" |
+| Module | `module shared ["description"]` | See "Group ledgers and shared accounts" |
 
 - Declarations have no time; their order does not matter. Only the root module's declarations take effect (see [../core/modules.md](../core/modules.md), "Declarations in included modules").
 - The settings and their values are listed in [../core/settings.md](../core/settings.md), "Settings".
@@ -341,12 +341,12 @@ rule %cashback "Card cashback"
 
 ### Group ledgers and shared accounts
 
-Status: `specified`
+Status: `implemented`
 
-A group ledger is a file whose first record is its `module` declaration:
+A group ledger is a file whose first record is its `module` declaration; it is read through a shared account, or opened as a ledger of its own:
 
 ```hueke
-module shared tokyo-trip "Tokyo trip"
+module shared "Tokyo trip"
     share @SUBANG 1
     share @AMY 1
     share @BOB 1
@@ -361,7 +361,7 @@ account-root Pay asset
 
 | Part | Written |
 | --- | --- |
-| `module shared <name> ["description"]` | The kind, `shared`; the name, which follows the rule for anchors (see [lexical.md](lexical.md), "Identifiers"); an optional description. Another kind is `parse.syntax` |
+| `module shared ["description"]` | The kind, `shared`, and an optional description. The module has no name of its own: each ledger that refers to it names it with `as` |
 | `share @<entity> <ratio>` | A member and its default ratio; may repeat. `self` is `parse.syntax` |
 
 A shared account is declared in the owner's ledger, under a root of type `shared`:
@@ -370,7 +370,7 @@ A shared account is declared in the owner's ledger, under a root of type `shared
 account-root Shared shared
 
 account Shared:tokyo-trip
-    source trips/tokyo.hueke
+    source trips/tokyo.hueke as tokyo-trip
     self @SUBANG
     map Expenses -> Expenses:Travel
     map Pay:Cash -> Assets:Cash
@@ -382,12 +382,14 @@ account Shared:tokyo-trip
 
 | Property | Written |
 | --- | --- |
-| `source <path> [as <name>]` | The group ledger's path, one token as in `include` (see "`include`"), so `as` after it is never ambiguous: `source "trips/tokyo trip.hueke" as tokyo`. The name follows the rule for anchors |
+| `source <path> as <name>` | The group ledger's path, one token as in `include` (see "`include`"), so `as` after it is never ambiguous: `source "trips/tokyo trip.hueke" as tokyo`; then the group ledger's name in this ledger, which follows the rule for anchors (see [lexical.md](lexical.md), "Identifiers") |
 | `self @<entity>` | The owner's member entity |
 | `map <group account> -> <account>` | An account mapping; may repeat |
 | `map @<group entity> -> @<entity>` | An entity mapping |
 | `map commodity <group commodity> -> <commodity>` | A commodity mapping |
 
+- A `module` declaration of another kind, or with anything but a description after the kind, is `parse.syntax`, and so is a `share` line that is not `@<entity>` and a ratio, names `self`, names a member already listed, or has a negative ratio.
+- A `source` line without `as <name>` after the path, or with anything else after it, a `self` line that is not one entity, and a `map` line that is not one of the three forms above are `parse.syntax`.
 - `source`, `self` and `map` belong only on an account whose root has type `shared`. The parser cannot know the type, so on any other account they are `shared.wrong-account` (error), found during normalization, and they are ignored; the rest of the declaration loads.
 - A transaction of the owner's ledger names a group transaction with `#shared:<name>:<anchor>` (see "Transaction headers").
 - What these mean is described in [../core/group-ledgers.md](../core/group-ledgers.md).

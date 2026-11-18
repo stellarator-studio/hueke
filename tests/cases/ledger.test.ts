@@ -16,7 +16,6 @@ describe("unsupported syntax", () => {
       "paid-by",
       '2026-10-12 "x"\n    Expenses:Food  2 NTD\n        paid-by @NAT\n    Assets:Cash\n',
     ],
-    ["a shared root", "account-root Trip shared\n"],
     [
       "a statement cycle",
       "account Liabilities:Card\n    statement\n        from 2026-01-25\n        every 1 month\n",
@@ -36,13 +35,9 @@ describe("unsupported syntax", () => {
         "    cap 1000 NTD per year\n    active 2026-07..\n    fixed 15 NTD\n    cap-group cashback\n" +
         "    Income:Cashback  amount\n    Liabilities:Card\n",
     ],
-    ["module", 'module trip shared "trip.hueke"\n'],
     ["an account active", "account Assets:Wallet\n    active 2026-01-01\n"],
     ["an account allow", "account Assets:Wallet\n    allow NTD\n"],
     ["an account deny", "account Assets:Wallet\n    deny NTD\n"],
-    ["an account source", "account Assets:Wallet\n    source bank\n"],
-    ["an account self", "account Assets:Wallet\n    self\n"],
-    ["an account map", "account Assets:Wallet\n    map Cash\n"],
   ])("%s is reported and not loaded", (_, text) => {
     const h = ledger(`${text}\n${LUNCH}`);
     expect(codes(h)).toEqual(["syntax.unsupported"]);
@@ -54,7 +49,6 @@ describe("unsupported syntax", () => {
     ["statement", "#statement:card"],
     ["fulfills", "#fulfills:order"],
     ["rule", "#rule:tax"],
-    ["shared", "#shared:trip:hotel"],
   ])("a tag with the scope %s does not load its transaction", (_, tag) => {
     for (const text of [
       `2026-10-13 * "Dinner" ${tag}\n    Expenses:Food  300 NTD\n    Assets:Cash\n`,

@@ -9,7 +9,8 @@ An **anchor** names a record: it is the record's ID, and other records refer to 
 | Anchors | `implemented` |
 | Resolving tags | `implemented` |
 | Scopes | `implemented` |
-| Scopes `rule` and `shared` | `specified` |
+| Scope `rule` | `specified` |
+| Scope `shared` | `implemented` |
 | Primary tags | `implemented` |
 | Groups | `implemented` |
 | Refunds | `implemented` |
@@ -25,7 +26,7 @@ An **anchor** names a record: it is the record's ID, and other records refer to 
 | Field | Meaning |
 | --- | --- |
 | `scope` | What the tag means, one of the scopes in "Scopes"; `tag` unless written. |
-| `ref` | The anchor it names: its `name`; for a `shared` tag, also `module`, the group ledger's name (see [group-ledgers.md](group-ledgers.md)); `period` is reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax"). |
+| `ref` | The anchor it names: its `name`; for a `shared` tag, also `module`, the group ledger's name in this ledger, its shared account's `as` (see [group-ledgers.md](group-ledgers.md)); `period` is reserved (see [diagnostics.md](diagnostics.md), "Unsupported syntax"). |
 | `target` | The ID of the record that defines the anchor; absent when no record does. |
 
 - A tag with a `target` is **anchored**; one without is **plain**. A plain tag is a tag like any other: it is in the record's tags, groups its members, and is filtered, grouped and listed exactly as an anchored one. The only difference is that no record is linked, so a listing of its group has no anchor record first.
@@ -83,7 +84,7 @@ Scopes are defined by Core; a ledger cannot add any.
 | `refund` | Transaction | An `occurred` transaction, or a posting of one | See "Refunds" |
 | `system` | Transaction, posting | Nothing | Only on generated transactions and postings, such as `system:balance` (see [transactions.md](transactions.md), "System-generated transactions") |
 | `rule` [specified] | Posting | A rule | The posting is an input of the rule (see [generators.md](generators.md), "Per-posting rules") |
-| `shared` [specified] | Transaction | A transaction of a group ledger, written `<module>:<anchor>` | The transaction is the actual payment for it (see [group-ledgers.md](group-ledgers.md), "Actual payments") |
+| `shared` | Transaction | A transaction of a group ledger, written `<name>:<anchor>` | The transaction is the actual payment for it (see [group-ledgers.md](group-ledgers.md), "Actual payments") |
 
 - A scope that Core does not define, such as `#category:camera`, is `tag.unknown-scope` (error).
 - A tag written where its scope may not stand, such as `#refund:x` on a posting, is `tag.wrong-level` (error). Only where a tag is written counts: a transaction's tags are also a posting's tags, and are not checked again there.

@@ -1,10 +1,22 @@
 // Account hierarchy (docs/core/accounts.md): an account ID names its parents, joined by `:`.
 
-import type { Id } from "./types.js";
+import type { AccountRoot, AccountType, Id } from "./types.js";
 
 /** Whether `account` is `under` or one of its sub-accounts. */
 export const inAccount = (account: Id, under: Id): boolean =>
   account === under || account.startsWith(`${under}:`);
+
+/** The type of the root an account is under; undefined when that root is not known. */
+export const rootType = (
+  roots: ReadonlyMap<string, AccountRoot>,
+  account: Id,
+): AccountType | undefined => roots.get(account.split(":")[0] ?? "")?.type;
+
+/** Whether an account is under an income or an expense root. */
+export function isPnl(roots: ReadonlyMap<string, AccountRoot>, account: Id): boolean {
+  const type = rootType(roots, account);
+  return type === "income" || type === "expense";
+}
 
 /** Where an account stands among obligations (docs/core/obligations.md, "Obligation accounts"). */
 export type ObligationPlace =

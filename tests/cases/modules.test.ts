@@ -121,6 +121,20 @@ include b.hueke
       referencedSources("2026/10.hueke", parse("2026/10.hueke", FILES["2026/10.hueke"])),
     ).toEqual({ paths: ["accounts.hueke"], errors: [] });
   });
+  it("lists the group ledgers that accounts refer to, in written order", () => {
+    const text = `include a.hueke
+account-root Shared shared
+account Shared:trip
+    source ../trips/tokyo.hueke as tokyo
+    self @AMY
+account Shared:bad
+    source https://x as bad
+include b.hueke
+`;
+    const found = referencedSources("books/main.hueke", parse("books/main.hueke", text));
+    expect(found.paths).toEqual(["books/a.hueke", "trips/tokyo.hueke", "books/b.hueke"]);
+    expect(found.errors.map((d) => d.code)).toEqual(["path.invalid"]);
+  });
 });
 
 describe("declarations in included modules", () => {

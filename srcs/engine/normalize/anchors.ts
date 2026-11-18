@@ -14,17 +14,18 @@ import type { SourcedItem } from "./shared.js";
 const SCOPES: Readonly<Record<string, readonly ("transaction" | "posting")[]>> = {
   tag: ["transaction", "posting"],
   refund: ["transaction"],
+  shared: ["transaction"],
   system: ["transaction", "posting"],
 };
 
 /**
  * Reports every definition of an anchor after the first, in source order, and returns the anchors
- * defined more than once: none of their definitions defines them. `declaredAccount` tells the
- * account declarations that took effect.
+ * defined more than once: none of their definitions defines them. Of the account declarations,
+ * only those that took effect in `accounts` define anchors.
  */
 export function duplicateAnchors(
   items: readonly SourcedItem[],
-  declaredAccount: (item: DeclarationData) => boolean,
+  accounts: ReadonlyMap<Id, Account>,
   where: Where,
   out: Diagnostic[],
 ): Set<string> {
@@ -51,11 +52,15 @@ export function duplicateAnchors(
     if (item.kind === "transaction") {
       if (item.anchor) define(item.anchor, source, item.span);
       for (const p of item.postings) if (p.anchor) define(p.anchor, source, p.span);
-    } else if (item.kind === "account" && item.anchor && declaredAccount(item))
+    } else if (item.kind === "account" && item.anchor && declaredAccount(accounts, item))
       define(item.anchor, source, item.span);
   }
   return duplicated;
 }
+
+/** Whether an account declaration is the one that took effect for its account. */
+const declaredAccount = (accounts: ReadonlyMap<Id, Account>, item: DeclarationData): boolean =>
+  accounts.get(item.args[0] ?? "")?.span === item.span;
 
 /** A record that defines an anchor. */
 type Definer =
@@ -68,13 +73,16 @@ const idOf = (d: Definer): Id =>
 
 /**
  * The transactions with their tags and primary tags checked and resolved. Tags with a scope error
- * are skipped. `decimals` is moved to the new postings.
+ * are skipped. `decimals` is moved to the new postings. `groupTransactions` holds the IDs that
+ * group transactions convert to, `<group ledger name>:<anchor>`, for `shared` tags
+ * (docs/core/group-ledgers.md, "Actual payments").
  */
 export function resolveTags(
   transactions: readonly Transaction[],
   accounts: Iterable<Account>,
   decimals: Map<Posting, number>,
   out: Diagnostic[],
+  groupTransactions: ReadonlySet<Id> = new Set(),
 ): Transaction[] {
   const definers = new Map<string, Definer>();
   for (const t of transactions) {
@@ -90,7 +98,14 @@ export function resolveTags(
   return transactions.map((t) => {
     const at = (span: SourceSpan | undefined) => (code: Code, message: string) =>
       out.push(diagnostic(code, message, t.source, span));
-    const own = resolve(t.origin?.tags ?? [], "transaction", t.id, definers, at(t.span));
+    const own = resolve(
+      t.origin?.tags ?? [],
+      "transaction",
+      t.id,
+      definers,
+      groupTransactions,
+      at(t.span),
+    );
     let primaryTarget: Id | undefined;
     let primaryDropped = false;
     const primary = t.origin?.primaryTag;
@@ -103,7 +118,7 @@ export function resolveTags(
     }
     const postings = t.postings.map((p) => {
       const tags = [
-        ...resolve(p.origin?.tags ?? [], "posting", p.id, definers, at(p.span)),
+        ...resolve(p.origin?.tags ?? [], "posting", p.id, definers, groupTransactions, at(p.span)),
         ...own,
       ];
       const posting: Posting = { ...p, tags };
@@ -130,6 +145,7 @@ function resolve(
   level: "transaction" | "posting",
   self: Id,
   definers: ReadonlyMap<string, Definer>,
+  groupTransactions: ReadonlySet<Id>,
   report: (code: Code, message: string) => void,
 ): Tag[] {
   const tags: Tag[] = [];
@@ -148,6 +164,16 @@ function resolve(
     }
     if (!levels.includes(level)) {
       report("tag.wrong-level", `${text} cannot be written on a ${level}`);
+      continue;
+    }
+    if (scope === "shared") {
+      // Only a shared tag names a module; its anchor is in that group ledger's namespace.
+      if (w.ref.module === undefined || !groupTransactions.has(key))
+        report(
+          "tag.wrong-target",
+          `${text} must name an anchored transaction of a group ledger of this ledger`,
+        );
+      else tags.push({ scope, ref: w.ref, target: key });
       continue;
     }
     const definer = definers.get(key);

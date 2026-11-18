@@ -170,22 +170,43 @@ export function indexPostings(
   return index;
 }
 
-/** Balance of `account` (with sub-accounts) in one commodity, up to the balance's point. */
+/**
+ * Whether a posting holds an amount with no finite decimal form that a split or a group ledger's
+ * conversion generated (docs/core/generators.md, "Tolerance for split fractions").
+ */
+function generatedFraction(p: Posting): boolean {
+  return (
+    p.origin === undefined &&
+    p.tags.some(
+      (t) => t.scope === "system" && (t.ref.name === "shared" || t.ref.name === "split"),
+    ) &&
+    // Values are written as decimals where they can be, so `n/d` has no finite decimal form.
+    p.amount.value.includes("/")
+  );
+}
+
+/**
+ * Balance of `account` (with sub-accounts) in one commodity, up to the balance's point, and whether
+ * the postings counted include a generated fraction, which widens the tolerance to one unit.
+ */
 export function balanceAt(
   index: PostingsByAccount,
   account: Id,
   commodity: Id,
   at: Balance["effective"],
   belongs: Belongs = () => true,
-): Rational {
+): { total: Rational; fractions: boolean } {
   let total = ZERO;
+  let fractions = false;
   for (const [posted, postings] of index) {
     if (!inAccount(posted, account)) continue;
     for (const [t, p] of postings)
-      if (p.amount.commodity === commodity && matches(p.effective, "until", at) && belongs(t, p))
+      if (p.amount.commodity === commodity && matches(p.effective, "until", at) && belongs(t, p)) {
         total = add(total, rational(p.amount.value));
+        if (!fractions && generatedFraction(p)) fractions = true;
+      }
   }
-  return total;
+  return { total, fractions };
 }
 
 /**

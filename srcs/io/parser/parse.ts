@@ -48,6 +48,7 @@ import {
   scopeError,
 } from "./identifiers.js";
 import { diagnostic, type Code } from "../../data/source/diagnostics.js";
+import { mapOf, sourceOf } from "../../data/raw/include.js";
 import { timeTextError } from "../../data/time/text.js";
 import type {
   AnchorRef,
@@ -593,9 +594,12 @@ class Builder {
     }
     const m = ctx as ModuleDeclContext;
     const description = m.STRING();
+    const kind = this.text(m.WORD().symbol);
+    if (kind !== "shared")
+      throw new BlockError("parse.syntax", `"${kind}" is not a kind of module`);
     return args(
       "module",
-      m.WORD().map((w) => this.text(w.symbol)),
+      [kind],
       description ? { description: unquote(this.text(description.symbol)) } : {},
     );
   }
@@ -769,6 +773,27 @@ class Builder {
       }
     }
     if (block.kind === "account" && key === "primary") identifier(commodityError(line.value));
+    if (block.kind === "module" && key === "share") {
+      const member = `share ${moduleShare(line.value)}`;
+      if (block.seen.has(member))
+        throw new BlockError("parse.syntax", `${member.slice(6)} is already a member`);
+      block.seen.add(member);
+    }
+    if (block.kind === "account" && key === "source") {
+      const source = sourceOf(line.value);
+      if (!source)
+        throw new BlockError(
+          "parse.syntax",
+          `source takes a path, then "as <name>": "${line.value}"`,
+        );
+      identifier(anchorError(source.as));
+    }
+    if (block.kind === "account" && key === "self") {
+      if (!line.value.startsWith("@") || /\s/.test(line.value))
+        throw new BlockError("parse.syntax", `self takes one entity: "${line.value}"`);
+      identifier(entityError(line.value.slice(1)));
+    }
+    if (block.kind === "account" && key === "map") mapping(line.value);
     if (key === "display-name" && line.value === "")
       throw new BlockError("parse.syntax", "display-name needs a text");
     if (key === "obligation" && line.value !== "receivable" && line.value !== "payable")
@@ -1215,6 +1240,38 @@ function metaValue(text: string): string {
   if (text.includes(";"))
     throw new BlockError("parse.syntax", "a Metadata value with ; must be quoted");
   return text;
+}
+
+/**
+ * `share @<entity> <ratio>` in a `module` declaration, returning `@<entity>`; the ratio is read
+ * during normalization.
+ */
+function moduleShare(value: string): string {
+  const m = /^@(\S+)\s+(\S+)$/.exec(value);
+  if (!m) throw new BlockError("parse.syntax", `share takes @<entity> and a ratio: "${value}"`);
+  identifier(entityError(m[1] ?? ""));
+  if ((m[2] ?? "").startsWith("-"))
+    throw new BlockError("parse.syntax", `a ratio cannot be negative: "${m[2] ?? ""}"`);
+  return `@${m[1] ?? ""}`;
+}
+
+/** `map <account> -> <account>`, `map @<entity> -> @<entity>`, `map commodity <code> -> <code>`. */
+function mapping(value: string): void {
+  const m = mapOf(value);
+  if (!m) throw new BlockError("parse.syntax", `map takes a name, "->" and a name: "${value}"`);
+  const { from, to } = m;
+  if (m.commodity) {
+    identifier(commodityError(from));
+    identifier(commodityError(to));
+  } else if (from.startsWith("@") || to.startsWith("@")) {
+    if (!from.startsWith("@") || !to.startsWith("@"))
+      throw new BlockError("parse.syntax", `map an entity to an entity: "${value}"`);
+    identifier(entityError(from.slice(1)));
+    identifier(entityError(to.slice(1)));
+  } else {
+    identifier(accountError(from));
+    identifier(accountError(to));
+  }
 }
 
 function unquote(s: string): string {

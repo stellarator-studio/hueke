@@ -791,7 +791,6 @@ entity NAT
 
 describe("properties that may repeat", () => {
   it.each([
-    ["map on an account", "account Assets:Wallet\n    map Cash\n    map Purse\n"],
     [
       "share on a transaction",
       '2026-10-12 "x"\n    share @NAT\n    share @AMY\n    Expenses:Food  2 NTD\n    Assets:Cash\n',
@@ -1055,5 +1054,81 @@ describe("commodity display names and formats", () => {
   });
   it("format is a keyword and cannot be a commodity code", () => {
     expect(codes(ledger("commodity format\n"))).toEqual(["parse.syntax"]);
+  });
+});
+
+describe("group ledgers and shared accounts", () => {
+  const SHARED_ACCOUNT = "account-root Shared shared\naccount Shared:trip\n";
+  it("reads a module declaration and its shares", () => {
+    const data = parse(
+      "trip.hueke",
+      'module shared "Tokyo trip"\n    share @AMY 1\n    share @BOB 0.5\n',
+    );
+    expect(data.diagnostics).toEqual([]);
+    expect(data.items[0]).toMatchObject({
+      kind: "module",
+      args: ["shared"],
+      description: "Tokyo trip",
+      lines: [
+        { kind: "property", key: "share", value: "@AMY 1" },
+        { kind: "property", key: "share", value: "@BOB 0.5" },
+      ],
+    });
+  });
+  it("reads a module declaration without a description", () => {
+    const data = parse("trip.hueke", "module shared\n    share @AMY 1\n");
+    expect(data.diagnostics).toEqual([]);
+    expect(data.items[0]).toMatchObject({ kind: "module", args: ["shared"] });
+    expect(data.items[0]).not.toHaveProperty("description");
+  });
+  it.each([
+    ["another kind", "module private\n"],
+    ["a module with a name", 'module shared tokyo-trip "Tokyo trip"\n'],
+    ["a module with a name and no description", "module shared trip\n"],
+    ["a module with something after the description", 'module shared "Tokyo trip" trip\n'],
+    ["share self", "module shared\n    share self 1\n"],
+    ["share without a ratio", "module shared\n    share @AMY\n"],
+    ["a negative ratio", "module shared\n    share @AMY -1\n"],
+    ["a member twice", "module shared\n    share @AMY 1\n    share @AMY 2\n"],
+    ["source without as", `${SHARED_ACCOUNT}    source trip.hueke\n`],
+    ["source with as and no name", `${SHARED_ACCOUNT}    source trip.hueke as\n`],
+    [
+      "source with something else after the path",
+      `${SHARED_ACCOUNT}    source trip.hueke for tokyo\n`,
+    ],
+    ["source with a name that is not an anchor", `${SHARED_ACCOUNT}    source trip.hueke as a:b\n`],
+    ["self without @", `${SHARED_ACCOUNT}    self AMY\n`],
+    ["self with two entities", `${SHARED_ACCOUNT}    self @AMY @BOB\n`],
+    ["map without ->", `${SHARED_ACCOUNT}    map Pay Assets:Cash\n`],
+    ["map from an entity to an account", `${SHARED_ACCOUNT}    map @AMY -> Assets:Cash\n`],
+    [
+      "map commodity with a code that is not one",
+      `${SHARED_ACCOUNT}    map commodity 1NTD -> NTD\n`,
+    ],
+  ])("rejects %s", (_, text) => {
+    expect(parse("main.hueke", text).diagnostics.map((d) => d.code)).toEqual(["parse.syntax"]);
+  });
+  it.each([
+    ["a path", "source trips/tokyo.hueke as tokyo", { path: "trips/tokyo.hueke", as: "tokyo" }],
+    [
+      "a quoted path",
+      'source "trips/tokyo trip.hueke" as tokyo',
+      { path: "trips/tokyo trip.hueke", as: "tokyo" },
+    ],
+  ])("reads source with %s", (_, line, expected) => {
+    const h = ledger(`${SHARED_ACCOUNT}    ${line}\n    self @AMY\n`, {
+      prelude: "option timezone UTC",
+    });
+    expect(h.accounts.find((a) => a.id === "Shared:trip")?.shared).toMatchObject({
+      source: expected.path,
+      as: expected.as,
+    });
+  });
+  it("accepts every kind of map, repeated", () => {
+    const data = parse(
+      "main.hueke",
+      `${SHARED_ACCOUNT}    map Pay -> Assets:Cash\n    map Food -> Expenses:Food\n    map @AMY -> @AMY_CHEN\n    map commodity TWD -> NTD\n`,
+    );
+    expect(data.diagnostics).toEqual([]);
   });
 });

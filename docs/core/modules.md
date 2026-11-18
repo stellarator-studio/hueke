@@ -8,7 +8,7 @@ A ledger may span several files. Each file is one **module**, identified by a **
 | --- | --- |
 | Modules and `include` | `implemented` |
 | Declarations in included modules | `implemented` |
-| Referenced modules | `specified` |
+| Referenced modules | `implemented` |
 | Paths | `implemented` |
 
 ## Concepts
@@ -52,7 +52,7 @@ Status: `implemented`
 
 ### Referenced modules
 
-Status: `specified`
+Status: `implemented`
 
 A module whose first record is a `module` declaration is a separate ledger of a given kind. The only kind is `shared`, a group ledger (see [group-ledgers.md](group-ledgers.md)).
 
@@ -61,9 +61,10 @@ A module whose first record is a `module` declaration is a separate ledger of a 
 - Its records reach the ledger only by conversion, through the mappings written on the record that refers to it.
 - It may not refer to other modules: `include` or a shared account in it is `module.forbidden-record`, so referenced modules never nest.
 - A referenced module without a `module` declaration as its first record, or with more than one, is `module.missing-declaration` (error), and it is not loaded.
-- An included module with a `module` declaration is `include.module-file` (error): the `include` is ignored. A `module` declaration in the root is `module.forbidden-record`: it is ignored, and the root loads as a ledger.
-- Each module appears once in a ledger: a module both included and referred to, or referred to by two shared accounts, is `module.duplicate`, and neither the `include` nor the `source` that names it takes effect.
-- A path that resolves to a module that was not loaded is `shared.unknown-module`, reported on the shared account.
+- An included module with a `module` declaration is `include.module-file` (error): the `include` is ignored.
+- A root whose first record is a `module` declaration loads as that module on its own; for a group ledger, see [group-ledgers.md](group-ledgers.md), "A group ledger on its own". Any other `module` declaration in the root is `module.forbidden-record`: it is ignored.
+- Each module appears once in a ledger: a module both included and referred to, or referred to by two shared accounts, is `module.duplicate`, reported on the `include` line or on the later `source` line, and neither the `include` nor the `source` that names it takes effect.
+- A path that resolves to a module that was not loaded is `shared.unknown-module`, reported on the shared account's `source` line.
 
 ### Paths
 
@@ -71,7 +72,7 @@ Status: `implemented`
 
 Paths are text only; Core does not know whether they are disk paths, vault paths or URLs. Logical paths are described under "Concepts".
 
-**Paths written in a ledger** (in `include`, and in a shared account's `source` [specified])
+**Paths written in a ledger** (in `include`, and in a shared account's `source`)
 
 | Written | Resolves to |
 | --- | --- |
@@ -85,7 +86,7 @@ Paths are text only; Core does not know whether they are disk paths, vault paths
 
 ## API
 
-- `referencedSources(path, module)` returns `paths`, the logical paths the module includes, and those its shared accounts refer to [specified], resolved, in written order and with repeats kept; and `errors`, the path errors, each a diagnostic (`path.invalid` or `path.outside-root`) on its `include` or `source` line.
+- `referencedSources(path, module)` returns `paths`, the logical paths the module includes, and those its accounts' `source` lines refer to, resolved, in written order and with repeats kept; and `errors`, the path errors, each a diagnostic (`path.invalid` or `path.outside-root`) on its `include` or `source` line.
 - `resolvePath(from, written)` resolves a path written in the module at `from`. It returns either `path`, the logical path, or `error`, the code `path.invalid` or `path.outside-root`, with `message`. It does not throw.
 
 ## Examples

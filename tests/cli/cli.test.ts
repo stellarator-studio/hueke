@@ -118,6 +118,24 @@ describe("loading", () => {
       "9,000 NTD  Bank (total)",
     );
   });
+  const SHARED =
+    "account-root Shared shared\naccount Shared:trip\n    source trips/trip.hueke as trip\n" +
+    "    self @ME\n    map Expenses -> Expenses:Travel\n    map Pay -> Liabilities:Card\n";
+  it("reads the group ledgers that shared accounts refer to", () => {
+    const files = {
+      "/ledger/main.hueke": `${MAIN}${SHARED}`,
+      "/ledger/trips/trip.hueke":
+        "module shared\n    share @ME 1\n    share @AMY 1\naccount-root Pay asset\n" +
+        '2026-10-20 * "Dinner"\n    Expenses:Food  1000 NTD\n    Pay:Card  -1000 NTD @ME\n',
+    };
+    const r = hueke("balance Shared --file main.hueke --at 2026-10-31", files);
+    expect(r).toMatchObject({ status: 0, stderr: "" });
+    expect(r.stdout).toContain("500 NTD    Shared:trip");
+    const missing = hueke("check --file main.hueke", { "/ledger/main.hueke": `${MAIN}${SHARED}` });
+    expect(missing.stdout).toBe(
+      "main.hueke:21:5: error shared.unknown-module: Shared:trip: trips/trip.hueke is not loaded\n",
+    );
+  });
   it("leaves out an included file it cannot read", () => {
     const files = { "/ledger/main.hueke": `${MAIN}include missing.hueke\n` };
     const r = hueke("balance Bank --file main.hueke --at 2026-10-31", files);
