@@ -136,6 +136,26 @@ describe("loading", () => {
       "main.hueke:21:5: error shared.unknown-module: Shared:trip: trips/trip.hueke is not loaded\n",
     );
   });
+  it("shows the zone of times read in another zone than the ledger's", () => {
+    const files = {
+      "/ledger/main.hueke": `${MAIN}${SHARED}`,
+      "/ledger/trips/trip.hueke":
+        "module shared\n    share @ME 1\n    share @AMY 1\n" +
+        "option timezone Asia/Tokyo\naccount-root Pay asset\n" +
+        '2026-10-20T19:00 * "Dinner"\n    Expenses:Food  1000 NTD\n    Pay:Card  -1000 NTD @ME\n' +
+        '2026-10-21 * "Lunch"\n    Expenses:Food  600 NTD\n    Pay:Card  -600 NTD @AMY\n',
+    };
+    const r = hueke("query Shared --file main.hueke --format csv", files);
+    expect(r).toMatchObject({ status: 0, stderr: "" });
+    expect(r.stdout.split("\n").map((l) => l.split(",")[0])).toEqual([
+      "date",
+      "2026-10-20T19:00[Asia/Tokyo]",
+      "2026-10-21[Asia/Tokyo]",
+      "",
+    ]);
+    const own = hueke("query Bank:Checking --file main.hueke --format csv", files);
+    expect(own.stdout).not.toContain("[");
+  });
   it("leaves out an included file it cannot read", () => {
     const files = { "/ledger/main.hueke": `${MAIN}include missing.hueke\n` };
     const r = hueke("balance Bank --file main.hueke --at 2026-10-31", files);

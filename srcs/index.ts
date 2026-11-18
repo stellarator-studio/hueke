@@ -10,6 +10,7 @@ export { inAccount } from "./data/model/account.js";
 export { timeOnAxis } from "./data/model/axis.js";
 export { formatText, valueText } from "./data/model/display.js";
 export { compareText } from "./data/model/order.js";
+export { timeText } from "./data/time/text.js";
 export { compareValues, multiplyValues, negateValue, sumValues } from "./data/values/decimal.js";
 export { parse } from "./io/parser/parse.js";
 export { serialize } from "./io/format/serialize.js";

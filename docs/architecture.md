@@ -141,7 +141,7 @@ Each document drives the code and tests listed here. When a document changes, th
 | `parse` | [core/ledger.md](core/ledger.md), "API" |
 | `Hueke` (`load`, `init`), `check`, `position`, `anchorKey`, `compareText` | [core/ledger.md](core/ledger.md), "API" |
 | `resolvePath`, `referencedSources` | [core/modules.md](core/modules.md), "API" |
-| `timeOnAxis` | [core/time.md](core/time.md), "API" |
+| `timeOnAxis`, `timeText` | [core/time.md](core/time.md), "API" |
 | `inAccount` | [core/accounts.md](core/accounts.md), "API" |
 | `valueText`, `formatText` | [core/commodities.md](core/commodities.md), "API" |
 | `sumValues`, `multiplyValues`, `negateValue`, `compareValues` | [core/values.md](core/values.md), "API" |

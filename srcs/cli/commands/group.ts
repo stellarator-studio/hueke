@@ -1,7 +1,7 @@
 // `hueke group`: an anchor's record, then the members of the group of a tag or a primary tag
 // (docs/core/anchors.md, "Groups").
 
-import { query, type Hueke, type Query } from "../../index.js";
+import { query, timeText, type Hueke, type Query, type TimeValue } from "../../index.js";
 import { UsageError, type CliIO } from "../io.js";
 import { csv, table } from "../output.js";
 import type { Command, Options } from "./command.js";
@@ -33,12 +33,13 @@ export const groupCommand: Command = {
     } else
       throw new UsageError(`${written} is not a tag (#scope:anchor) or a primary tag (^anchor)`);
 
+    const time = (t: TimeValue): string => timeText(t, hueke.settings.timezone);
     const lines: Line[] = [];
-    const record = anchorRecord(hueke, anchor);
+    const record = anchorRecord(hueke, anchor, time);
     if (record) lines.push(record);
     for (const t of members)
       if (!(record?.[2] === "transaction" && record[3] === t.id))
-        lines.push(["member", t.effective.literal, "transaction", t.id, t.description ?? ""]);
+        lines.push(["member", time(t.effective), "transaction", t.id, t.description ?? ""]);
     io.stdout(
       options.format === "csv"
         ? csv(["role", "date", "kind", "id", "description"], lines)
@@ -49,16 +50,20 @@ export const groupCommand: Command = {
 };
 
 /** The record that defines the anchor: occurred first, then planned or cancelled, then accounts. */
-function anchorRecord(hueke: Hueke, anchor: string): Line | undefined {
+function anchorRecord(
+  hueke: Hueke,
+  anchor: string,
+  time: (t: TimeValue) => string,
+): Line | undefined {
   for (const q of [query(hueke).ids(anchor), query(hueke).ids(anchor).occurrence()]) {
     const [posting] = q.postings();
     if (posting?.id === anchor) {
       const t = hueke.transactions.find((x) => x.id === posting.transaction);
-      return ["anchor", posting.effective.literal, "posting", anchor, t?.description ?? ""];
+      return ["anchor", time(posting.effective), "posting", anchor, t?.description ?? ""];
     }
     const [t] = q;
     if (t?.id === anchor)
-      return ["anchor", t.effective.literal, "transaction", anchor, t.description ?? ""];
+      return ["anchor", time(t.effective), "transaction", anchor, t.description ?? ""];
   }
   const account = hueke.accounts.find((a) => a.anchor === anchor);
   return account && ["anchor", "", "account", account.id, ""];
