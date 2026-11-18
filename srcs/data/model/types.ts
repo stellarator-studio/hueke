@@ -72,6 +72,8 @@ export interface Account {
 export interface SharedAccount {
   readonly source: string; // the path as written
   readonly as: string;
+  /** Written `as ^<name>`: converted transactions take the primary tag `^shared:<name>`. */
+  readonly primary?: true;
   readonly self: Id;
   /** Group accounts to accounts of this ledger, in written order. */
   readonly accountMap: readonly (readonly [Id, Id])[];

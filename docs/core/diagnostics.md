@@ -129,7 +129,7 @@ Status: `implemented`
 | `module.name-conflict` | error | Two group ledgers have the same name in a ledger | Neither converts | `implemented` |
 | `shared.wrong-account` | error | `source`, `self` or `map` on an account whose type is not `shared` | Skipped: those properties are ignored | `implemented` |
 | `shared.missing-source` | error | A shared account has no `source` or no `self` (see [group-ledgers.md](group-ledgers.md), "Shared accounts") | The account loads; nothing converts | `implemented` |
-| `shared.unknown-module` | error | A shared account's `source` names no loaded group ledger, or `self` is not one of its members | The account loads; nothing converts | `implemented` |
+| `shared.unknown-module` | error | A shared account's `source` names no loaded group ledger, or `self` is not one of its members; or `%shared:<name>` names no group ledger of this ledger (see [anchors.md](anchors.md), "Scoped anchors") | The account loads; nothing converts. For `%shared:<name>`, the transaction loads and still defines the anchor | `implemented` |
 | `shared.invalid-split` | error | A split in a group ledger has `self`, a table, `paid-by` or `->` | Skipped: the posting is shared by the default ratios | `implemented` |
 | `shared.missing-member` | error | A member-money posting in a group ledger names no entity, or more than one | The group transaction does not convert | `implemented` |
 | `shared.unknown-member` | error | A member-money posting, or a split in a group ledger, names an entity that is not a member | The group transaction does not convert | `implemented` |

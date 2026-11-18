@@ -70,7 +70,7 @@ Status: `implemented`
 | `module` | A group ledger's declaration: its description and members | [../core/group-ledgers.md](../core/group-ledgers.md) |
 | `split`, `paid-by` under a posting [specified] | Shares of the posting, and the postings they generate | [../core/generators.md](../core/generators.md) |
 | `share`, `into` under a transaction [specified] | A split table | [../core/generators.md](../core/generators.md), "Split tables" |
-| `#rule:<id>` [specified], `#shared:<name>:<anchor>` | An input of a rule; the actual payment for a group transaction | [../core/anchors.md](../core/anchors.md), "Scopes" |
+| `#rule:<id>` [specified], `#shared:<name>:<anchor>`, `%shared:<name>`, `^shared:<name>` | An input of a rule; the actual payment for a group transaction; a group ledger as a whole | [../core/anchors.md](../core/anchors.md), "Scopes" |
 | A transaction header | A transaction; one with no postings is valid | [../core/transactions.md](../core/transactions.md) |
 | `EFF[=ACC]` on a header, `[EFF]` on a posting | Effective and accounting times | [../core/time.md](../core/time.md), "Time axes" |
 | A header mark, a posting's `*` | Occurrence and status | [../core/transactions.md](../core/transactions.md), "Status and occurrence" |

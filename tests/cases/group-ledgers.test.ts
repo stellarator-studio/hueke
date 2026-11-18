@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { balance, query } from "../../srcs/index.js";
 import type { Hueke, Transaction } from "../../srcs/index.js";
-import { balanceOf, codes, diagnostics, modules, rows } from "./ledger.js";
+import { balanceOf, codes, descriptions, diagnostics, modules, rows } from "./ledger.js";
 
 const GROUP = `module shared "Tokyo trip"
     share @SUBANG 1
@@ -50,12 +50,14 @@ account-root Bank asset
 account-root Shared shared
 
 account Shared:tokyo-trip
-    source trips/tokyo.hueke as tokyo-trip
+    source trips/tokyo.hueke as ^tokyo-trip
     self @SUBANG
 ${MAPS}    pad-account Expenses:Rounding
 `;
+/** The trip as an event of SUBANG's ledger, which the group tags link to. */
+const EVENT = '2026-10-18..2026-10-20 %shared:tokyo-trip "Tokyo trip" #travel\n';
 const CLOSE = "2026-11-01 balance Shared:tokyo-trip 0 NTD pad 3 NTD\n";
-const MAIN = `${OPEN}\n${CLOSE}`;
+const MAIN = `${OPEN}\n${EVENT}\n${CLOSE}`;
 
 const trip = (main = OPEN, group = GROUP, more: Record<string, string> = {}): Hueke =>
   modules({ "main.hueke": main, "trips/tokyo.hueke": group, ...more });
@@ -66,18 +68,22 @@ const postings = (ts: Iterable<Transaction>): string[] =>
     (t) => `${t.id}: ${t.postings.map((p) => `${p.account} ${p.amount.value}`).join(", ")}`,
   );
 const converted = (h: Hueke): string[] =>
-  postings(h.transactions.filter((t) => t.tags.some((g) => g.ref.name === "shared")));
+  postings(
+    h.transactions.filter((t) =>
+      t.tags.some((g) => g.scope === "system" && g.ref.name === "shared"),
+    ),
+  );
 
 describe("the example", () => {
   it("converts each group transaction", () => {
     const h = trip(MAIN);
     expect(codes(h)).toEqual([]);
     expect(converted(h)).toEqual([
-      "tokyo-trip:hotel: Expenses:Travel:Lodging 10000/3, Liabilities:Card -10000, Shared:tokyo-trip 20000/3",
-      "tokyo-trip:dinner: Expenses:Travel:Food 1500, Assets:Cash -3000, Shared:tokyo-trip 1500",
-      "tokyo-trip:taxi: Expenses:Travel:Transport 200, Shared:tokyo-trip -200",
-      "tokyo-trip:pay-amy: Bank:Checking 4430, Shared:tokyo-trip -4430",
-      "tokyo-trip:pay-bob: Bank:Checking 3540, Shared:tokyo-trip -3540",
+      "shared:tokyo-trip:hotel: Expenses:Travel:Lodging 10000/3, Liabilities:Card -10000, Shared:tokyo-trip 20000/3",
+      "shared:tokyo-trip:dinner: Expenses:Travel:Food 1500, Assets:Cash -3000, Shared:tokyo-trip 1500",
+      "shared:tokyo-trip:taxi: Expenses:Travel:Transport 200, Shared:tokyo-trip -200",
+      "shared:tokyo-trip:pay-amy: Bank:Checking 4430, Shared:tokyo-trip -4430",
+      "shared:tokyo-trip:pay-bob: Bank:Checking 3540, Shared:tokyo-trip -3540",
     ]);
   });
   it("gives the position, closed by a pad with written padding", () => {
@@ -111,7 +117,7 @@ describe("the example", () => {
   });
   it("keeps times, description and source, with system:shared", () => {
     const h = trip(MAIN);
-    const hotel = h.transactions.find((t) => t.id === "tokyo-trip:hotel");
+    const hotel = h.transactions.find((t) => t.id === "shared:tokyo-trip:hotel");
     expect(hotel?.description).toBe("Hotel");
     expect(hotel?.source).toBe("trips/tokyo.hueke");
     expect(hotel?.status).toBe("none");
@@ -120,17 +126,17 @@ describe("the example", () => {
     expect(hotel?.origin).toBeUndefined();
     expect(hotel?.tags).toEqual([{ scope: "system", ref: { name: "shared" } }]);
     expect(hotel?.postings.map((p) => p.id)).toEqual([
-      "tokyo-trip:hotel.1",
-      "tokyo-trip:hotel.2",
-      "tokyo-trip:hotel.3",
+      "shared:tokyo-trip:hotel.1",
+      "shared:tokyo-trip:hotel.2",
+      "shared:tokyo-trip:hotel.3",
     ]);
     const ids = [...query(h).accounts("Shared:tokyo-trip")].map((t) => t.id);
     expect(ids).toEqual([
-      "tokyo-trip:hotel",
-      "tokyo-trip:dinner",
-      "tokyo-trip:taxi",
-      "tokyo-trip:pay-amy",
-      "tokyo-trip:pay-bob",
+      "shared:tokyo-trip:hotel",
+      "shared:tokyo-trip:dinner",
+      "shared:tokyo-trip:taxi",
+      "shared:tokyo-trip:pay-amy",
+      "shared:tokyo-trip:pay-bob",
       "~balance.1",
     ]);
   });
@@ -155,6 +161,7 @@ describe("the example", () => {
     expect(a?.shared).toEqual({
       source: "trips/tokyo.hueke",
       as: "tokyo-trip",
+      primary: true,
       self: "SUBANG",
       accountMap: [
         ["Expenses", "Expenses:Travel"],
@@ -174,7 +181,7 @@ describe("the example's changes", () => {
     const found = diagnostics(h, "shared.unmapped-account");
     expect(found.map((d) => d.source)).toEqual(["trips/tokyo.hueke", "trips/tokyo.hueke"]);
     expect(found.map((d) => d.message.split(":")[0])).toEqual(["pay-amy", "pay-bob"]);
-    expect(h.transactions.map((t) => t.id)).not.toContain("tokyo-trip:pay-amy");
+    expect(h.transactions.map((t) => t.id)).not.toContain("shared:tokyo-trip:pay-amy");
   });
   it("a pad on the shared account must write its padding", () => {
     const h = trip(
@@ -203,41 +210,45 @@ describe("actual payments", () => {
     const h = trip(`${OPEN}${PAID}`);
     expect(codes(h)).toEqual([]);
     expect(converted(h)[0]).toBe(
-      "tokyo-trip:hotel: Expenses:Travel:Lodging 10000/3, Shared:tokyo-trip -10000/3",
+      "shared:tokyo-trip:hotel: Expenses:Travel:Lodging 10000/3, Shared:tokyo-trip -10000/3",
     );
     expect(balanceOf(h, "Liabilities:Card", "2026-10-19")).toBe("0");
     expect(balanceOf(h, "Liabilities:Card", "2026-10-20")).toBe("-10000");
     expect(balanceOf(h, "Shared:tokyo-trip", "2026-10-20")).toBe("23900/3");
     const payment = h.transactions.find((t) => t.description === "Hotel" && t.origin);
     expect(payment?.tags).toEqual([
-      { scope: "shared", ref: { module: "tokyo-trip", name: "hotel" }, target: "tokyo-trip:hotel" },
+      {
+        scope: "shared",
+        ref: { scope: "shared", module: "tokyo-trip", name: "hotel" },
+        target: "shared:tokyo-trip:hotel",
+      },
     ]);
   });
   it("pairs the converted transaction with its payment", () => {
     const h = trip(`${OPEN}${PAID}${PAID.replace('"Hotel"', '"Hotel again"')}`);
     expect(codes(h)).toEqual(["shared.multiple-replacement"]);
     const of = (id: string): Transaction | undefined => h.transactions.find((t) => t.id === id);
-    expect(of("tokyo-trip:hotel")?.payment).toBe("~1");
-    expect(of("~1")?.pays).toBe("tokyo-trip:hotel");
+    expect(of("shared:tokyo-trip:hotel")?.payment).toBe("~1");
+    expect(of("~1")?.pays).toBe("shared:tokyo-trip:hotel");
     expect(of("~2")).not.toHaveProperty("pays");
-    expect(of("tokyo-trip:dinner")).not.toHaveProperty("payment");
+    expect(of("shared:tokyo-trip:dinner")).not.toHaveProperty("payment");
   });
   it("leaves a payment unpaired when nothing of its group transaction converts", () => {
     const h = trip(
       `${OPEN}\n2026-10-30 * "From BOB" #shared:tokyo-trip:pay-bob\n    Bank:Checking  3540 NTD\n    Shared:tokyo-trip  -3540 NTD\n`,
     );
     expect(codes(h)).toEqual([]);
-    expect(h.transactions.some((t) => t.id === "tokyo-trip:pay-bob")).toBe(false);
+    expect(h.transactions.some((t) => t.id === "shared:tokyo-trip:pay-bob")).toBe(false);
     expect(h.transactions.find((t) => t.id === "~1")).not.toHaveProperty("pays");
   });
   it("must match the owner's money", () => {
     const h = trip(`${OPEN}${PAID.replaceAll("10000 NTD", "9000 NTD")}`);
     expect(codes(h)).toEqual(["shared.payment-mismatch"]);
     expect(diagnostics(h, "shared.payment-mismatch")[0]?.message).toBe(
-      "~1 pays 9000 NTD on Shared:tokyo-trip; it should pay 10000 NTD, the owner's money in tokyo-trip:hotel",
+      "~1 pays 9000 NTD on Shared:tokyo-trip; it should pay 10000 NTD, the owner's money in shared:tokyo-trip:hotel",
     );
     expect(converted(h)[0]).toBe(
-      "tokyo-trip:hotel: Expenses:Travel:Lodging 10000/3, Shared:tokyo-trip -10000/3",
+      "shared:tokyo-trip:hotel: Expenses:Travel:Lodging 10000/3, Shared:tokyo-trip -10000/3",
     );
   });
   it.each([
@@ -284,14 +295,14 @@ describe("actual payments", () => {
     );
     const h = trip(`${OPEN}${PAID.replaceAll("10000 NTD", "1500000 KRW")}`, group);
     expect(diagnostics(h, "shared.payment-mismatch")[0]?.message).toBe(
-      "~1 pays 0 NTD, 1500000 KRW on Shared:tokyo-trip; it should pay 10000 NTD, 0 KRW, the owner's money in tokyo-trip:hotel",
+      "~1 pays 0 NTD, 1500000 KRW on Shared:tokyo-trip; it should pay 10000 NTD, 0 KRW, the owner's money in shared:tokyo-trip:hotel",
     );
   });
   it("needs no mapping for the money it replaces", () => {
     const h = trip(`${OPEN.replace("    map Pay:Card -> Liabilities:Card\n", "")}${PAID}`);
     expect(codes(h)).toEqual([]);
     expect(converted(h)[0]).toBe(
-      "tokyo-trip:hotel: Expenses:Travel:Lodging 10000/3, Shared:tokyo-trip -10000/3",
+      "shared:tokyo-trip:hotel: Expenses:Travel:Lodging 10000/3, Shared:tokyo-trip -10000/3",
     );
   });
   it("is checked when nothing converts", () => {
@@ -351,13 +362,13 @@ account-root Other shared
   it("takes the ledger's settings it does not write", () => {
     const h = trip(OPEN, GROUP.replace("option timezone Asia/Taipei\n", ""));
     expect(codes(h)).toEqual([]);
-    expect(h.transactions.find((t) => t.id === "tokyo-trip:hotel")?.effective.start).toBe(
+    expect(h.transactions.find((t) => t.id === "shared:tokyo-trip:hotel")?.effective.start).toBe(
       "2026-10-17T16:00Z",
     );
   });
   it("reads times in its own time zone", () => {
     const h = trip(OPEN, GROUP.replace("option timezone Asia/Taipei", "option timezone UTC"));
-    expect(h.transactions.find((t) => t.id === "tokyo-trip:hotel")?.effective.start).toBe(
+    expect(h.transactions.find((t) => t.id === "shared:tokyo-trip:hotel")?.effective.start).toBe(
       "2026-10-18T00:00Z",
     );
   });
@@ -381,7 +392,7 @@ account-root Other shared
     const h = trip(OPEN, GROUP.replace("Pay:Cash            -600 NTD @AMY", line));
     expect(codes(h)).toEqual([code]);
     expect(diagnostics(h, code).map((d) => d.source)).toEqual(["trips/tokyo.hueke"]);
-    expect(h.transactions.map((t) => t.id)).not.toContain("tokyo-trip:taxi");
+    expect(h.transactions.map((t) => t.id)).not.toContain("shared:tokyo-trip:taxi");
   });
   it("says someone is not a member of the group, whatever this ledger names it", () => {
     const h = trip(OPEN, GROUP.replace("-600 NTD @AMY", "-600 NTD @CAROL"));
@@ -397,13 +408,13 @@ account-root Other shared
         "Expenses:Transport   600 NTD\n        split @AMY",
       ),
     );
-    expect(noShare.transactions.map((t) => t.id)).not.toContain("tokyo-trip:taxi");
+    expect(noShare.transactions.map((t) => t.id)).not.toContain("shared:tokyo-trip:taxi");
   });
   it("shares by amounts and ratios in a split", () => {
     const h = trip(OPEN, GROUP.replace("split @SUBANG @AMY", "split @AMY 1000 @SUBANG *3 @BOB"));
     expect(codes(h)).toEqual([]);
     expect(converted(h)[1]).toBe(
-      "tokyo-trip:dinner: Expenses:Travel:Food 1500, Assets:Cash -3000, Shared:tokyo-trip 1500",
+      "shared:tokyo-trip:dinner: Expenses:Travel:Food 1500, Assets:Cash -3000, Shared:tokyo-trip 1500",
     );
   });
   it.each([
@@ -414,13 +425,13 @@ account-root Other shared
     const h = trip(OPEN, GROUP.replace("split @SUBANG @AMY", split));
     expect(codes(h)).toEqual([code]);
     expect(converted(h)[1]).toBe(
-      "tokyo-trip:dinner: Expenses:Travel:Food 1000, Assets:Cash -3000, Shared:tokyo-trip 2000",
+      "shared:tokyo-trip:dinner: Expenses:Travel:Food 1000, Assets:Cash -3000, Shared:tokyo-trip 2000",
     );
   });
   it("does not convert a split naming someone not a member", () => {
     const h = trip(OPEN, GROUP.replace("split @SUBANG @AMY", "split @SUBANG @CAROL"));
     expect(codes(h)).toEqual(["shared.unknown-member"]);
-    expect(h.transactions.map((t) => t.id)).not.toContain("tokyo-trip:dinner");
+    expect(h.transactions.map((t) => t.id)).not.toContain("shared:tokyo-trip:dinner");
   });
   it("converts nothing when the default ratios add up to zero", () => {
     const group = GROUP.replace(/share @(\w+) 1/g, "share @$1 0");
@@ -431,7 +442,28 @@ account-root Other shared
   });
   it("numbers group transactions without an anchor", () => {
     const h = trip(OPEN, GROUP.replace("%taxi ", ""));
-    expect(h.transactions.map((t) => t.id)).toContain("tokyo-trip:~1");
+    expect(h.transactions.map((t) => t.id)).toContain("shared:tokyo-trip:~1");
+  });
+  it("defines no shared anchor of its own", () => {
+    const h = trip(OPEN, GROUP.replace('%taxi "Taxi"', '%shared:taxi "Taxi"'));
+    expect(codes(h)).toEqual(["shared.unknown-module"]);
+    expect(diagnostics(h, "shared.unknown-module").map((d) => d.source)).toEqual([
+      "trips/tokyo.hueke",
+    ]);
+    const ids = h.transactions.map((t) => t.id);
+    expect(ids).toContain("shared:tokyo-trip:~1");
+    expect(ids.filter((id) => id.includes("taxi"))).toEqual([]);
+  });
+  it.each([
+    ["a tag", '"Taxi" #shared:tokyo-trip'],
+    ["a primary tag", '"Taxi" ^shared:tokyo-trip'],
+  ])("cannot name a group ledger with %s", (_, header) => {
+    const h = trip(OPEN, GROUP.replace('"Taxi"', header));
+    expect(codes(h)).toEqual(["tag.wrong-target"]);
+    expect(diagnostics(h, "tag.wrong-target").map((d) => d.source)).toEqual(["trips/tokyo.hueke"]);
+    const taxi = h.transactions.find((t) => t.id === "shared:tokyo-trip:taxi");
+    expect(taxi?.primaryTag).toBe("shared:tokyo-trip");
+    expect(taxi?.tags).toEqual([{ scope: "system", ref: { name: "shared" } }]);
   });
   it("keeps its anchors in a namespace of its own", () => {
     const h = trip(
@@ -464,7 +496,7 @@ describe("shared accounts", () => {
       ),
     );
     expect(converted(h)[1]).toBe(
-      "tokyo-trip:dinner: Expenses:Travel:Food 1500, Assets:Cash -3000, Shared:tokyo-trip 1500",
+      "shared:tokyo-trip:dinner: Expenses:Travel:Food 1500, Assets:Cash -3000, Shared:tokyo-trip 1500",
     );
   });
   it("carries over the rest of the group account's name", () => {
@@ -473,11 +505,11 @@ describe("shared accounts", () => {
     );
     expect(codes(h)).toEqual([]);
     expect(converted(h)).toEqual([
-      "tokyo-trip:hotel: Expenses:Travel:Lodging 10000/3, Assets:Pay:Card -10000, Shared:tokyo-trip 20000/3",
-      "tokyo-trip:dinner: Expenses:Travel:Food 1500, Assets:Pay:Cash -3000, Shared:tokyo-trip 1500",
-      "tokyo-trip:taxi: Expenses:Travel:Transport 200, Shared:tokyo-trip -200",
-      "tokyo-trip:pay-amy: Assets:Pay:Transfer 4430, Shared:tokyo-trip -4430",
-      "tokyo-trip:pay-bob: Assets:Pay:Transfer 3540, Shared:tokyo-trip -3540",
+      "shared:tokyo-trip:hotel: Expenses:Travel:Lodging 10000/3, Assets:Pay:Card -10000, Shared:tokyo-trip 20000/3",
+      "shared:tokyo-trip:dinner: Expenses:Travel:Food 1500, Assets:Pay:Cash -3000, Shared:tokyo-trip 1500",
+      "shared:tokyo-trip:taxi: Expenses:Travel:Transport 200, Shared:tokyo-trip -200",
+      "shared:tokyo-trip:pay-amy: Assets:Pay:Transfer 4430, Shared:tokyo-trip -4430",
+      "shared:tokyo-trip:pay-bob: Assets:Pay:Transfer 3540, Shared:tokyo-trip -3540",
     ]);
   });
   it("maps entities and commodities", () => {
@@ -491,27 +523,27 @@ describe("shared accounts", () => {
       ),
     );
     expect(codes(h)).toEqual([]);
-    const hotel = h.transactions.find((t) => t.id === "tokyo-trip:hotel");
+    const hotel = h.transactions.find((t) => t.id === "shared:tokyo-trip:hotel");
     expect(hotel?.postings.map((p) => p.amount.commodity)).toEqual(["TWD", "TWD", "TWD"]);
     expect(hotel?.postings[1]?.refs).toEqual([{ role: "person", entity: "ME" }]);
   });
   it("names the group ledger with as", () => {
-    const h = trip(OPEN.replace("as tokyo-trip", "as tokyo"), GROUP);
+    const h = trip(OPEN.replace("as ^tokyo-trip", "as ^tokyo"), GROUP);
     expect(codes(h)).toEqual([]);
-    expect(h.transactions.map((t) => t.id)).toContain("tokyo:hotel");
-    expect(h.transactions.map((t) => t.id)).not.toContain("tokyo-trip:hotel");
+    expect(h.transactions.map((t) => t.id)).toContain("shared:tokyo:hotel");
+    expect(h.transactions.map((t) => t.id)).not.toContain("shared:tokyo-trip:hotel");
     expect(h.groups[0]?.name).toBe("tokyo");
   });
   it("lets each ledger name the same group ledger its own way", () => {
     const amy = trip(
-      OPEN.replace("as tokyo-trip", "as japan").replace("self @SUBANG", "self @AMY"),
+      OPEN.replace("as ^tokyo-trip", "as ^japan").replace("self @SUBANG", "self @AMY"),
     );
     expect(amy.groups.map((g) => g.name)).toEqual(["japan"]);
-    expect(amy.transactions.map((t) => t.id)).toContain("japan:taxi");
+    expect(amy.transactions.map((t) => t.id)).toContain("shared:japan:taxi");
     expect(trip(OPEN).groups.map((g) => g.name)).toEqual(["tokyo-trip"]);
   });
   it("needs as after the source path", () => {
-    const h = trip(OPEN.replace(" as tokyo-trip", ""));
+    const h = trip(OPEN.replace(" as ^tokyo-trip", ""));
     expect(codes(h)).toEqual(["parse.syntax"]);
     expect(diagnostics(h, "parse.syntax").map((d) => d.source)).toEqual(["main.hueke"]);
     expect(converted(h)).toEqual([]);
@@ -560,7 +592,7 @@ describe("shared accounts", () => {
     );
     expect(codes(h)).toEqual(["tag.wrong-level"]);
     const card = h.transactions
-      .find((t) => t.id === "tokyo-trip:hotel")
+      .find((t) => t.id === "shared:tokyo-trip:hotel")
       ?.postings.find((p) => p.account === "Liabilities:Card");
     expect(card?.tags.map((t) => `${t.scope}:${t.ref.name}`)).toEqual([
       "tag:card",
@@ -576,9 +608,191 @@ describe("shared accounts", () => {
       ),
     );
     const card = h.transactions
-      .find((t) => t.id === "tokyo-trip:hotel")
+      .find((t) => t.id === "shared:tokyo-trip:hotel")
       ?.postings.find((p) => p.account === "Liabilities:Card");
     expect(card?.effective.localDate).toBe("2026-10-25");
+  });
+});
+
+describe("group tags", () => {
+  /** SUBANG's ledger naming the group ledger without `^`. */
+  const PLAIN = OPEN.replace("as ^tokyo-trip", "as tokyo-trip");
+  const of = (h: Hueke, id: string): Transaction | undefined =>
+    h.transactions.find((t) => t.id === id);
+  const conversions = (h: Hueke): Transaction[] =>
+    h.transactions.filter((t) => t.tags.some((g) => g.scope === "system"));
+  const GROUP_TAG = {
+    scope: "shared",
+    ref: { scope: "shared", name: "tokyo-trip" },
+    target: "shared:tokyo-trip",
+  };
+
+  it("gives the event the ID shared:<name>", () => {
+    const h = trip(MAIN);
+    expect([...query(h).ids("shared:tokyo-trip")].map((t) => t.description)).toEqual([
+      "Tokyo trip",
+    ]);
+  });
+  it("gives each converted transaction the primary tag of the group with as ^", () => {
+    const h = trip(MAIN);
+    const members = [...query(h).primaryTag("shared:tokyo-trip")];
+    expect(members.map((t) => t.id)).toEqual([
+      "shared:tokyo-trip:hotel",
+      "shared:tokyo-trip:dinner",
+      "shared:tokyo-trip:taxi",
+      "shared:tokyo-trip:pay-amy",
+      "shared:tokyo-trip:pay-bob",
+    ]);
+    expect(members.every((t) => t.primaryTarget === "shared:tokyo-trip")).toBe(true);
+    expect(members.every((t) => t.tags.every((g) => g.scope !== "shared"))).toBe(true);
+  });
+  it("leaves the primary tag plain when no transaction defines the group's anchor", () => {
+    const h = trip(OPEN);
+    const hotel = of(h, "shared:tokyo-trip:hotel");
+    expect(hotel?.primaryTag).toBe("shared:tokyo-trip");
+    expect(hotel).not.toHaveProperty("primaryTarget");
+  });
+  it("gives each converted transaction and its postings the tag of the group without ^", () => {
+    const h = trip(`${PLAIN}\n${EVENT}`);
+    expect(codes(h)).toEqual([]);
+    const hotel = of(h, "shared:tokyo-trip:hotel");
+    expect(hotel).not.toHaveProperty("primaryTag");
+    expect(hotel?.tags).toEqual([GROUP_TAG, { scope: "system", ref: { name: "shared" } }]);
+    expect(hotel?.postings.every((p) => p.tags.some((g) => g.scope === "shared"))).toBe(true);
+    expect([...query(h).tags("#shared:tokyo-trip")].map((t) => t.id)).toEqual(
+      conversions(h).map((t) => t.id),
+    );
+  });
+  it("leaves the tag of the group plain when no transaction defines its anchor", () => {
+    const hotel = of(trip(PLAIN), "shared:tokyo-trip:hotel");
+    expect(hotel?.tags[0]).toEqual({
+      scope: "shared",
+      ref: { scope: "shared", name: "tokyo-trip" },
+    });
+  });
+  it("turns the group transaction's own primary tag into a plain tag with as ^", () => {
+    const group = GROUP.replace(
+      '%dinner "Dinner, BOB was not there"',
+      '%dinner "Dinner, BOB was not there" ^food',
+    );
+    const dinner = of(trip(MAIN, group), "shared:tokyo-trip:dinner");
+    expect(dinner?.primaryTag).toBe("shared:tokyo-trip");
+    expect(dinner?.tags).toEqual([
+      { scope: "tag", ref: { name: "food" } },
+      { scope: "system", ref: { name: "shared" } },
+    ]);
+  });
+  it("keeps one plain tag when the group transaction has it as both primary tag and tag", () => {
+    const group = GROUP.replace(
+      '%dinner "Dinner, BOB was not there"',
+      '%dinner "Dinner, BOB was not there" ^food #food',
+    );
+    const dinner = of(trip(MAIN, group), "shared:tokyo-trip:dinner");
+    expect(dinner?.tags).toEqual([
+      { scope: "tag", ref: { name: "food" } },
+      { scope: "system", ref: { name: "shared" } },
+    ]);
+  });
+  it("keeps the group transaction's own primary tag without ^", () => {
+    const group = GROUP.replace(
+      '%dinner "Dinner, BOB was not there"',
+      '%dinner "Dinner, BOB was not there" ^food',
+    );
+    const dinner = of(trip(PLAIN, group), "shared:tokyo-trip:dinner");
+    expect(dinner?.primaryTag).toBe("food");
+    expect(dinner?.tags.map((g) => g.scope)).toEqual(["shared", "system"]);
+  });
+  it("reports an event naming a group ledger this ledger does not have, and still defines it", () => {
+    const h = trip(MAIN.replace("%shared:tokyo-trip", "%shared:kyoto-trip"));
+    expect(codes(h)).toEqual(["shared.unknown-module"]);
+    expect(diagnostics(h, "shared.unknown-module").map((d) => d.source)).toEqual(["main.hueke"]);
+    expect(of(h, "shared:kyoto-trip")?.description).toBe("Tokyo trip");
+    expect(of(h, "shared:tokyo-trip:hotel")).not.toHaveProperty("primaryTarget");
+  });
+  it("cannot define a group transaction's anchor in the owner's ledger", () => {
+    const h = trip(`${MAIN}\n2026-10-18 %shared:tokyo-trip:hotel "Hotel"\n`);
+    expect(codes(h)).toEqual(["parse.syntax"]);
+    expect(h.transactions.filter((t) => t.description === "Hotel")).toHaveLength(1);
+  });
+  it("defines the group's anchor once", () => {
+    const h = trip(`${MAIN}\n2026-10-19 %shared:tokyo-trip "Again"\n`);
+    expect(codes(h)).toEqual(["anchor.duplicate"]);
+    expect(of(trip(MAIN), "shared:tokyo-trip:hotel")?.primaryTarget).toBe("shared:tokyo-trip");
+  });
+  it("keeps the group's anchor apart from the anchor of the same name", () => {
+    const h = trip(`${MAIN}\n2026-10-19 %tokyo-trip "Own"\n`);
+    expect(codes(h)).toEqual([]);
+    expect(of(h, "tokyo-trip")?.description).toBe("Own");
+    expect(of(h, "shared:tokyo-trip")?.description).toBe("Tokyo trip");
+  });
+  const OWN = `
+2026-10-19 * "Souvenirs" TAG
+    Expenses:Travel:Gifts   500 NTD
+    Assets:Cash
+`;
+  it("takes the owner's own transactions tagged with the group's primary tag", () => {
+    const h = trip(`${MAIN}${OWN.replace("TAG", "^shared:tokyo-trip")}`);
+    expect(codes(h)).toEqual([]);
+    const own = h.transactions.find((t) => t.description === "Souvenirs");
+    expect(own?.primaryTag).toBe("shared:tokyo-trip");
+    expect(own?.primaryTarget).toBe("shared:tokyo-trip");
+    expect(descriptions(query(h).primaryTag("shared:tokyo-trip"))).toContain("Souvenirs");
+  });
+  it("takes the owner's own transactions tagged with the group's tag", () => {
+    const h = trip(`${PLAIN}\n${EVENT}${OWN.replace("TAG", "#shared:tokyo-trip")}`);
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions.find((t) => t.description === "Souvenirs")?.tags).toEqual([GROUP_TAG]);
+    expect(descriptions(query(h).tags("#shared:tokyo-trip"))).toContain("Souvenirs");
+  });
+  it.each([
+    ["a tag", "#shared:osaka-trip"],
+    ["a primary tag", "^shared:osaka-trip"],
+  ])("skips %s naming a group ledger this ledger does not have", (_, tag) => {
+    const h = trip(`${MAIN}${OWN.replace("TAG", tag)}`);
+    expect(codes(h)).toEqual(["tag.wrong-target"]);
+    const own = h.transactions.find((t) => t.description === "Souvenirs");
+    expect(own?.tags).toEqual([]);
+    expect(own).not.toHaveProperty("primaryTag");
+    expect(own).not.toHaveProperty("primaryTarget");
+  });
+  it("skips the group's primary tag on the event itself", () => {
+    const h = trip(MAIN.replace('"Tokyo trip" #travel', '"Tokyo trip" ^shared:tokyo-trip'));
+    expect(codes(h)).toEqual(["tag.self-reference"]);
+    expect(of(h, "shared:tokyo-trip")).not.toHaveProperty("primaryTag");
+  });
+  it("counts the name of a group ledger that does not convert", () => {
+    const h = trip(
+      `${OPEN}\naccount Shared:other\n    source other.hueke as tokyo-trip\n    self @SUBANG\n${MAPS}\n${EVENT}${OWN.replace("TAG", "#shared:tokyo-trip")}`,
+      GROUP,
+      { "other.hueke": GROUP },
+    );
+    expect(codes(h)).toEqual(["module.name-conflict"]);
+    expect(conversions(h)).toEqual([]);
+  });
+  it("groups by the tags of the group and of an actual payment, keyed as written", () => {
+    const paid = `\n2026-10-18 * "Hotel" #shared:tokyo-trip:hotel\n    Shared:tokyo-trip    10000 NTD\n    Liabilities:Card\n`;
+    const h = trip(`${PLAIN}\n${EVENT}${paid}`);
+    expect(codes(h)).toEqual([]);
+    const keys = query(h)
+      .accounts("Shared:tokyo-trip")
+      .groupBy("tag")
+      .count()
+      .map((g) => g.key.tag);
+    expect(keys).toEqual(["shared:tokyo-trip", "shared:tokyo-trip:hotel", "system:shared"]);
+  });
+  it("does not take an actual payment into the group unless it is tagged so", () => {
+    const paid = `\n2026-10-18 * "Hotel" #shared:tokyo-trip:hotel\n    Shared:tokyo-trip    10000 NTD\n    Liabilities:Card\n`;
+    const h = trip(`${PLAIN}\n${EVENT}${paid}`);
+    expect(codes(h)).toEqual([]);
+    expect([...query(h).tags("#shared:tokyo-trip")].map((t) => t.id)).not.toContain("~1");
+    expect([...query(h).tags("#shared:tokyo-trip:hotel")].map((t) => t.id)).toEqual(["~1"]);
+    expect([...query(h).tags("shared:tokyo-trip:hotel")].map((t) => t.id)).toEqual(["~1"]);
+    expect([...query(h).tags("shared:tokyo-trip")].map((t) => t.id)).toEqual(
+      conversions(h).map((t) => t.id),
+    );
+    expect(
+      [...query(h).tags({ scope: "shared", ref: { name: "tokyo-trip" } })].map((t) => t.id),
+    ).toEqual(conversions(h).map((t) => t.id));
   });
 });
 
@@ -674,6 +888,23 @@ account-root Other shared
     expect(sources(h, "module.forbidden-record")).toEqual([PATH, PATH, PATH, PATH]);
     expect(h.modules).toEqual([PATH]);
     expect(h.accounts.map((a) => a.id)).not.toContain("Other");
+  });
+  it("carries no group tags", () => {
+    const h = alone(
+      GROUP.replace(
+        '%dinner "Dinner, BOB was not there"',
+        '%dinner "Dinner, BOB was not there" ^food',
+      ),
+    );
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions.flatMap((t) => t.tags)).toEqual([]);
+    expect(h.transactions.map((t) => t.primaryTag)).toEqual([
+      undefined,
+      "food",
+      undefined,
+      undefined,
+      undefined,
+    ]);
   });
   it("ignores a second module declaration", () => {
     const h = alone(`${GROUP}\nmodule shared "Other"\n`);

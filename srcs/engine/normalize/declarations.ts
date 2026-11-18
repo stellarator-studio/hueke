@@ -445,6 +445,7 @@ function sharedOf(
   return {
     source: source.path,
     as: source.as,
+    ...(source.primary && { primary: true as const }),
     self,
     accountMap,
     entityMap,

@@ -36,7 +36,7 @@ Each transaction has an **occurrence** (did it happen?) and each posting a **sta
 | `description` | The quoted description, if any. |
 | `occurrence` | `occurred` (default), `planned` or `cancelled`. |
 | `status` | `none` (default) or `cleared`: the default for its postings. |
-| `primaryTag` | The name after `^`, if any: what the transaction is mainly about. |
+| `primaryTag` | The key of the anchor after `^`, if any, such as `travel` or `shared:tokyo-trip`: what the transaction is mainly about. |
 | `primaryTarget` | The ID of the record the primary tag names, if one defines it (see [anchors.md](anchors.md)). |
 | `tags` | Its tags, each a scope and an anchor; the scope is `tag` unless written. A tag also has a `target` when a record defines its anchor (see [anchors.md](anchors.md), "Concepts"). |
 | `refs` | Its entity references, each a role and an entity; the role is `person` unless written. |

@@ -636,7 +636,7 @@ class Builder {
           mark = t as "*" | "!" | "#";
           break;
         case P.ANCHOR:
-          anchor = definedAnchor(t, true);
+          anchor = definedAnchor(t, true, allowStatus);
           break;
         case P.STRING:
           description = unquote(t);
@@ -784,7 +784,7 @@ class Builder {
       if (!source)
         throw new BlockError(
           "parse.syntax",
-          `source takes a path, then "as <name>": "${line.value}"`,
+          `source takes a path, then "as <name>" or "as ^<name>": "${line.value}"`,
         );
       identifier(anchorError(source.as));
     }
@@ -1170,9 +1170,27 @@ function slotOf(text: string): PostingData["slot"] {
     : undefined;
 }
 
-/** `%name` or `%name/period`. */
-function definedAnchor(text: string, allowPeriod: boolean): AnchorRef {
-  const body = text.slice(1);
+/**
+ * `%name` or `%name/period`, with or without `tag:`; `%shared:<name>` where `shared` is true, on a
+ * transaction header (docs/core/anchors.md, "Scoped anchors").
+ */
+function definedAnchor(text: string, allowPeriod: boolean, shared = false): AnchorRef {
+  let body = text.slice(1);
+  const colon = body.indexOf(":");
+  if (colon >= 0) {
+    const scope = body.slice(0, colon);
+    body = body.slice(colon + 1);
+    if (scope === "shared") {
+      if (!shared)
+        throw new BlockError("parse.syntax", `only a transaction header may define "${text}"`);
+      return sharedName(text, body);
+    }
+    if (scope !== "tag")
+      throw new BlockError(
+        "parse.syntax",
+        `the scope of an anchor must be tag or shared: "${text}"`,
+      );
+  }
   const slash = body.indexOf("/");
   if (slash < 0) return { name: anchorName(body) };
   if (!allowPeriod) throw new BlockError("parse.syntax", `"${text}" cannot have a period`);
@@ -1214,6 +1232,7 @@ function tag(text: string): TagData {
   return {
     ...(scope !== undefined && { scope }),
     ref: {
+      ...(scope === "shared" && { scope }),
       ...(module !== undefined && { module }),
       name,
       ...(slash >= 0 && { period: period(ref.slice(slash + 1)) }),
@@ -1221,14 +1240,33 @@ function tag(text: string): TagData {
   };
 }
 
-/** `^x` or `^tag:x`; the scope of a primary tag can only be `tag`. */
+/** `^x`, `^tag:x` or `^shared:<name>`. */
 function primary(text: string): TagData {
   const body = text.slice(1);
   const colon = body.indexOf(":");
   if (colon < 0) return { ref: { name: anchorName(body) } };
-  if (body.slice(0, colon) !== "tag")
-    throw new BlockError("parse.syntax", `the scope of a primary tag must be tag: "${text}"`);
-  return { scope: "tag", ref: { name: anchorName(body.slice(colon + 1)) } };
+  const scope = body.slice(0, colon);
+  if (scope === "shared") return { scope, ref: sharedName(text, body.slice(colon + 1)) };
+  if (scope !== "tag")
+    throw new BlockError(
+      "parse.syntax",
+      `the scope of a primary tag must be tag or shared: "${text}"`,
+    );
+  return { scope, ref: { name: anchorName(body.slice(colon + 1)) } };
+}
+
+/**
+ * The group ledger name of `%shared:<name>` or `^shared:<name>`. An anchor of a group transaction,
+ * `shared:<name>:<anchor>`, is only ever defined by conversion, and the name takes no period.
+ */
+function sharedName(text: string, name: string): AnchorRef {
+  if (name.includes(":"))
+    throw new BlockError(
+      "parse.syntax",
+      `"${text}" names a group transaction; only #shared: may name one`,
+    );
+  if (name.includes("/")) throw new BlockError("parse.syntax", `"${text}" cannot have a period`);
+  return { scope: "shared", name: anchorName(name) };
 }
 
 /** `;; key: value`: 1 is everything up to the key, 2 the key, 3 the value. */

@@ -330,11 +330,21 @@ function postingMatches(
 }
 
 function tagKey(t: TagInput): { scope: string; key: string } {
-  if (typeof t !== "string") return { scope: t.scope ?? "tag", key: anchorKey(t.ref) };
+  if (typeof t !== "string") {
+    const scope = t.scope ?? "tag";
+    // A `shared` tag's anchor is in the `shared` namespace, whether or not the ref says so.
+    const ref =
+      scope === "shared" && t.ref.scope === undefined
+        ? { ...t.ref, scope: "shared" as const }
+        : t.ref;
+    return { scope, key: anchorKey(ref) };
+  }
   const body = t.startsWith("#") ? t.slice(1) : t;
   const colon = body.indexOf(":");
   if (colon < 0)
     throw new Error(`query.tag-without-scope: "${t}": write a tag in full, such as "tag:${body}"`);
-  // The text after the scope is written as `anchorKey` gives it, `#shared:<module>:` included.
-  return { scope: body.slice(0, colon), key: body.slice(colon + 1) };
+  // The text after the scope is written as `anchorKey` gives it, `<module>:` included; in the
+  // `shared` namespace, the key keeps the scope (docs/core/anchors.md, "Concepts").
+  const scope = body.slice(0, colon);
+  return { scope, key: scope === "shared" ? body : body.slice(colon + 1) };
 }

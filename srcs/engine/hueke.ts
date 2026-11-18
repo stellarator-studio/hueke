@@ -36,11 +36,11 @@ import {
 } from "./normalize/declarations.js";
 import { collectModules } from "./normalize/modules.js";
 import {
-  anchoredIds,
   checkStandalone,
   convertGroups,
   groupLedgers,
   readGroups,
+  sharedNames,
   type Group,
 } from "./normalize/groups.js";
 import { expandPads } from "./normalize/pad.js";
@@ -192,7 +192,7 @@ export class Hueke {
       declared.accounts.values(),
       decimals,
       out,
-      anchoredIds(groups),
+      sharedNames(groups),
     );
     const replaced = new Map(transactions.map((t, i) => [t, resolved[i] as Transaction]));
     records = records.map((r) => ("postings" in r ? (replaced.get(r) ?? r) : r));

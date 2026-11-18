@@ -119,7 +119,12 @@ export class GroupedQuery implements Grouped {
       }
       case "tag":
         return p.tags.length > 0
-          ? p.tags.map((tag) => `${tag.scope}:${anchorKey(tag.ref)}`)
+          ? // In the `shared` namespace, the key already starts with its scope.
+            p.tags.map((tag) =>
+              tag.ref.scope === undefined
+                ? `${tag.scope}:${anchorKey(tag.ref)}`
+                : anchorKey(tag.ref),
+            )
           : [null];
       case "day":
       case "week":

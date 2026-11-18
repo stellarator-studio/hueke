@@ -896,6 +896,53 @@ account Bank:Checking %main-bank
         "member,2026-10-24,transaction,~5,Lunch partly refunded\n",
     );
   });
+  it("reads ^tag:x as ^x", () => {
+    const trip = withObligations(`
+2026-10-18 %trip "Trip"
+
+2026-10-19 * "Hotel" ^trip
+    Expenses:Lodging     8000 NTD
+    Bank:Checking       -8000 NTD
+`);
+    expect(hueke("group ^tag:trip --file main.hueke --format csv", trip).stdout).toBe(
+      hueke("group ^trip --file main.hueke --format csv", trip).stdout,
+    );
+  });
+  const TRIP = {
+    "/ledger/main.hueke":
+      `${OBLIGATIONS}account-root Shared shared\naccount Shared:trip\n` +
+      "    source trips/trip.hueke as ^trip\n    self @ME\n" +
+      "    map Expenses -> Expenses:Travel\n    map Pay -> Liabilities:Card\n\n" +
+      '2026-10-19 %shared:trip "Trip"\n\n' +
+      '2026-10-21 * "Card bill" #shared:trip:dinner\n    Shared:trip  1000 NTD\n    Assets:Cash\n',
+    "/ledger/trips/trip.hueke":
+      "module shared\n    share @ME 1\n    share @AMY 1\naccount-root Pay asset\n" +
+      '2026-10-20 * %dinner "Dinner"\n    Expenses:Food  1000 NTD\n    Pay:Card  -1000 NTD @ME\n',
+  };
+  it("lists a group ledger's event, then its converted transactions", () => {
+    expect(
+      hueke(["group", "^shared:trip", "--file", "main.hueke", "--format", "csv"], TRIP),
+    ).toEqual({
+      status: 0,
+      stdout:
+        "role,date,kind,id,description\n" +
+        "anchor,2026-10-19,transaction,shared:trip,Trip\n" +
+        "member,2026-10-20,transaction,shared:trip:dinner,Dinner\n",
+      stderr: "",
+    });
+  });
+  it("lists a group transaction, then its actual payment", () => {
+    expect(
+      hueke(["group", "#shared:trip:dinner", "--file", "main.hueke", "--format", "csv"], TRIP),
+    ).toEqual({
+      status: 0,
+      stdout:
+        "role,date,kind,id,description\n" +
+        "anchor,2026-10-20,transaction,shared:trip:dinner,Dinner\n" +
+        "member,2026-10-21,transaction,~5,Card bill\n",
+      stderr: "",
+    });
+  });
   it("a tag without a scope is a usage error", () => {
     const r = hueke("group #travel --file main.hueke", files);
     expect(r).toMatchObject({ status: 2, stdout: "" });

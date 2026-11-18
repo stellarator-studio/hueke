@@ -16,10 +16,12 @@ export function includedPath(from: SourcePath, item: DeclarationData): SourcePat
 interface SourceValue {
   readonly path: string;
   readonly as: string;
+  /** Written `as ^<name>`: the group ledger's transactions take a primary tag. */
+  readonly primary?: true;
 }
 
 /**
- * Reads a `source` value, `<path> as <name>` (docs/dsl/records.md, "Group ledgers and shared
+ * Reads a `source` value, `<path> as [^]<name>` (docs/dsl/records.md, "Group ledgers and shared
  * accounts"). The path is one token, quoted when it holds spaces. Undefined when the value is not
  * of that shape; the name is not checked here.
  */
@@ -38,8 +40,9 @@ export function sourceOf(value: string): SourceValue | undefined {
     rest = value.slice(path.length);
   }
   rest = rest.trim();
-  const as = /^as\s+(\S+)$/.exec(rest)?.[1];
-  return as === undefined ? undefined : { path, as };
+  const m = /^as\s+(\^?)(\S+)$/.exec(rest);
+  if (!m?.[2]) return undefined;
+  return { path, as: m[2], ...(m[1] === "^" && { primary: true as const }) };
 }
 
 /** A shared account's `map` value: what it maps, from and to, as written. */

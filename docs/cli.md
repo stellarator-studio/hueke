@@ -63,7 +63,7 @@ Status: `implemented`
 | Command | Arguments | API |
 | --- | --- | --- |
 | `obligations` | Obligation accounts or obligations, sub-accounts included; none means every obligation account | `obligations` |
-| `group` | Exactly one tag written in full, `#<scope>:<anchor>`, or one primary tag, `^anchor` | `query(…).ids(…)` for the anchor's record, and `query(…).tags(…)` or `query(…).primaryTag(…)` for the members |
+| `group` | Exactly one tag written in full, `#<scope>:<anchor>`, or one primary tag, `^anchor` or `^shared:<name>` | `query(…).ids(…)` for the anchor's record, and `query(…).tags(…)` or `query(…).primaryTag(…)` for the members |
 
 - `obligations` takes `--at`, `--who` with one entity, `--all` and `--name`. It reads `--at` as its `at`; without `--at`, it counts the whole ledger.
 - `group` takes no options besides loading and output. It lists the anchor's record, when one defines the anchor, then the group's members (see [core/anchors.md](core/anchors.md), "Groups"). The anchor's record is looked up among `occurred` transactions, and then among `planned` and `cancelled` ones when none matched; members are `occurred` transactions.

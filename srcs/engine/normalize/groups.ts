@@ -39,7 +39,7 @@ import {
 } from "../../data/values/decimal.js";
 import { NumberError, parseNumber } from "../../data/values/number.js";
 import { inAccount, isPnl } from "../../data/model/account.js";
-import { duplicateAnchors, resolveTags } from "./anchors.js";
+import { duplicateAnchors, resolveTags, type SharedNames } from "./anchors.js";
 import {
   collectDeclarations,
   inheritCommodity,
@@ -222,7 +222,8 @@ function groupTransactions(
 ): { list: Transaction[]; commodities: Map<Id, Commodity> } {
   const where: Where = (source) => source;
   const duplicated = duplicateAnchors(ref.items, declared.accounts, where, out);
-  const defines = (a: AnchorRef): boolean => !duplicated.has(anchorKey(a));
+  // A group ledger refers to no group ledgers: `%shared:<name>` in it defines nothing.
+  const defines = (a: AnchorRef): boolean => a.scope === undefined && !duplicated.has(anchorKey(a));
   const usedDecimals = new Map<Id, number>();
   const decimals = new Map<Posting, number>();
   const ctx: RecordContext = {
@@ -261,17 +262,20 @@ function groupTransactions(
   return { list: resolveTags(list, declared.accounts.values(), decimals, out), commodities };
 }
 
+/** The ID a group transaction converts to: `shared:<name>:<its ID>`. */
+const convertedId = (g: Group, t: Transaction): Id => `shared:${g.name}:${t.id}`;
+
 /**
- * The IDs that the anchored transactions of converting group ledgers convert to, which `shared`
- * tags may name.
+ * What `shared` anchors and tags may name: the names of every group ledger, converting or not, and
+ * the IDs that the anchored transactions of converting group ledgers convert to.
  */
-export function anchoredIds(groups: readonly Group[]): Set<Id> {
+export function sharedNames(groups: readonly Group[]): SharedNames {
   const ids = new Set<Id>();
   for (const g of groups)
     if (g.converts)
       for (const t of g.transactions)
-        if (t.origin?.anchor && t.id === anchorKey(t.origin.anchor)) ids.add(`${g.name}:${t.id}`);
-  return ids;
+        if (t.origin?.anchor && t.id === anchorKey(t.origin.anchor)) ids.add(convertedId(g, t));
+  return { groups: new Set(groups.map((g) => g.name)), transactions: ids };
 }
 
 /** The group ledgers that convert, as the ledger lists them. */
@@ -290,7 +294,8 @@ export function groupLedgers(groups: readonly Group[]): GroupLedger[] {
 /**
  * Step 6, first: the converted transactions of every converting group ledger, in the order of the
  * group ledgers, then of their transactions. `transactions` are the owner's, with their tags
- * resolved; those with a `shared` tag are actual payments.
+ * resolved; those with a `#shared:<name>:<anchor>` tag are actual payments, and one that defines
+ * `%shared:<name>` is the record the group tags link to.
  */
 export function convertGroups(
   groups: readonly Group[],
@@ -298,10 +303,14 @@ export function convertGroups(
   precision: (commodity: Id) => number,
   out: Diagnostic[],
 ): Transaction[] {
+  const defined = new Set<Id>();
+  for (const t of transactions)
+    if (t.origin?.anchor?.scope === "shared" && t.id === anchorKey(t.origin.anchor))
+      defined.add(t.id);
   const payments = new Map<Id, Transaction[]>();
   for (const t of transactions)
     for (const tag of t.tags)
-      if (tag.scope === "shared" && tag.target !== undefined) {
+      if (tag.scope === "shared" && tag.ref.module !== undefined && tag.target !== undefined) {
         const list = payments.get(tag.target);
         if (list) {
           if (!list.includes(t)) list.push(t);
@@ -311,7 +320,7 @@ export function convertGroups(
   for (const g of groups) {
     if (!g.converts) continue;
     for (const t of g.transactions) {
-      const c = convert(g, t, payments.get(`${g.name}:${t.id}`) ?? [], precision, out);
+      const c = convert(g, t, payments.get(convertedId(g, t)) ?? [], precision, out, defined);
       if (c) converted.push(c);
     }
   }
@@ -377,13 +386,17 @@ function readPostings(
   return { shares, money, failed };
 }
 
-/** One group transaction converted for the owner, or undefined when nothing converts. */
+/**
+ * One group transaction converted for the owner, or undefined when nothing converts. `defined`
+ * holds the `shared:<name>` anchors the owner's transactions define.
+ */
 function convert(
   g: Group,
   t: Transaction,
   replacing: readonly Transaction[],
   precision: (commodity: Id) => number,
   out: Diagnostic[],
+  defined: ReadonlySet<Id>,
 ): Transaction | undefined {
   const report: Report = (code, message, span = t.span) => {
     out.push(diagnostic(code, message, g.path, span));
@@ -391,7 +404,7 @@ function convert(
   const { shares, money, failed } = readPostings(g, t, report);
   // Actual payments are checked whether or not anything converts; their amounts only when the
   // owner's money is known.
-  const id = `${g.name}:${t.id}`;
+  const id = convertedId(g, t);
   const [replaced, ...more] = replacing;
   if (!failed) for (const payment of replacing) checkPayment(g, money, payment, id, precision, out);
   if (replaced)
@@ -423,7 +436,23 @@ function convert(
     return undefined;
   }
 
-  const tags = [...t.tags.map(plain), SYSTEM_SHARED];
+  // The group's own tag (docs/core/group-ledgers.md, "Group tags"): a primary tag with `as ^`,
+  // which turns T's own primary tag into a plain tag, otherwise a tag.
+  const groupKey = `shared:${g.name}`;
+  const groupTarget = defined.has(groupKey) ? groupKey : undefined;
+  const groupTag: Tag = {
+    scope: "shared",
+    ref: { scope: "shared", name: g.name },
+    ...(groupTarget !== undefined && { target: groupTarget }),
+  };
+  const primary = g.shared.primary === true;
+  const demoted: Tag[] =
+    primary &&
+    t.primaryTag !== undefined &&
+    !t.tags.some((x) => x.scope === "tag" && anchorKey(x.ref) === t.primaryTag)
+      ? [{ scope: "tag", ref: { name: t.primaryTag } }]
+      : [];
+  const tags = [...t.tags.map(plain), ...demoted, ...(primary ? [] : [groupTag]), SYSTEM_SHARED];
   const posting = (
     k: number,
     fields: Omit<Posting, "id" | "transaction" | "status" | "breakdown"> &
@@ -477,7 +506,9 @@ function convert(
     ...(t.description !== undefined && { description: t.description }),
     occurrence: t.occurrence,
     status: "none",
-    ...(t.primaryTag !== undefined && { primaryTag: t.primaryTag }),
+    ...(primary
+      ? { primaryTag: groupKey, ...(groupTarget !== undefined && { primaryTarget: groupTarget }) }
+      : t.primaryTag !== undefined && { primaryTag: t.primaryTag }),
     tags,
     refs: mapRefs(g, t.refs),
     meta: t.meta,

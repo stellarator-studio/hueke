@@ -10,7 +10,8 @@ import type { Command, Options } from "./command.js";
 type Line = [role: string, date: string, kind: string, id: string, description: string];
 
 export const groupCommand: Command = {
-  usage: "group <#scope:anchor | ^anchor> --file <path> [--strict] [--format table|csv]",
+  usage:
+    "group <#scope:anchor | ^anchor | ^shared:name> --file <path> [--strict] [--format table|csv]",
   options: [],
   run(hueke: Hueke, args: readonly string[], options: Options, io: CliIO): number {
     const [written, ...extra] = args;
@@ -19,14 +20,15 @@ export const groupCommand: Command = {
     let anchor: string;
     let members: Query;
     if (written.startsWith("^")) {
-      anchor = written.slice(1);
+      // `^tag:x` is `^x`; `^shared:<name>` keeps its scope, as the anchor's key does.
+      anchor = written.slice(written.startsWith("^tag:") ? "^tag:".length : 1);
       members = query(hueke).primaryTag(anchor);
     } else if (written.startsWith("#")) {
       const colon = written.indexOf(":");
       if (colon < 0)
         throw new UsageError(`${written} has no scope: write #tag:${written.slice(1)}`);
-      // A tag of a shared module names its anchor last.
-      anchor = written.slice(written.lastIndexOf(":") + 1);
+      // In the shared namespace, the anchor's key keeps the scope: `shared:<name>[:<anchor>]`.
+      anchor = written.startsWith("#shared:") ? written.slice(1) : written.slice(colon + 1);
       members = query(hueke).tags(written);
     } else
       throw new UsageError(`${written} is not a tag (#scope:anchor) or a primary tag (^anchor)`);

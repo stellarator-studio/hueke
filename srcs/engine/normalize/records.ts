@@ -331,7 +331,7 @@ function transaction(
     ...(data.description !== undefined && { description: data.description }),
     occurrence,
     status,
-    ...(data.primaryTag && { primaryTag: data.primaryTag.ref.name }),
+    ...(data.primaryTag && { primaryTag: anchorKey(data.primaryTag.ref) }),
     tags,
     refs: referencesOf(ctx, data.refs, data.span),
     meta: metaFrom(data.lines, data.trailer),

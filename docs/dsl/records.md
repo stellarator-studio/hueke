@@ -82,7 +82,7 @@ Status: `implemented`
 - Only the time is required.
 - At most one header mark: none (recorded, not checked), `*` (status cleared), `!` (occurrence planned) or `#` (occurrence cancelled). Two marks are `parse.token-order`.
 - At most one `%anchor`, at most one `^`; any number of `@` references and `#` tags, in that order. A second `^` is `txn.multiple-primary-tag`, reported by the parser, and the block is not loaded.
-- `^tag:x` is the same as `^x`; a primary tag with another scope is `parse.syntax`.
+- `^tag:x` is the same as `^x`, and `%tag:x` as `%x`. `^shared:<name>` and `%shared:<name>` name a group ledger (see [../core/anchors.md](../core/anchors.md), "Scoped anchors"). A primary tag or an anchor with another scope is `parse.syntax`.
 - `#scope:x` gives a tag a scope; `#x` is `#tag:x`. `#shared:<name>:x` names the anchor `x` of the group ledger this ledger names `<name>` with `as`. `@role:x` gives a reference a role; `@x` is `@person:x`.
 
 ### Postings
@@ -370,7 +370,7 @@ A shared account is declared in the owner's ledger, under a root of type `shared
 account-root Shared shared
 
 account Shared:tokyo-trip
-    source trips/tokyo.hueke as tokyo-trip
+    source trips/tokyo.hueke as ^tokyo-trip
     self @SUBANG
     map Expenses -> Expenses:Travel
     map Pay:Cash -> Assets:Cash
@@ -382,14 +382,14 @@ account Shared:tokyo-trip
 
 | Property | Written |
 | --- | --- |
-| `source <path> as <name>` | The group ledger's path, one token as in `include` (see "`include`"), so `as` after it is never ambiguous: `source "trips/tokyo trip.hueke" as tokyo`; then the group ledger's name in this ledger, which follows the rule for anchors (see [lexical.md](lexical.md), "Identifiers") |
+| `source <path> as [^]<name>` | The group ledger's path, one token as in `include` (see "`include`"), so `as` after it is never ambiguous: `source "trips/tokyo trip.hueke" as tokyo`; then the group ledger's name in this ledger, which follows the rule for anchors (see [lexical.md](lexical.md), "Identifiers"). A `^` joined to the name gives its transactions a primary tag (see [../core/group-ledgers.md](../core/group-ledgers.md), "Group tags") |
 | `self @<entity>` | The owner's member entity |
 | `map <group account> -> <account>` | An account mapping; may repeat |
 | `map @<group entity> -> @<entity>` | An entity mapping |
 | `map commodity <group commodity> -> <commodity>` | A commodity mapping |
 
 - A `module` declaration of another kind, or with anything but a description after the kind, is `parse.syntax`, and so is a `share` line that is not `@<entity>` and a ratio, names `self`, names a member already listed, or has a negative ratio.
-- A `source` line without `as <name>` after the path, or with anything else after it, a `self` line that is not one entity, and a `map` line that is not one of the three forms above are `parse.syntax`.
+- A `source` line without `as <name>` or `as ^<name>` after the path, or with anything else after it, a `self` line that is not one entity, and a `map` line that is not one of the three forms above are `parse.syntax`.
 - `source`, `self` and `map` belong only on an account whose root has type `shared`. The parser cannot know the type, so on any other account they are `shared.wrong-account` (error), found during normalization, and they are ignored; the rest of the declaration loads.
-- A transaction of the owner's ledger names a group transaction with `#shared:<name>:<anchor>` (see "Transaction headers").
+- A transaction of the owner's ledger names a group transaction with `#shared:<name>:<anchor>`, and the group ledger as a whole with `%shared:<name>`, `#shared:<name>` or `^shared:<name>` (see "Transaction headers").
 - What these mean is described in [../core/group-ledgers.md](../core/group-ledgers.md).
