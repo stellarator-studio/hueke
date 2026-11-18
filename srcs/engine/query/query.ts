@@ -2,7 +2,7 @@
 
 import { obligationEntitiesOf, sourceOrder, type Hueke } from "../hueke.js";
 import { entitiesOf } from "../normalize/shared.js";
-import { within } from "../../data/model/account.js";
+import { inAccount } from "../../data/model/account.js";
 import { timeOnAxis, transactionTime } from "../../data/model/axis.js";
 import type {
   Account,
@@ -20,7 +20,7 @@ import { anchorKey } from "../../data/raw/anchor.js";
 import type { AnchorRef } from "../../data/raw/model.js";
 import { compareTime, matches, timeInput, type Predicate } from "../../data/time/time.js";
 import { GroupedQuery, type GroupKey, type Grouped, type Hit } from "./group.js";
-import { shownAccount } from "./tree.js";
+import { mergedPnlAccount } from "./tree.js";
 
 /** A time value, or its DSL text read with the ledger's time zone and week start. */
 export type TimeInput = TimeValue | string;
@@ -247,7 +247,7 @@ function evaluate(q: Query): {
 } {
   const { hueke, state: s } = inner(q);
   const axis = s.axis ?? "effective";
-  const show = shownAccount(hueke);
+  const show = mergedPnlAccount(hueke);
   const read: Reader = {
     show,
     accounts: new Map(hueke.accounts.map((a) => [a.id, a])),
@@ -309,7 +309,7 @@ function postingMatches(
   if (
     s.accounts &&
     !s.accounts.some(
-      (a) => account !== undefined && (within(account, a) || within(show(account), a)),
+      (a) => account !== undefined && (inAccount(account, a) || inAccount(show(account), a)),
     )
   )
     return false;

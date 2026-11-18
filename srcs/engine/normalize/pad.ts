@@ -10,7 +10,7 @@ import type {
   Transaction,
 } from "../../data/model/types.js";
 import type { Diagnostic } from "../../data/source/source.js";
-import { obligationPlace, within, type ObligationPlace } from "../../data/model/account.js";
+import { inAccount, obligationPlaceIn, type ObligationPlace } from "../../data/model/account.js";
 import {
   add,
   decimal,
@@ -71,7 +71,7 @@ export function expandPads(
   const effects = new Map<Balance, Effect[]>();
   const padAccounts = new Map<Balance, Id>();
   for (const b of pads) {
-    const place = obligationPlace(b.account, accounts);
+    const place = obligationPlaceIn(b.account, accounts);
     const padAccount = padAccountOf(b, place);
     if (place && !b.pad)
       report(
@@ -105,7 +105,7 @@ export function expandPads(
   // Pads at the same point must not affect each other, nor pad from inside their own account.
   const affects = (a: Balance, b: Balance): boolean =>
     (effects.get(a) ?? []).some(
-      (e) => e.commodity === b.amount.commodity && within(e.account, b.account),
+      (e) => e.commodity === b.amount.commodity && inAccount(e.account, b.account),
     );
   const conflicted = new Set<Balance>();
   // A pad in conflict both ways is reported once, as affecting the other pad.
@@ -124,7 +124,7 @@ export function expandPads(
     } else if (
       counter &&
       counter.commodity === a.amount.commodity &&
-      within(counter.account, a.account)
+      inAccount(counter.account, a.account)
     ) {
       conflicted.add(a);
       report(

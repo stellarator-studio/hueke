@@ -9,7 +9,7 @@ import type {
   Posting,
   Transaction,
 } from "../../data/model/types.js";
-import { obligationPlace, within } from "../../data/model/account.js";
+import { inAccount, obligationPlaceIn } from "../../data/model/account.js";
 import type { ItemData, Note } from "../../data/raw/model.js";
 import type { SourcePath } from "../../data/source/source.js";
 import { matches } from "../../data/time/time.js";
@@ -66,7 +66,7 @@ export const show = (r: Rational, commodity: Id): string => `${decimal(r)} ${com
  * Half a unit of a commodity's precision, times k: the tolerance of balancing
  * (docs/core/transactions.md, "Balancing") and, with k = 1, of Balance assertions.
  */
-export const halfUnit = (precision: number, k = 1): Rational =>
+const halfUnit = (precision: number, k = 1): Rational =>
   mul(mul(rational("0.5"), tenToMinus(precision)), rational(String(k)));
 
 /** Whether a difference is within the tolerance (`halfUnit`). */
@@ -97,7 +97,7 @@ export function obligationEntities(
   for (const t of transactions) {
     if (t.occurrence !== "occurred") continue;
     for (const p of t.postings) {
-      const place = obligationPlace(p.account, accounts);
+      const place = obligationPlaceIn(p.account, accounts);
       if (place?.kind !== "obligation") continue;
       let entry = found.get(place.obligation);
       if (!entry) {
@@ -139,20 +139,20 @@ export function entitiesOf(
   obligations: ObligationEntities,
 ): readonly Id[] {
   if (p.account !== undefined) {
-    const place = obligationPlace(p.account, accounts);
+    const place = obligationPlaceIn(p.account, accounts);
     if (place?.kind === "obligation") return obligations.get(place.obligation) ?? [];
   }
   return (p.refs.length > 0 ? p.refs : t.refs).map((r) => r.entity);
 }
 
 /** Which postings a Balance counts: with an entity, only those read with it. */
-export type Belongs = (t: Transaction, p: Posting) => boolean;
+type Belongs = (t: Transaction, p: Posting) => boolean;
 
 /**
  * The postings of occurred transactions by account, each with its transaction: a balance then
  * reads only the postings of its account and the accounts under it, not the whole ledger.
  */
-export type PostingsByAccount = Map<Id, (readonly [Transaction, Posting])[]>;
+type PostingsByAccount = Map<Id, (readonly [Transaction, Posting])[]>;
 
 /** Adds the postings of the occurred transactions to `index`; a new index without one. */
 export function indexPostings(
@@ -180,7 +180,7 @@ export function balanceAt(
 ): Rational {
   let total = ZERO;
   for (const [posted, postings] of index) {
-    if (!within(posted, account)) continue;
+    if (!inAccount(posted, account)) continue;
     for (const [t, p] of postings)
       if (p.amount.commodity === commodity && matches(p.effective, "until", at) && belongs(t, p))
         total = add(total, rational(p.amount.value));
@@ -198,7 +198,7 @@ export function balanceBelongs(
   obligations: ObligationEntities,
 ): Belongs {
   const entity = b.entity;
-  if (entity === undefined || obligationPlace(b.account, accounts)) return () => true;
+  if (entity === undefined || obligationPlaceIn(b.account, accounts)) return () => true;
   return (t, p) => entitiesOf(t, p, accounts, obligations).includes(entity);
 }
 
@@ -216,7 +216,7 @@ export function unclearedBetween(
       if (
         p.status === "none" &&
         p.amount.commodity === b.amount.commodity &&
-        within(p.account, b.account) &&
+        inAccount(p.account, b.account) &&
         matches(p.effective, "until", b.effective) &&
         !(after && matches(p.effective, "until", after.effective)) &&
         belongs(t, p)

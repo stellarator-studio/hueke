@@ -1,8 +1,8 @@
 // `hueke obligations`: the rows of the API's `obligations`.
 
-import { obligations, type Amount, type Hueke } from "../../index.js";
+import { obligations, valueText, type Amount, type Hueke } from "../../index.js";
 import { UsageError, type CliIO } from "../io.js";
-import { csv, table, valueText } from "../output.js";
+import { csv, table } from "../output.js";
 import { list, shownName, type Command, type Options } from "./command.js";
 
 export const obligationsCommand: Command = {

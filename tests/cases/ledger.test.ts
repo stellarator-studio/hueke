@@ -1,6 +1,6 @@
 // docs/core/ledger.md
 import { describe, expect, it } from "vitest";
-import { check, Hueke, parse, position } from "../../srcs/index.js";
+import { check, compareText, Hueke, parse, position } from "../../srcs/index.js";
 import type { Diagnostic } from "../../srcs/index.js";
 import { balanceOf, codes, descriptions, diagnostics, ledger, modules } from "./ledger.js";
 
@@ -417,5 +417,32 @@ describe("IDs", () => {
     expect(first?.id).toBe("~2");
     expect(first?.postings.map((p) => p.id)).toEqual(["p_x", "~2.2"]);
     expect(h.transactions.map((t) => t.id)).toEqual(["~1", "~2", "~3"]);
+  });
+});
+
+describe("compareText", () => {
+  it("returns zero for equal texts and sorts a prefix first", () => {
+    expect(compareText("Bank", "Bank")).toBe(0);
+    expect(compareText("", "")).toBe(0);
+    expect(compareText("Bank", "Bank:Checking")).toBeLessThan(0);
+    expect(compareText("Bank:Checking", "Bank")).toBeGreaterThan(0);
+    expect(compareText("", "a")).toBeLessThan(0);
+  });
+  it("compares by code point, not by locale", () => {
+    expect(compareText("B", "a")).toBeLessThan(0);
+    expect(compareText("a", "B")).toBeGreaterThan(0);
+    expect(compareText("Z", "É")).toBeLessThan(0);
+    expect(["b", "B", "a", "A"].sort(compareText)).toEqual(["A", "B", "a", "b"]);
+  });
+  it("compares by code point, not by UTF-16 code unit", () => {
+    // U+20000 is written with surrogates (0xD840 0xDC00), below U+FF71 as code units.
+    const byCodeUnit = (a: string, b: string): boolean => a < b;
+    expect(byCodeUnit("𠀀", "ｱ")).toBe(true);
+    expect(compareText("𠀀", "ｱ")).toBeGreaterThan(0);
+    expect(compareText("ｱ", "𠀀")).toBeLessThan(0);
+    expect(compareText("𠀀", "�")).toBeGreaterThan(0);
+    expect(compareText("x𠀀", "xｱ")).toBeGreaterThan(0);
+    expect(["𠀀", "ｱ", "a"].sort(compareText)).toEqual(["a", "ｱ", "𠀀"]);
+    expect(compareText("𠀀", "𠀀")).toBe(0);
   });
 });

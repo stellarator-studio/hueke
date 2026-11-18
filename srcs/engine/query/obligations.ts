@@ -1,7 +1,7 @@
 // The progress of obligations (docs/core/obligations.md, "Progress"), and which obligations are
 // settled at a point, for `balance` and `register` to hide them.
 
-import { obligationPlace } from "../../data/model/account.js";
+import { obligationPlaceIn } from "../../data/model/account.js";
 import type { Account, Id, Posting, TimeValue, Transaction } from "../../data/model/types.js";
 import { compareTime, matches } from "../../data/time/time.js";
 import { abs, add, rational, sub, ZERO, type Rational } from "../../data/values/decimal.js";
@@ -9,7 +9,7 @@ import { initialized, sourceOrder, type Hueke } from "../hueke.js";
 import { directionOf, withinHalfUnit } from "../normalize/shared.js";
 
 /** One obligation in one commodity. */
-export interface Progress {
+interface Progress {
   readonly original: Rational;
   readonly repaid: Rational;
   readonly lastRepaid?: TimeValue;
@@ -38,7 +38,7 @@ function obligationPostings(ledger: Hueke, accounts: ReadonlyMap<Id, Account>): 
   for (const t of ledger.transactions) {
     if (t.occurrence !== "occurred") continue;
     for (const p of t.postings) {
-      const place = obligationPlace(p.account, accounts);
+      const place = obligationPlaceIn(p.account, accounts);
       if (place?.kind !== "obligation") continue;
       found.push({ p, t, obligation: place.obligation, root: place.root });
     }

@@ -171,6 +171,7 @@ Core never writes files. A function that changes a ledger's text, such as `setOp
 - `check(ledger)` returns every diagnostic of the ledger (see "Normalization"). It throws before initialization.
 - `position(module, offset)` returns the line and column of an offset, both from 1.
 - `anchorKey(anchor)` returns the canonical text of an anchor, such as `lunch`; definitions and references of the same anchor give the same text.
+- `compareText(a, b)` compares two texts by Unicode code points, the order in which Core sorts text (see [../README.md](../README.md), "Conventions"). It returns a negative number, zero or a positive number as `a` comes before, is equal to or comes after `b`, the same in every locale.
 - The functions for modules and paths, `referencedSources` and `resolvePath`, are described in [modules.md](modules.md).
 - Records are looked up by anchor or ID with the query clause `ids` (see [anchors.md](anchors.md), "Looking up by ID").
 

@@ -12,7 +12,7 @@ import {
 } from "../../index.js";
 import { amountText, table } from "../output.js";
 
-export interface PostingRow {
+interface PostingRow {
   readonly date: string; // the posting's time on the axis, as written
   readonly transaction: Id;
   readonly posting: Id;

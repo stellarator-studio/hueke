@@ -101,15 +101,31 @@ Status: `implemented`
 
 | Placeholder | Replaced with |
 | --- | --- |
-| `{amount}` | The value, with its sign, written as the presentation writes values (in the CLI, with the ledger's marks and padded to the precision) |
+| `{amount}` | The value without its sign, written as the presentation writes values (in the CLI, with the ledger's marks and padded to the precision) |
 | `{code}` | The code, such as `TWSE:0050` |
 | `{leaf}` | The last segment of the code, such as `0050` |
 | `{name}` | The display name; the code when there is none |
 
 - Any other text between `{` and `}`, a `{` or `}` without its pair, or a template without `{amount}` or with it twice, is `parse.syntax`, and the declaration is not loaded. The template runs to the end of the line, or may be quoted (see [../dsl/lexical.md](../dsl/lexical.md), "Strings and values").
+- A negative amount is shown with its minus sign before the whole text the format gives, not in place of `{amount}`: with `format "${amount}"`, −1234 USD is `-$1,234`, not `$-1,234`. A presentation that writes negative values another way, such as in parentheses, puts the whole text inside them: `($1,234)`.
 - Without a format, an amount is shown as `{amount} {code}`.
 - A format is inherited (see "Commodity hierarchy"); `{code}`, `{leaf}` and `{name}` are always those of the commodity shown, not of the one that declared the format.
 - A format is only for showing, like a display name: the amount keeps its value and commodity, the API and the CSV output are unchanged, and ledger text is always written with the code (see [../dsl/formatting.md](../dsl/formatting.md)). An alias is how an amount may be written; a format is how it is shown. Where the CLI uses formats is described in [../cli.md](../cli.md), "Output".
+
+## API
+
+These write amounts for showing, as the CLI writes them in a table (see [../cli.md](../cli.md), "Output"), so that every presentation shows a value the same way. Nothing they write is read back.
+
+- `valueText(ledger)` returns a function that writes an amount's value without its commodity: with the ledger's `decimal-mark` and `group-mark` (see [settings.md](settings.md)), padded with zeros up to the commodity's precision and never dropping digits. A fraction, such as `"-1000/3"`, has both its parts grouped and is not padded. A commodity the ledger does not list has precision 0. It does not need an initialized ledger: before `init`, the marks are the defaults and every commodity has precision 0.
+- `formatText(commodity, text)` writes value text through the commodity's format (see "Display names and formats"): the text without its minus sign takes the place of `{amount}`, and the minus sign goes before the whole result. Without a format, the result is the text, a space and the code. The text is used as given, so a presentation may round a value, or write it another way, before formatting it.
+
+| Call | Result |
+| --- | --- |
+| `valueText(ledger)` of 1234.5 USD, precision 2 | `"1,234.50"` |
+| The same with `option decimal-mark ,` | `"1.234,50"` |
+| `valueText(ledger)` of `"-1000/3"` NTD | `"-1,000/3"` |
+| `formatText` of `"-1,234.50"` with `format "${amount}"` | `"-$1,234.50"` |
+| `formatText` of `"12.50"` for `TWSE:0050` with no format | `"12.50 TWSE:0050"` |
 
 ## Examples
 
@@ -170,7 +186,7 @@ commodity CELSIUS
 | `TWSE:00878` (undeclared; `name.inferred-commodity`) | `TWSE` | 0 | true | `{amount} shares ({leaf})` | absent | `2,000 shares (00878)` |
 | `NTD` | absent | 0 | true | absent | absent | `-190,000 NTD` |
 
-A `-5 CELSIUS` posting is shown as `-5 degrees Celsius`.
+A `-5 CELSIUS` posting is shown as `-5 degrees Celsius`. With `commodity USD` declaring `precision 2` and `format "${amount}"`, a `-1234.5 USD` posting is shown as `-$1,234.50`.
 
 | Ledger text | Result |
 | --- | --- |

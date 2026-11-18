@@ -84,7 +84,7 @@ Each subdirectory of `srcs/` is one module. Unit tests in `tests/` mirror `srcs/
 | `srcs/data/time/` | Accounting data core | Time values and axes; reading time text, with the rules shared by the parser and the API's time arguments; weeks; time predicates |
 | `srcs/data/source/` | Accounting data core | Logical paths and `resolvePath`; source spans and `position`; text patches; diagnostics, diagnostic codes and their severities |
 | `srcs/data/raw/` | Accounting data core | Raw model, anchor keys, `referencedSources` |
-| `srcs/data/model/` | Accounting data core | Derived model, the account hierarchy, `timeOnAxis`, text order, the values each ledger setting accepts |
+| `srcs/data/model/` | Accounting data core | Derived model, the account hierarchy, `timeOnAxis`, text order, the values each ledger setting accepts, values written for display (`display.ts`) |
 | `srcs/engine/hueke.ts` | Ledger engine | `Hueke` (`load`, `init`, its options) and `check` |
 | `srcs/engine/normalize/` | Ledger engine | One file per normalization step, in order: unsupported syntax, modules (include order, referenced modules and `module.*`), declarations, records, anchors and tags, group ledger conversion (`groups.ts`), splits and rules (`generate.ts`), `pad` expansion, validation; plus one file of helpers the steps share, which the query code and the financial modules also use |
 | `srcs/engine/query/` | Ledger engine | Query filters, grouping, the account tree, `balance` and `register` with settled obligations left out, `reconcile` |
@@ -105,19 +105,19 @@ Each document drives the code and tests listed here. When a document changes, th
 | Document | Code | Acceptance tests |
 | --- | --- | --- |
 | [core/values.md](core/values.md) | `srcs/data/values/`, `srcs/engine/normalize/records.ts` | `tests/cases/values.test.ts` |
-| [core/commodities.md](core/commodities.md) | `srcs/data/model/`, `srcs/data/values/number.ts` (aliases), `srcs/io/parser/identifiers.ts` (codes, formats), `srcs/cli/output.ts` (formats), `srcs/engine/normalize/declarations.ts`, `srcs/engine/normalize/validate.ts`, `srcs/engine/hueke.ts` | `tests/cases/commodities.test.ts` |
+| [core/commodities.md](core/commodities.md) | `srcs/data/model/`, `srcs/data/values/number.ts` (aliases), `srcs/io/parser/identifiers.ts` (codes, formats), `srcs/cli/output.ts` (where formats are used), `srcs/engine/normalize/declarations.ts`, `srcs/engine/normalize/validate.ts`, `srcs/engine/hueke.ts` | `tests/cases/commodities.test.ts` |
 | [core/time.md](core/time.md) | `srcs/data/time/`, `srcs/engine/normalize/declarations.ts`, `srcs/engine/normalize/records.ts` | `tests/cases/time.test.ts`, `tests/data/time/time.test.ts` |
 | [core/accounts.md](core/accounts.md) | `srcs/data/model/`, `srcs/engine/normalize/declarations.ts`, `srcs/engine/normalize/validate.ts` (allowed commodities, active periods), `srcs/engine/hueke.ts` | `tests/cases/accounts.test.ts` |
 | [core/anchors.md](core/anchors.md) | `srcs/data/raw/` (anchor keys), `srcs/engine/normalize/anchors.ts`, `srcs/engine/normalize/shared.ts` and `validate.ts` (refunds), `srcs/engine/query/` (`ids`), `srcs/finance/` (`refunds`) | `tests/cases/anchors.test.ts` |
 | [core/entities.md](core/entities.md) | `srcs/data/model/`, `srcs/engine/normalize/declarations.ts`, `srcs/engine/normalize/records.ts` | `tests/cases/entities.test.ts` |
-| [core/obligations.md](core/obligations.md) | `srcs/engine/normalize/declarations.ts` (inheritance), `srcs/engine/normalize/pad.ts`, `srcs/engine/normalize/validate.ts`, `srcs/engine/query/` (settled obligations), `srcs/finance/` | `tests/cases/obligations.test.ts` |
+| [core/obligations.md](core/obligations.md) | `srcs/data/model/account.ts` (where an account stands), `srcs/engine/normalize/declarations.ts` (inheritance), `srcs/engine/normalize/pad.ts`, `srcs/engine/normalize/validate.ts`, `srcs/engine/query/` (settled obligations), `srcs/finance/` | `tests/cases/obligations.test.ts` |
 | [core/transactions.md](core/transactions.md) | `srcs/data/model/`, `srcs/engine/normalize/records.ts`, `srcs/engine/normalize/validate.ts` | `tests/cases/transactions.test.ts` |
 | [core/balance.md](core/balance.md) | `srcs/engine/normalize/pad.ts`, `srcs/engine/normalize/validate.ts`, `srcs/engine/query/reconcile.ts` | `tests/cases/balance.test.ts` |
 | [core/generators.md](core/generators.md) | `srcs/data/model/`, `srcs/engine/normalize/generate.ts`, `srcs/engine/normalize/records.ts` (omitted amounts), `srcs/engine/normalize/validate.ts` | `tests/cases/generators.test.ts` |
 | [core/group-ledgers.md](core/group-ledgers.md) | `srcs/data/model/`, `srcs/engine/normalize/modules.ts`, `srcs/engine/normalize/declarations.ts`, `srcs/engine/normalize/groups.ts` | `tests/cases/group-ledgers.test.ts` |
 | [core/query.md](core/query.md) | `srcs/engine/query/`, `srcs/data/time/` (predicates) | `tests/cases/query.test.ts` |
 | [core/valuation.md](core/valuation.md) | `srcs/finance/valuation.ts` | `tests/cases/valuation.test.ts` |
-| [core/ledger.md](core/ledger.md) | `srcs/engine/hueke.ts`, `srcs/engine/normalize/`, `srcs/data/source/` (source positions, text patches), `srcs/io/parser/` (the module's text) | `tests/cases/ledger.test.ts`, `tests/data/source/source.test.ts` |
+| [core/ledger.md](core/ledger.md) | `srcs/engine/hueke.ts`, `srcs/engine/normalize/`, `srcs/data/source/` (source positions, text patches), `srcs/io/parser/` (the module's text), `srcs/data/model/order.ts` (`compareText`) | `tests/cases/ledger.test.ts`, `tests/data/source/source.test.ts` |
 | [core/modules.md](core/modules.md) | `srcs/engine/normalize/modules.ts`, `srcs/data/source/` (paths), `srcs/data/raw/` (`referencedSources`, including `source`) | `tests/cases/modules.test.ts`, `tests/data/source/paths.test.ts`, `tests/data/raw/include.test.ts` |
 | [core/settings.md](core/settings.md) | `srcs/data/model/` (setting values), `srcs/engine/normalize/declarations.ts`, `srcs/io/format/` (`setOption`) | `tests/cases/settings.test.ts` |
 | [core/diagnostics.md](core/diagnostics.md) | `srcs/data/source/`, `srcs/engine/normalize/unsupported.ts` | Every file in `tests/cases/` |
@@ -131,7 +131,7 @@ Each document drives the code and tests listed here. When a document changes, th
 
 - **Facts go in files.** Everything Core knows is written in the ledger text, including reconciliation marks, Balance assertions and IDs. Tools keep no state of their own.
 - **Reads never write.** Reports, queries and reconciliation views are API output. The DSL has no query syntax.
-- **Query and presentation are separate.** The API decides which records match and returns them whole, metadata included. Columns, order of columns and formatting belong to the presentation layer. Grouping that changes computed results belongs to the API; grouping only for display does not.
+- **Query and presentation are separate.** The API decides which records match and returns them whole, metadata included. Columns, order of columns and where values are shown belong to the presentation layer; Core only provides how a value is written for showing, so that every presentation writes it the same way (see [core/commodities.md](core/commodities.md), "API"). Grouping that changes computed results belongs to the API; grouping only for display does not.
 - Every function is pure: it takes Raw models or a loaded ledger and returns data. It does not read or write files.
 - Validation never throws. Problems in the ledger are returned as diagnostics (see [core/diagnostics.md](core/diagnostics.md)). Exceptions mean misuse of the API, such as initializing twice or passing a time the API cannot read.
 - The public API is exactly what the documents describe. Helpers used between modules are not exported.
@@ -139,13 +139,15 @@ Each document drives the code and tests listed here. When a document changes, th
 | Export | Described in |
 | --- | --- |
 | `parse` | [core/ledger.md](core/ledger.md), "API" |
-| `Hueke` (`load`, `init`), `check`, `position`, `anchorKey` | [core/ledger.md](core/ledger.md), "API" |
+| `Hueke` (`load`, `init`), `check`, `position`, `anchorKey`, `compareText` | [core/ledger.md](core/ledger.md), "API" |
 | `resolvePath`, `referencedSources` | [core/modules.md](core/modules.md), "API" |
 | `timeOnAxis` | [core/time.md](core/time.md), "API" |
+| `inAccount` | [core/accounts.md](core/accounts.md), "API" |
+| `valueText`, `formatText` | [core/commodities.md](core/commodities.md), "API" |
 | `sumValues`, `multiplyValues`, `negateValue`, `compareValues` | [core/values.md](core/values.md), "API" |
 | `query`, `balance`, `register`, `periodLabel` | [core/query.md](core/query.md), "API" |
 | `reconcile` | [core/balance.md](core/balance.md), "API" |
-| `obligations` | [core/obligations.md](core/obligations.md), "API" |
+| `obligations`, `obligationPlace` | [core/obligations.md](core/obligations.md), "API" |
 | `trades`, `holdings` | [core/valuation.md](core/valuation.md), "API" |
 | `refunds` | [core/anchors.md](core/anchors.md), "API" |
 | `serialize` | [dsl/formatting.md](dsl/formatting.md), "API" |

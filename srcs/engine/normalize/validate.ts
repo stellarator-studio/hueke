@@ -9,7 +9,7 @@ import type {
   Posting,
   Transaction,
 } from "../../data/model/types.js";
-import { obligationPlace } from "../../data/model/account.js";
+import { obligationPlaceIn } from "../../data/model/account.js";
 import type { Diagnostic, SourcePath } from "../../data/source/source.js";
 import { compareTime } from "../../data/time/time.js";
 import {
@@ -39,7 +39,7 @@ import {
   type RefundMeasure,
 } from "./shared.js";
 
-export interface ValidationInput {
+interface ValidationInput {
   readonly transactions: readonly Transaction[];
   readonly balances: readonly Balance[];
   readonly commodities: ReadonlyMap<Id, Commodity>;
@@ -192,7 +192,7 @@ function obligationPostings(input: ValidationInput, out: Diagnostic[]): void {
   const sources = new Map<Posting, SourcePath>();
   // Where a record is written: generated postings are not written anywhere.
   for (const b of input.balances)
-    if (obligationPlace(b.account, accounts)?.kind === "nested")
+    if (obligationPlaceIn(b.account, accounts)?.kind === "nested")
       out.push(
         diagnostic(
           "obligation.nested",
@@ -203,7 +203,7 @@ function obligationPostings(input: ValidationInput, out: Diagnostic[]): void {
       );
   for (const t of transactions)
     for (const p of t.postings) {
-      const place = obligationPlace(p.account, accounts);
+      const place = obligationPlaceIn(p.account, accounts);
       if (!place) continue;
       if (place.kind === "root" && t.origin)
         out.push(

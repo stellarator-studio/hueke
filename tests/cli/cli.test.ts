@@ -291,6 +291,9 @@ commodity FUND
     display-name Funds
     precision 2
     format {name}: {amount} [{code}]
+commodity USD
+    precision 2
+    format "\${amount}"
 
 2026-11-03 * "Buy"
     Assets:Broker:A    1000 TWSE:0050 @ 190 NTD
@@ -307,6 +310,10 @@ commodity FUND
 2026-11-06 * "Fund"
     Assets:Fund        12.5 FUND:x
     Bank:Checking      -125 NTD
+
+2026-11-07 * "Owed"
+    Assets:Owed     -1234.5 USD
+    Equity:Owed      1234.5 USD
 `;
   const files = { "/ledger/main.hueke": STOCKS };
   it("writes table amounts through the format, inherited by declared and undeclared codes", () => {
@@ -319,9 +326,12 @@ commodity FUND
         "2,000 shares (00878)      Assets:Broker:B\n",
     );
   });
-  it("writes a negative amount with its sign in place of {amount}", () => {
+  it("writes a negative amount with its sign before the whole text", () => {
     expect(hueke("balance Assets:Weather --file main.hueke", files).stdout).toBe(
       "-5 degrees Celsius  Assets (total)\n-5 degrees Celsius    Assets:Weather\n",
+    );
+    expect(hueke("balance Assets:Owed --file main.hueke", files).stdout).toBe(
+      "-$1,234.50  Assets (total)\n-$1,234.50    Assets:Owed\n",
     );
   });
   it("writes {name} as the code when the commodity has no display name, padded as usual", () => {

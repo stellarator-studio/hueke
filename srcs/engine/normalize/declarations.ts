@@ -16,7 +16,7 @@ import type {
   LedgerSettings,
   ObligationKind,
 } from "../../data/model/types.js";
-import { obligationPlace } from "../../data/model/account.js";
+import { obligationPlaceIn } from "../../data/model/account.js";
 import type { DeclarationData } from "../../data/raw/model.js";
 import type { Diagnostic, SourcePath, SourceSpan } from "../../data/source/source.js";
 import {
@@ -293,7 +293,7 @@ export function collectDeclarations(
   const effective = new Map<Id, Account>();
   const nested = new Set<Id>();
   for (const a of byDepth) {
-    const place = obligationPlace(a.id, effective);
+    const place = obligationPlaceIn(a.id, effective);
     if (place === undefined) {
       effective.set(a.id, a);
       continue;
@@ -309,7 +309,7 @@ export function collectDeclarations(
   }
   // An obligation has no sub-accounts: declaring one is reported, once.
   for (const [id, at] of accountDeclared) {
-    const place = obligationPlace(id, effective);
+    const place = obligationPlaceIn(id, effective);
     if (place?.kind === "nested" && !nested.has(id))
       report(
         "obligation.nested",
@@ -366,7 +366,7 @@ export function collectDeclarations(
  * declares one. `obligations` holds the obligation accounts.
  */
 export function inherit(account: Account, obligations: ReadonlyMap<Id, Account>): Account {
-  const place = obligationPlace(account.id, obligations);
+  const place = obligationPlaceIn(account.id, obligations);
   const root = place && obligations.get(place.root);
   if (!root?.obligation) return account;
   const padAccount = account.padAccount ?? root.padAccount;

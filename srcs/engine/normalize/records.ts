@@ -19,7 +19,7 @@ import type {
   Transaction,
 } from "../../data/model/types.js";
 import { anchorKey } from "../../data/raw/anchor.js";
-import { obligationPlace } from "../../data/model/account.js";
+import { obligationPlaceIn } from "../../data/model/account.js";
 import type {
   AnchorRef,
   BalanceData,
@@ -425,7 +425,7 @@ export function buildBalance(data: BalanceData, ctx: RecordContext): Balance | u
       const [ref] = data.entity === undefined ? [] : referencesOf(ctx, [data.entity], data.span);
       // On obligations, only a pad on one obligation names an entity
       // (docs/core/balance.md, "Obligations in Balance assertions").
-      const place = obligationPlace(data.account, ctx.accounts);
+      const place = obligationPlaceIn(data.account, ctx.accounts);
       if (ref && place && !(data.pad && place.kind === "obligation"))
         fail(
           ctx,

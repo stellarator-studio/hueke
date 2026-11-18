@@ -3,7 +3,7 @@
 import type { Id } from "./types.js";
 
 /** Whether `account` is `under` or one of its sub-accounts. */
-export const within = (account: Id, under: Id): boolean =>
+export const inAccount = (account: Id, under: Id): boolean =>
   account === under || account.startsWith(`${under}:`);
 
 /** Where an account stands among obligations (docs/core/obligations.md, "Obligation accounts"). */
@@ -16,7 +16,7 @@ export type ObligationPlace =
  * The obligation account `account` is in, if any: its outermost ancestor, itself included, that
  * has `obligation`. Obligation accounts are always declared, so `accounts` holds them.
  */
-export function obligationPlace(
+export function obligationPlaceIn(
   account: Id,
   accounts: ReadonlyMap<Id, { readonly obligation?: string }>,
 ): ObligationPlace | undefined {

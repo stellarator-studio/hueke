@@ -23,7 +23,7 @@ import {
 } from "../data/source/source.js";
 import { diagnostic } from "../data/source/diagnostics.js";
 import { compareTime } from "../data/time/time.js";
-import { obligationPlace } from "../data/model/account.js";
+import { obligationPlaceIn } from "../data/model/account.js";
 import { duplicateAnchors, resolveTags } from "./normalize/anchors.js";
 import {
   collectDeclarations,
@@ -309,7 +309,7 @@ export class Hueke {
         if (!accounts.has(account)) {
           accounts.set(account, inherit(makeAccount(account, declared.roots), declared.accounts));
           // An account inside an obligation account counts as declared.
-          const place = obligationPlace(account, declared.accounts);
+          const place = obligationPlaceIn(account, declared.accounts);
           if (strictAccount && !place)
             out.push(
               diagnostic("strict.undeclared", `account ${account} is not declared`, source, span),
