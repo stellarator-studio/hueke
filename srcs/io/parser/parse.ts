@@ -48,6 +48,7 @@ import {
   scopeError,
 } from "./identifiers.js";
 import { diagnostic, type Code } from "../../data/source/diagnostics.js";
+import { mapOf, sourceOf } from "../../data/raw/include.js";
 import { timeTextError } from "../../data/time/text.js";
 import type {
   AnchorRef,
@@ -593,9 +594,12 @@ class Builder {
     }
     const m = ctx as ModuleDeclContext;
     const description = m.STRING();
+    const kind = this.text(m.WORD().symbol);
+    if (kind !== "shared")
+      throw new BlockError("parse.syntax", `"${kind}" is not a kind of module`);
     return args(
       "module",
-      m.WORD().map((w) => this.text(w.symbol)),
+      [kind],
       description ? { description: unquote(this.text(description.symbol)) } : {},
     );
   }
@@ -632,7 +636,7 @@ class Builder {
           mark = t as "*" | "!" | "#";
           break;
         case P.ANCHOR:
-          anchor = definedAnchor(t, true);
+          anchor = definedAnchor(t, true, allowStatus);
           break;
         case P.STRING:
           description = unquote(t);
@@ -769,6 +773,27 @@ class Builder {
       }
     }
     if (block.kind === "account" && key === "primary") identifier(commodityError(line.value));
+    if (block.kind === "module" && key === "share") {
+      const member = `share ${moduleShare(line.value)}`;
+      if (block.seen.has(member))
+        throw new BlockError("parse.syntax", `${member.slice(6)} is already a member`);
+      block.seen.add(member);
+    }
+    if (block.kind === "account" && key === "source") {
+      const source = sourceOf(line.value);
+      if (!source)
+        throw new BlockError(
+          "parse.syntax",
+          `source takes a path, then "as <name>" or "as ^<name>": "${line.value}"`,
+        );
+      identifier(anchorError(source.as));
+    }
+    if (block.kind === "account" && key === "self") {
+      if (!line.value.startsWith("@") || /\s/.test(line.value))
+        throw new BlockError("parse.syntax", `self takes one entity: "${line.value}"`);
+      identifier(entityError(line.value.slice(1)));
+    }
+    if (block.kind === "account" && key === "map") mapping(line.value);
     if (key === "display-name" && line.value === "")
       throw new BlockError("parse.syntax", "display-name needs a text");
     if (key === "obligation" && line.value !== "receivable" && line.value !== "payable")
@@ -1145,9 +1170,27 @@ function slotOf(text: string): PostingData["slot"] {
     : undefined;
 }
 
-/** `%name` or `%name/period`. */
-function definedAnchor(text: string, allowPeriod: boolean): AnchorRef {
-  const body = text.slice(1);
+/**
+ * `%name` or `%name/period`, with or without `tag:`; `%shared:<name>` where `shared` is true, on a
+ * transaction header (docs/core/anchors.md, "Scoped anchors").
+ */
+function definedAnchor(text: string, allowPeriod: boolean, shared = false): AnchorRef {
+  let body = text.slice(1);
+  const colon = body.indexOf(":");
+  if (colon >= 0) {
+    const scope = body.slice(0, colon);
+    body = body.slice(colon + 1);
+    if (scope === "shared") {
+      if (!shared)
+        throw new BlockError("parse.syntax", `only a transaction header may define "${text}"`);
+      return sharedName(text, body);
+    }
+    if (scope !== "tag")
+      throw new BlockError(
+        "parse.syntax",
+        `the scope of an anchor must be tag or shared: "${text}"`,
+      );
+  }
   const slash = body.indexOf("/");
   if (slash < 0) return { name: anchorName(body) };
   if (!allowPeriod) throw new BlockError("parse.syntax", `"${text}" cannot have a period`);
@@ -1189,6 +1232,7 @@ function tag(text: string): TagData {
   return {
     ...(scope !== undefined && { scope }),
     ref: {
+      ...(scope === "shared" && { scope }),
       ...(module !== undefined && { module }),
       name,
       ...(slash >= 0 && { period: period(ref.slice(slash + 1)) }),
@@ -1196,14 +1240,33 @@ function tag(text: string): TagData {
   };
 }
 
-/** `^x` or `^tag:x`; the scope of a primary tag can only be `tag`. */
+/** `^x`, `^tag:x` or `^shared:<name>`. */
 function primary(text: string): TagData {
   const body = text.slice(1);
   const colon = body.indexOf(":");
   if (colon < 0) return { ref: { name: anchorName(body) } };
-  if (body.slice(0, colon) !== "tag")
-    throw new BlockError("parse.syntax", `the scope of a primary tag must be tag: "${text}"`);
-  return { scope: "tag", ref: { name: anchorName(body.slice(colon + 1)) } };
+  const scope = body.slice(0, colon);
+  if (scope === "shared") return { scope, ref: sharedName(text, body.slice(colon + 1)) };
+  if (scope !== "tag")
+    throw new BlockError(
+      "parse.syntax",
+      `the scope of a primary tag must be tag or shared: "${text}"`,
+    );
+  return { scope, ref: { name: anchorName(body.slice(colon + 1)) } };
+}
+
+/**
+ * The group ledger name of `%shared:<name>` or `^shared:<name>`. An anchor of a group transaction,
+ * `shared:<name>:<anchor>`, is only ever defined by conversion, and the name takes no period.
+ */
+function sharedName(text: string, name: string): AnchorRef {
+  if (name.includes(":"))
+    throw new BlockError(
+      "parse.syntax",
+      `"${text}" names a group transaction; only #shared: may name one`,
+    );
+  if (name.includes("/")) throw new BlockError("parse.syntax", `"${text}" cannot have a period`);
+  return { scope: "shared", name: anchorName(name) };
 }
 
 /** `;; key: value`: 1 is everything up to the key, 2 the key, 3 the value. */
@@ -1215,6 +1278,38 @@ function metaValue(text: string): string {
   if (text.includes(";"))
     throw new BlockError("parse.syntax", "a Metadata value with ; must be quoted");
   return text;
+}
+
+/**
+ * `share @<entity> <ratio>` in a `module` declaration, returning `@<entity>`; the ratio is read
+ * during normalization.
+ */
+function moduleShare(value: string): string {
+  const m = /^@(\S+)\s+(\S+)$/.exec(value);
+  if (!m) throw new BlockError("parse.syntax", `share takes @<entity> and a ratio: "${value}"`);
+  identifier(entityError(m[1] ?? ""));
+  if ((m[2] ?? "").startsWith("-"))
+    throw new BlockError("parse.syntax", `a ratio cannot be negative: "${m[2] ?? ""}"`);
+  return `@${m[1] ?? ""}`;
+}
+
+/** `map <account> -> <account>`, `map @<entity> -> @<entity>`, `map commodity <code> -> <code>`. */
+function mapping(value: string): void {
+  const m = mapOf(value);
+  if (!m) throw new BlockError("parse.syntax", `map takes a name, "->" and a name: "${value}"`);
+  const { from, to } = m;
+  if (m.commodity) {
+    identifier(commodityError(from));
+    identifier(commodityError(to));
+  } else if (from.startsWith("@") || to.startsWith("@")) {
+    if (!from.startsWith("@") || !to.startsWith("@"))
+      throw new BlockError("parse.syntax", `map an entity to an entity: "${value}"`);
+    identifier(entityError(from.slice(1)));
+    identifier(entityError(to.slice(1)));
+  } else {
+    identifier(accountError(from));
+    identifier(accountError(to));
+  }
 }
 
 function unquote(s: string): string {

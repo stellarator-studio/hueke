@@ -29,7 +29,7 @@ const LETTER = /^[\p{L}_]/u;
 /** Channel of comments and Metadata, kept out of the parser. */
 export const NOTE_CHANNEL = 2;
 
-export type LexError = (offset: number, message: string) => void;
+type LexError = (offset: number, message: string) => void;
 
 export class HandLexer implements TokenSource {
   line = 1;

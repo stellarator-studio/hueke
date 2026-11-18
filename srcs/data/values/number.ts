@@ -47,14 +47,14 @@ export function aliasTableOf<E extends AliasEntry>(
 
 export class NumberError extends Error {}
 
-export interface ParsedNumber {
+interface ParsedNumber {
   readonly value: Decimal;
   readonly decimals: number; // digits after the decimal mark, as written
   /** The expression as written, such as "-(1000/3)"; absent for a plain number. */
   readonly expression?: string;
 }
 
-export interface ParsedAmount extends ParsedNumber {
+interface ParsedAmount extends ParsedNumber {
   readonly commodity: Id;
 }
 
@@ -140,14 +140,14 @@ export function parseAmount(text: string, format: NumberFormat, aliases: AliasTa
 }
 
 /** The parts of a breakdown figure, as written: `3cups * 40 NTD = 120 NTD` (docs/dsl/records.md). */
-export interface FigureParts {
+interface FigureParts {
   readonly quantity?: { readonly number: string; readonly unit?: string };
   readonly unitPrice?: string;
   readonly total?: string;
 }
 
 /** A number of a breakdown figure, with the commodity written beside it, if any. */
-export interface FigureValue extends ParsedNumber {
+interface FigureValue extends ParsedNumber {
   readonly commodity?: Id;
 }
 

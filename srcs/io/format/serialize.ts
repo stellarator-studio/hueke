@@ -77,10 +77,10 @@ class Writer {
   transaction(t: TransactionData): string[] {
     const head = [t.accounting === undefined ? t.effective : `${t.effective}=${t.accounting}`];
     if (t.mark) head.push(t.mark);
-    if (t.anchor) head.push(`%${anchorText(t.anchor)}`);
+    if (t.anchor) head.push(`%${scopedText(t.anchor)}`);
     if (t.description !== undefined) head.push(quote(t.description));
     head.push(...t.refs.map(reference));
-    if (t.primaryTag) head.push(`^${anchorText(t.primaryTag.ref)}`);
+    if (t.primaryTag) head.push(`^${scopedText(t.primaryTag.ref)}`);
     head.push(...t.tags.map(tag));
     const out = [trail(head.join(" "), t.trailer)];
     for (const line of t.lines) {
@@ -334,6 +334,11 @@ function anchorText(ref: AnchorRef): string {
   if (ref.module !== undefined) throw new Unwritable(`the module of #shared:${ref.module}:`);
   if (ref.period !== undefined) throw new Unwritable(`the period after ${ref.name}`);
   return ref.name;
+}
+
+/** After `%` or `^`: `shared:` before a group ledger's name, never `tag:`. */
+function scopedText(ref: AnchorRef): string {
+  return `${ref.scope === undefined ? "" : `${ref.scope}:`}${anchorText(ref)}`;
 }
 
 /** `@NAT`, never `@person:NAT`. */

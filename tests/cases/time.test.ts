@@ -1,6 +1,6 @@
 // docs/core/time.md
 import { describe, expect, it } from "vitest";
-import { balance, query, reconcile, timeOnAxis } from "../../srcs/index.js";
+import { balance, query, reconcile, timeOnAxis, timeText } from "../../srcs/index.js";
 import {
   balanceOf,
   codes,
@@ -322,6 +322,25 @@ describe("time axes", () => {
     expect(codes(g)).toEqual(["posting.pnl-effective"]);
     expect(g.transactions[0]?.postings[0]?.effective.literal).toBe("2026-10-12");
     expect(balanceOf(g, "Expenses:Food", "2026-10-12")).toBe("180");
+  });
+});
+
+describe("writing a time for display", () => {
+  // The ledger reads its times in Asia/Taipei; the accounting time is the one written last.
+  it.each([
+    ["2025-01-26T20:11", "Asia/Tokyo", "2025-01-26T20:11[Asia/Taipei]"],
+    ["2025-03-25", "Asia/Tokyo", "2025-03-25[Asia/Taipei]"],
+    [
+      "2025-03-01=2025-03-01..2025-03-31",
+      "Asia/Tokyo",
+      "2025-03-01[Asia/Taipei]..2025-03-31[Asia/Taipei]",
+    ],
+    ["2025-01-26T19:11", "Asia/Taipei", "2025-01-26T19:11"],
+    ["2025-01-26T19:11[Asia/Taipei]", "Asia/Tokyo", "2025-01-26T19:11[Asia/Taipei]"],
+    ["2025-01-26T20:11[Asia/Tokyo]", "Asia/Taipei", "2025-01-26T20:11[Asia/Tokyo]"],
+  ])("%s, given %s, is %s", (written, zone, shown) => {
+    const tx = at(written).transactions[0];
+    expect(tx && timeText(tx.accounting, zone)).toBe(shown);
   });
 });
 

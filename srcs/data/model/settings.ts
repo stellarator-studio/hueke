@@ -5,7 +5,7 @@
 import { isTimeZone } from "../time/time.js";
 import type { LedgerSettings, Weekday } from "./types.js";
 
-export const SETTING_NAMES = [
+const SETTING_NAMES = [
   "timezone",
   "pad-account",
   "week-start",

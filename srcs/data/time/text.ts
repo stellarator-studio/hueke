@@ -1,6 +1,9 @@
 // Time errors that can be told from the text alone (parse.invalid-time), shared by the parser (for
 // times and for period labels after an anchor) and the API's time arguments (docs/core/time.md, "Times given to the API"). Weeks that need
-// `option week-start` (such as a missing W53) are checked when the time is read.
+// `option week-start` (such as a missing W53) are checked when the time is read. Also how a time
+// value is written for display (`timeText`).
+
+import type { TimeValue } from "./types.js";
 
 /** One point of a time value, as written; groups: year, week, month, day, hour, minute, offset, zone. */
 export const POINT =
@@ -48,4 +51,16 @@ function pointError(point: string): string | undefined {
 function daysInMonth(year: number, month: number): number {
   if (month === 2) return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+/**
+ * A time value as written; when it was read in a zone other than `timezone` and its text names
+ * none, each point followed by its zone in brackets (docs/core/time.md, "API").
+ */
+export function timeText(value: TimeValue, timezone: string): string {
+  if (value.timezone === timezone || value.literal.includes("[")) return value.literal;
+  return value.literal
+    .split("..")
+    .map((point) => (point === "" ? point : `${point}[${value.timezone}]`))
+    .join("..");
 }

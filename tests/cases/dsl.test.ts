@@ -629,6 +629,59 @@ describe("symbols", () => {
   });
 });
 
+describe("scoped anchors", () => {
+  const LINES = "    Expenses:Food  1 NTD\n    Assets:Cash\n";
+  const diagnosed = (text: string): string[] =>
+    parse("main.hueke", text).diagnostics.map((d) => d.code);
+  it("reads %tag:x as %x", () => {
+    const h = ledger(`2026-10-12 * %tag:lunch "x"\n${LINES}`);
+    expect(codes(h)).toEqual([]);
+    expect(h.transactions[0]?.id).toBe("lunch");
+  });
+  it("reads %shared:<name>, ^shared:<name> and #shared:<name> on a transaction header", () => {
+    const data = parse(
+      "main.hueke",
+      `2026-10-12 %shared:trip "Trip"\n\n2026-10-13 * "x" ^shared:trip #shared:trip\n${LINES}`,
+    );
+    expect(data.diagnostics).toEqual([]);
+    const [event, member] = data.items;
+    expect(event).toMatchObject({ kind: "transaction", anchor: { scope: "shared", name: "trip" } });
+    expect(member).toMatchObject({
+      kind: "transaction",
+      primaryTag: { scope: "shared", ref: { scope: "shared", name: "trip" } },
+      tags: [{ scope: "shared", ref: { scope: "shared", name: "trip" } }],
+    });
+    expect(member).not.toHaveProperty("primaryTag.ref.module");
+  });
+  it.each([
+    ["an anchor with another scope", `2026-10-12 * %refund:a "x"\n${LINES}`],
+    [
+      "an anchor with another scope and a name that breaks the rule",
+      `2026-10-12 * %refund:a.1 "x"\n${LINES}`,
+    ],
+    ["a primary tag with another scope", `2026-10-12 * "x" ^refund:a\n${LINES}`],
+    [
+      "%shared: on a posting",
+      `2026-10-12 * "x"\n    Expenses:Food  1 NTD %shared:trip\n    Assets:Cash\n`,
+    ],
+    ["%shared: on an account", "account Bank:Checking %shared:trip\n"],
+    ["%shared: on a rule", "rule %shared:trip\n"],
+    ["%shared: naming a group transaction", `2026-10-12 * %shared:trip:hotel "x"\n${LINES}`],
+    ["^shared: naming a group transaction", `2026-10-12 * "x" ^shared:trip:hotel\n${LINES}`],
+    ["%shared: with a period", `2026-10-12 * %shared:trip/2026 "x"\n${LINES}`],
+    ["^shared: with a period", `2026-10-12 * "x" ^shared:trip/2026\n${LINES}`],
+  ])("rejects %s", (_, text) => {
+    expect(diagnosed(text)).toEqual(["parse.syntax"]);
+    expect(parse("main.hueke", text).items).toEqual([]);
+  });
+  it.each([
+    ["%shared:", '2026-10-12 %shared:trip.1 "x"\n'],
+    ["^shared:", '2026-10-12 "x" ^shared:trip.1\n'],
+  ])("rejects a name after %s that breaks the anchor rule", (_, text) => {
+    expect(diagnosed(text)).toEqual(["anchor.invalid-name"]);
+  });
+});
+
 describe("Balance lines", () => {
   it("take no posting line", () => {
     const h = ledger("2026-10-12 balance Assets:Cash 0 NTD\n    Assets:Cash  1 NTD\n");
@@ -791,7 +844,6 @@ entity NAT
 
 describe("properties that may repeat", () => {
   it.each([
-    ["map on an account", "account Assets:Wallet\n    map Cash\n    map Purse\n"],
     [
       "share on a transaction",
       '2026-10-12 "x"\n    share @NAT\n    share @AMY\n    Expenses:Food  2 NTD\n    Assets:Cash\n',
@@ -1055,5 +1107,92 @@ describe("commodity display names and formats", () => {
   });
   it("format is a keyword and cannot be a commodity code", () => {
     expect(codes(ledger("commodity format\n"))).toEqual(["parse.syntax"]);
+  });
+});
+
+describe("group ledgers and shared accounts", () => {
+  const SHARED_ACCOUNT = "account-root Shared shared\naccount Shared:trip\n";
+  it("reads a module declaration and its shares", () => {
+    const data = parse(
+      "trip.hueke",
+      'module shared "Tokyo trip"\n    share @AMY 1\n    share @BOB 0.5\n',
+    );
+    expect(data.diagnostics).toEqual([]);
+    expect(data.items[0]).toMatchObject({
+      kind: "module",
+      args: ["shared"],
+      description: "Tokyo trip",
+      lines: [
+        { kind: "property", key: "share", value: "@AMY 1" },
+        { kind: "property", key: "share", value: "@BOB 0.5" },
+      ],
+    });
+  });
+  it("reads a module declaration without a description", () => {
+    const data = parse("trip.hueke", "module shared\n    share @AMY 1\n");
+    expect(data.diagnostics).toEqual([]);
+    expect(data.items[0]).toMatchObject({ kind: "module", args: ["shared"] });
+    expect(data.items[0]).not.toHaveProperty("description");
+  });
+  it.each([
+    ["another kind", "module private\n"],
+    ["a module with a name", 'module shared tokyo-trip "Tokyo trip"\n'],
+    ["a module with a name and no description", "module shared trip\n"],
+    ["a module with something after the description", 'module shared "Tokyo trip" trip\n'],
+    ["share self", "module shared\n    share self 1\n"],
+    ["share without a ratio", "module shared\n    share @AMY\n"],
+    ["a negative ratio", "module shared\n    share @AMY -1\n"],
+    ["a member twice", "module shared\n    share @AMY 1\n    share @AMY 2\n"],
+    ["source without as", `${SHARED_ACCOUNT}    source trip.hueke\n`],
+    ["source with as and no name", `${SHARED_ACCOUNT}    source trip.hueke as\n`],
+    ["source with as ^ and no name", `${SHARED_ACCOUNT}    source trip.hueke as ^\n`],
+    ["source with ^ apart from the name", `${SHARED_ACCOUNT}    source trip.hueke as ^ tokyo\n`],
+    [
+      "source with as ^ and a name that is not an anchor",
+      `${SHARED_ACCOUNT}    source trip.hueke as ^a:b\n`,
+    ],
+    [
+      "source with something else after the path",
+      `${SHARED_ACCOUNT}    source trip.hueke for tokyo\n`,
+    ],
+    ["source with a name that is not an anchor", `${SHARED_ACCOUNT}    source trip.hueke as a:b\n`],
+    ["self without @", `${SHARED_ACCOUNT}    self AMY\n`],
+    ["self with two entities", `${SHARED_ACCOUNT}    self @AMY @BOB\n`],
+    ["map without ->", `${SHARED_ACCOUNT}    map Pay Assets:Cash\n`],
+    ["map from an entity to an account", `${SHARED_ACCOUNT}    map @AMY -> Assets:Cash\n`],
+    [
+      "map commodity with a code that is not one",
+      `${SHARED_ACCOUNT}    map commodity 1NTD -> NTD\n`,
+    ],
+  ])("rejects %s", (_, text) => {
+    expect(parse("main.hueke", text).diagnostics.map((d) => d.code)).toEqual(["parse.syntax"]);
+  });
+  it.each([
+    ["a path", "source trips/tokyo.hueke as tokyo", { path: "trips/tokyo.hueke", as: "tokyo" }],
+    [
+      "a name taking a primary tag",
+      "source trips/tokyo.hueke as ^tokyo",
+      { path: "trips/tokyo.hueke", as: "tokyo", primary: true },
+    ],
+    [
+      "a quoted path",
+      'source "trips/tokyo trip.hueke" as tokyo',
+      { path: "trips/tokyo trip.hueke", as: "tokyo" },
+    ],
+  ])("reads source with %s", (_, line, expected) => {
+    const h = ledger(`${SHARED_ACCOUNT}    ${line}\n    self @AMY\n`, {
+      prelude: "option timezone UTC",
+    });
+    const shared = h.accounts.find((a) => a.id === "Shared:trip")?.shared;
+    expect(shared).toMatchObject({ source: expected.path, as: expected.as });
+    if ("primary" in expected) expect(shared?.primary).toBe(true);
+    else expect(shared).not.toHaveProperty("primary");
+  });
+  it("accepts every kind of map, repeated", () => {
+    const data = parse(
+      "main.hueke",
+      `${SHARED_ACCOUNT}    map Pay -> Assets:Cash\n    map Food -> Expenses:Food\n    map @AMY -> @AMY_CHEN\n    map commodity TWD -> NTD\n`,
+    );
+    expect(data.diagnostics).toEqual([]);
   });
 });

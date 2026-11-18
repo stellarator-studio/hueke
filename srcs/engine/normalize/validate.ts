@@ -9,7 +9,7 @@ import type {
   Posting,
   Transaction,
 } from "../../data/model/types.js";
-import { obligationPlace } from "../../data/model/account.js";
+import { obligationPlaceIn } from "../../data/model/account.js";
 import type { Diagnostic, SourcePath } from "../../data/source/source.js";
 import { compareTime } from "../../data/time/time.js";
 import {
@@ -39,13 +39,18 @@ import {
   type RefundMeasure,
 } from "./shared.js";
 
-export interface ValidationInput {
+interface ValidationInput {
   readonly transactions: readonly Transaction[];
   readonly balances: readonly Balance[];
   readonly commodities: ReadonlyMap<Id, Commodity>;
   readonly accounts: ReadonlyMap<Id, Account>;
   readonly obligations: ObligationEntities;
   readonly decimals: ReadonlyMap<Posting, number>;
+  /** The transactions of each group ledger, with its commodities: each must balance. */
+  readonly groups: readonly {
+    readonly transactions: readonly Transaction[];
+    readonly commodities: ReadonlyMap<Id, Commodity>;
+  }[];
 }
 
 export function validate(input: ValidationInput): Diagnostic[] {
@@ -80,6 +85,9 @@ export function validate(input: ValidationInput): Diagnostic[] {
         );
     }
   }
+
+  for (const g of input.groups)
+    for (const t of g.transactions) unbalanced(t, g.commodities, t.source, out);
 
   itemBalances(transactions, commodities, out);
   hardBalances(input, out);
@@ -166,10 +174,16 @@ function hardBalances(input: ValidationInput, out: Diagnostic[]): void {
     if (b.mode !== "hard") continue;
     const commodity = b.amount.commodity;
     const belongs = balanceBelongs(b, input.accounts, input.obligations);
-    const recorded = balanceAt(index, b.account, commodity, b.effective, belongs);
+    const { total: recorded, fractions } = balanceAt(
+      index,
+      b.account,
+      commodity,
+      b.effective,
+      belongs,
+    );
     const asserted = rational(b.amount.value);
-    if (withinHalfUnit(sub(recorded, asserted), commodities.get(commodity)?.precision ?? 0))
-      continue;
+    const precision = commodities.get(commodity)?.precision ?? 0;
+    if (withinHalfUnit(sub(recorded, asserted), precision, fractions ? 2 : 1)) continue;
     const uncleared = unclearedBetween(transactions, b, before, belongs)
       .map((p) => `${p.effective.localDate} ${p.amount.value}`)
       .join(", ");
@@ -192,7 +206,7 @@ function obligationPostings(input: ValidationInput, out: Diagnostic[]): void {
   const sources = new Map<Posting, SourcePath>();
   // Where a record is written: generated postings are not written anywhere.
   for (const b of input.balances)
-    if (obligationPlace(b.account, accounts)?.kind === "nested")
+    if (obligationPlaceIn(b.account, accounts)?.kind === "nested")
       out.push(
         diagnostic(
           "obligation.nested",
@@ -203,7 +217,7 @@ function obligationPostings(input: ValidationInput, out: Diagnostic[]): void {
       );
   for (const t of transactions)
     for (const p of t.postings) {
-      const place = obligationPlace(p.account, accounts);
+      const place = obligationPlaceIn(p.account, accounts);
       if (!place) continue;
       if (place.kind === "root" && t.origin)
         out.push(

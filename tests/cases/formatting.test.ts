@@ -119,6 +119,23 @@ Expenses:Food  180 NTD
 `,
     ]);
   });
+  it("writes the shared scope of an anchor and a primary tag, and drops tag:", () => {
+    const text = `2026-10-12   %shared:trip   "Trip"
+
+2026-10-13 *  "Hotel"  ^shared:trip   #shared:trip
+    Expenses:Lodging  8000 NTD
+    Assets:Cash
+
+2026-10-14 *  %tag:lunch  "Lunch"  ^tag:food
+    Expenses:Food  100 NTD
+    Assets:Cash
+`;
+    expect(canonical(text)).toEqual([
+      '2026-10-12 %shared:trip "Trip"\n',
+      '2026-10-13 * "Hotel" ^shared:trip #shared:trip\n    Expenses:Lodging  8,000 NTD\n    Assets:Cash\n',
+      '2026-10-14 * %lunch "Lunch" ^food\n    Expenses:Food  100 NTD\n    Assets:Cash\n',
+    ]);
+  });
   it("writes a total price", () => {
     const text = `2026-10-12 * "Shares"\n    Assets:Brokerage   5 AAPL  @@  850 USD\n    Bank:USDAccount\n`;
     expect(canonical(text)).toEqual([

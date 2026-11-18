@@ -3,7 +3,7 @@
 // under the merged root (docs/core/accounts.md, "Combined income and expense").
 
 import type { Hueke } from "../hueke.js";
-import { within } from "../../data/model/account.js";
+import { inAccount } from "../../data/model/account.js";
 import { compareText } from "../../data/model/order.js";
 import type { Amount, Id, Posting } from "../../data/model/types.js";
 import { add, decimal, rational, ZERO, type Rational } from "../../data/values/decimal.js";
@@ -20,7 +20,7 @@ export interface RegisterRow extends AccountTreeRow {
 }
 
 /** The name each account is shown under; unchanged unless `income-expense` is on. */
-export function shownAccount(hueke: Hueke): (account: Id) => Id {
+export function mergedPnlAccount(hueke: Hueke): (account: Id) => Id {
   const merged = hueke.settings.incomeExpenseRoot;
   if (merged === undefined) return (account) => account;
   const types = new Map(hueke.roots.map((r) => [r.name, r.type]));
@@ -36,7 +36,7 @@ export function shownAccount(hueke: Hueke): (account: Id) => Id {
 
 /** Rows in account order, a subtotal before the account's own row; postings keep their order. */
 export function accountTree(hueke: Hueke, postings: readonly Posting[]): RegisterRow[] {
-  const show = shownAccount(hueke);
+  const show = mergedPnlAccount(hueke);
   const own = new Map<Id, Posting[]>();
   for (const p of postings) {
     const account = show(p.account);
@@ -51,7 +51,7 @@ export function accountTree(hueke: Hueke, postings: readonly Posting[]): Registe
   for (const account of new Set([...own.keys(), ...parents])) {
     const depth = account.split(":").length;
     if (parents.has(account)) {
-      const under = [...own].filter(([a]) => within(a, account));
+      const under = [...own].filter(([a]) => inAccount(a, account));
       rows.push({
         account,
         depth,

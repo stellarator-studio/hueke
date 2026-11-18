@@ -2,7 +2,7 @@
 
 import { obligationEntitiesOf, sourceOrder, type Hueke } from "../hueke.js";
 import { entitiesOf } from "../normalize/shared.js";
-import { within } from "../../data/model/account.js";
+import { inAccount } from "../../data/model/account.js";
 import { timeOnAxis, transactionTime } from "../../data/model/axis.js";
 import type {
   Account,
@@ -20,7 +20,7 @@ import { anchorKey } from "../../data/raw/anchor.js";
 import type { AnchorRef } from "../../data/raw/model.js";
 import { compareTime, matches, timeInput, type Predicate } from "../../data/time/time.js";
 import { GroupedQuery, type GroupKey, type Grouped, type Hit } from "./group.js";
-import { shownAccount } from "./tree.js";
+import { mergedPnlAccount } from "./tree.js";
 
 /** A time value, or its DSL text read with the ledger's time zone and week start. */
 export type TimeInput = TimeValue | string;
@@ -247,7 +247,7 @@ function evaluate(q: Query): {
 } {
   const { hueke, state: s } = inner(q);
   const axis = s.axis ?? "effective";
-  const show = shownAccount(hueke);
+  const show = mergedPnlAccount(hueke);
   const read: Reader = {
     show,
     accounts: new Map(hueke.accounts.map((a) => [a.id, a])),
@@ -309,7 +309,7 @@ function postingMatches(
   if (
     s.accounts &&
     !s.accounts.some(
-      (a) => account !== undefined && (within(account, a) || within(show(account), a)),
+      (a) => account !== undefined && (inAccount(account, a) || inAccount(show(account), a)),
     )
   )
     return false;
@@ -330,11 +330,21 @@ function postingMatches(
 }
 
 function tagKey(t: TagInput): { scope: string; key: string } {
-  if (typeof t !== "string") return { scope: t.scope ?? "tag", key: anchorKey(t.ref) };
+  if (typeof t !== "string") {
+    const scope = t.scope ?? "tag";
+    // A `shared` tag's anchor is in the `shared` namespace, whether or not the ref says so.
+    const ref =
+      scope === "shared" && t.ref.scope === undefined
+        ? { ...t.ref, scope: "shared" as const }
+        : t.ref;
+    return { scope, key: anchorKey(ref) };
+  }
   const body = t.startsWith("#") ? t.slice(1) : t;
   const colon = body.indexOf(":");
   if (colon < 0)
     throw new Error(`query.tag-without-scope: "${t}": write a tag in full, such as "tag:${body}"`);
-  // The text after the scope is written as `anchorKey` gives it, `#shared:<module>:` included.
-  return { scope: body.slice(0, colon), key: body.slice(colon + 1) };
+  // The text after the scope is written as `anchorKey` gives it, `<module>:` included; in the
+  // `shared` namespace, the key keeps the scope (docs/core/anchors.md, "Concepts").
+  const scope = body.slice(0, colon);
+  return { scope, key: scope === "shared" ? body : body.slice(colon + 1) };
 }

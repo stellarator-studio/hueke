@@ -1,6 +1,6 @@
 // docs/core/ledger.md
 import { describe, expect, it } from "vitest";
-import { check, Hueke, parse, position } from "../../srcs/index.js";
+import { check, compareText, Hueke, parse, position } from "../../srcs/index.js";
 import type { Diagnostic } from "../../srcs/index.js";
 import { balanceOf, codes, descriptions, diagnostics, ledger, modules } from "./ledger.js";
 
@@ -16,7 +16,6 @@ describe("unsupported syntax", () => {
       "paid-by",
       '2026-10-12 "x"\n    Expenses:Food  2 NTD\n        paid-by @NAT\n    Assets:Cash\n',
     ],
-    ["a shared root", "account-root Trip shared\n"],
     [
       "a statement cycle",
       "account Liabilities:Card\n    statement\n        from 2026-01-25\n        every 1 month\n",
@@ -36,13 +35,9 @@ describe("unsupported syntax", () => {
         "    cap 1000 NTD per year\n    active 2026-07..\n    fixed 15 NTD\n    cap-group cashback\n" +
         "    Income:Cashback  amount\n    Liabilities:Card\n",
     ],
-    ["module", 'module trip shared "trip.hueke"\n'],
     ["an account active", "account Assets:Wallet\n    active 2026-01-01\n"],
     ["an account allow", "account Assets:Wallet\n    allow NTD\n"],
     ["an account deny", "account Assets:Wallet\n    deny NTD\n"],
-    ["an account source", "account Assets:Wallet\n    source bank\n"],
-    ["an account self", "account Assets:Wallet\n    self\n"],
-    ["an account map", "account Assets:Wallet\n    map Cash\n"],
   ])("%s is reported and not loaded", (_, text) => {
     const h = ledger(`${text}\n${LUNCH}`);
     expect(codes(h)).toEqual(["syntax.unsupported"]);
@@ -54,7 +49,6 @@ describe("unsupported syntax", () => {
     ["statement", "#statement:card"],
     ["fulfills", "#fulfills:order"],
     ["rule", "#rule:tax"],
-    ["shared", "#shared:trip:hotel"],
   ])("a tag with the scope %s does not load its transaction", (_, tag) => {
     for (const text of [
       `2026-10-13 * "Dinner" ${tag}\n    Expenses:Food  300 NTD\n    Assets:Cash\n`,
@@ -417,5 +411,32 @@ describe("IDs", () => {
     expect(first?.id).toBe("~2");
     expect(first?.postings.map((p) => p.id)).toEqual(["p_x", "~2.2"]);
     expect(h.transactions.map((t) => t.id)).toEqual(["~1", "~2", "~3"]);
+  });
+});
+
+describe("compareText", () => {
+  it("returns zero for equal texts and sorts a prefix first", () => {
+    expect(compareText("Bank", "Bank")).toBe(0);
+    expect(compareText("", "")).toBe(0);
+    expect(compareText("Bank", "Bank:Checking")).toBeLessThan(0);
+    expect(compareText("Bank:Checking", "Bank")).toBeGreaterThan(0);
+    expect(compareText("", "a")).toBeLessThan(0);
+  });
+  it("compares by code point, not by locale", () => {
+    expect(compareText("B", "a")).toBeLessThan(0);
+    expect(compareText("a", "B")).toBeGreaterThan(0);
+    expect(compareText("Z", "É")).toBeLessThan(0);
+    expect(["b", "B", "a", "A"].sort(compareText)).toEqual(["A", "B", "a", "b"]);
+  });
+  it("compares by code point, not by UTF-16 code unit", () => {
+    // U+20000 is written with surrogates (0xD840 0xDC00), below U+FF71 as code units.
+    const byCodeUnit = (a: string, b: string): boolean => a < b;
+    expect(byCodeUnit("𠀀", "ｱ")).toBe(true);
+    expect(compareText("𠀀", "ｱ")).toBeGreaterThan(0);
+    expect(compareText("ｱ", "𠀀")).toBeLessThan(0);
+    expect(compareText("𠀀", "�")).toBeGreaterThan(0);
+    expect(compareText("x𠀀", "xｱ")).toBeGreaterThan(0);
+    expect(["𠀀", "ｱ", "a"].sort(compareText)).toEqual(["a", "ｱ", "𠀀"]);
+    expect(compareText("𠀀", "𠀀")).toBe(0);
   });
 });

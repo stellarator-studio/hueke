@@ -118,6 +118,44 @@ describe("loading", () => {
       "9,000 NTD  Bank (total)",
     );
   });
+  const SHARED =
+    "account-root Shared shared\naccount Shared:trip\n    source trips/trip.hueke as trip\n" +
+    "    self @ME\n    map Expenses -> Expenses:Travel\n    map Pay -> Liabilities:Card\n";
+  it("reads the group ledgers that shared accounts refer to", () => {
+    const files = {
+      "/ledger/main.hueke": `${MAIN}${SHARED}`,
+      "/ledger/trips/trip.hueke":
+        "module shared\n    share @ME 1\n    share @AMY 1\naccount-root Pay asset\n" +
+        '2026-10-20 * "Dinner"\n    Expenses:Food  1000 NTD\n    Pay:Card  -1000 NTD @ME\n',
+    };
+    const r = hueke("balance Shared --file main.hueke --at 2026-10-31", files);
+    expect(r).toMatchObject({ status: 0, stderr: "" });
+    expect(r.stdout).toContain("500 NTD    Shared:trip");
+    const missing = hueke("check --file main.hueke", { "/ledger/main.hueke": `${MAIN}${SHARED}` });
+    expect(missing.stdout).toBe(
+      "main.hueke:21:5: error shared.unknown-module: Shared:trip: trips/trip.hueke is not loaded\n",
+    );
+  });
+  it("shows the zone of times read in another zone than the ledger's", () => {
+    const files = {
+      "/ledger/main.hueke": `${MAIN}${SHARED}`,
+      "/ledger/trips/trip.hueke":
+        "module shared\n    share @ME 1\n    share @AMY 1\n" +
+        "option timezone Asia/Tokyo\naccount-root Pay asset\n" +
+        '2026-10-20T19:00 * "Dinner"\n    Expenses:Food  1000 NTD\n    Pay:Card  -1000 NTD @ME\n' +
+        '2026-10-21 * "Lunch"\n    Expenses:Food  600 NTD\n    Pay:Card  -600 NTD @AMY\n',
+    };
+    const r = hueke("query Shared --file main.hueke --format csv", files);
+    expect(r).toMatchObject({ status: 0, stderr: "" });
+    expect(r.stdout.split("\n").map((l) => l.split(",")[0])).toEqual([
+      "date",
+      "2026-10-20T19:00[Asia/Tokyo]",
+      "2026-10-21[Asia/Tokyo]",
+      "",
+    ]);
+    const own = hueke("query Bank:Checking --file main.hueke --format csv", files);
+    expect(own.stdout).not.toContain("[");
+  });
   it("leaves out an included file it cannot read", () => {
     const files = { "/ledger/main.hueke": `${MAIN}include missing.hueke\n` };
     const r = hueke("balance Bank --file main.hueke --at 2026-10-31", files);
@@ -291,6 +329,9 @@ commodity FUND
     display-name Funds
     precision 2
     format {name}: {amount} [{code}]
+commodity USD
+    precision 2
+    format "\${amount}"
 
 2026-11-03 * "Buy"
     Assets:Broker:A    1000 TWSE:0050 @ 190 NTD
@@ -307,6 +348,10 @@ commodity FUND
 2026-11-06 * "Fund"
     Assets:Fund        12.5 FUND:x
     Bank:Checking      -125 NTD
+
+2026-11-07 * "Owed"
+    Assets:Owed     -1234.5 USD
+    Equity:Owed      1234.5 USD
 `;
   const files = { "/ledger/main.hueke": STOCKS };
   it("writes table amounts through the format, inherited by declared and undeclared codes", () => {
@@ -319,9 +364,12 @@ commodity FUND
         "2,000 shares (00878)      Assets:Broker:B\n",
     );
   });
-  it("writes a negative amount with its sign in place of {amount}", () => {
+  it("writes a negative amount with its sign before the whole text", () => {
     expect(hueke("balance Assets:Weather --file main.hueke", files).stdout).toBe(
       "-5 degrees Celsius  Assets (total)\n-5 degrees Celsius    Assets:Weather\n",
+    );
+    expect(hueke("balance Assets:Owed --file main.hueke", files).stdout).toBe(
+      "-$1,234.50  Assets (total)\n-$1,234.50    Assets:Owed\n",
     );
   });
   it("writes {name} as the code when the commodity has no display name, padded as usual", () => {
@@ -867,6 +915,53 @@ account Bank:Checking %main-bank
         "anchor,2026-10-11,transaction,t_lunch,Lunch\n" +
         "member,2026-10-24,transaction,~5,Lunch partly refunded\n",
     );
+  });
+  it("reads ^tag:x as ^x", () => {
+    const trip = withObligations(`
+2026-10-18 %trip "Trip"
+
+2026-10-19 * "Hotel" ^trip
+    Expenses:Lodging     8000 NTD
+    Bank:Checking       -8000 NTD
+`);
+    expect(hueke("group ^tag:trip --file main.hueke --format csv", trip).stdout).toBe(
+      hueke("group ^trip --file main.hueke --format csv", trip).stdout,
+    );
+  });
+  const TRIP = {
+    "/ledger/main.hueke":
+      `${OBLIGATIONS}account-root Shared shared\naccount Shared:trip\n` +
+      "    source trips/trip.hueke as ^trip\n    self @ME\n" +
+      "    map Expenses -> Expenses:Travel\n    map Pay -> Liabilities:Card\n\n" +
+      '2026-10-19 %shared:trip "Trip"\n\n' +
+      '2026-10-21 * "Card bill" #shared:trip:dinner\n    Shared:trip  1000 NTD\n    Assets:Cash\n',
+    "/ledger/trips/trip.hueke":
+      "module shared\n    share @ME 1\n    share @AMY 1\naccount-root Pay asset\n" +
+      '2026-10-20 * %dinner "Dinner"\n    Expenses:Food  1000 NTD\n    Pay:Card  -1000 NTD @ME\n',
+  };
+  it("lists a group ledger's event, then its converted transactions", () => {
+    expect(
+      hueke(["group", "^shared:trip", "--file", "main.hueke", "--format", "csv"], TRIP),
+    ).toEqual({
+      status: 0,
+      stdout:
+        "role,date,kind,id,description\n" +
+        "anchor,2026-10-19,transaction,shared:trip,Trip\n" +
+        "member,2026-10-20,transaction,shared:trip:dinner,Dinner\n",
+      stderr: "",
+    });
+  });
+  it("lists a group transaction, then its actual payment", () => {
+    expect(
+      hueke(["group", "#shared:trip:dinner", "--file", "main.hueke", "--format", "csv"], TRIP),
+    ).toEqual({
+      status: 0,
+      stdout:
+        "role,date,kind,id,description\n" +
+        "anchor,2026-10-20,transaction,shared:trip:dinner,Dinner\n" +
+        "member,2026-10-21,transaction,~5,Card bill\n",
+      stderr: "",
+    });
   });
   it("a tag without a scope is a usage error", () => {
     const r = hueke("group #travel --file main.hueke", files);

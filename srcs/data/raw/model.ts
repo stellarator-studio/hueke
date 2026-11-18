@@ -50,11 +50,13 @@ interface Line {
  * every place that names the same Anchor has the same `anchorKey`.
  * - `%lunch`, `#lunch`: { name: "lunch" }
  * - `%esun-card/2026-10`, `#statement:esun-card/2026-10`: { name: "esun-card", period: "2026-10" }
- * - `#shared:trip:t1`: { module: "trip", name: "t1" }
+ * - `%shared:trip`, `#shared:trip`, `^shared:trip`: { scope: "shared", name: "trip" }
+ * - `#shared:trip:t1`: { scope: "shared", module: "trip", name: "t1" }
  */
 export interface AnchorRef {
   readonly name: string;
   readonly period?: string; // period key after a Cycle name, as written: "2026-10", "n3"
+  readonly scope?: "shared"; // the namespace of the group ledgers; absent for scope `tag`
   readonly module?: string; // only in `#shared:<module>:<anchor>`
 }
 

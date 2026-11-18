@@ -8,62 +8,60 @@ import type { ItemData, PostingData, TagData } from "../../data/raw/model.js";
 import type { Diagnostic, SourcePath } from "../../data/source/source.js";
 import { diagnostic } from "../../data/source/diagnostics.js";
 
-const DECLARATIONS = new Set(["schedule", "installment", "rule", "module"]);
-const ROOT_TYPES = new Set(["shared"]);
+const DECLARATIONS = new Set(["schedule", "installment", "rule"]);
 const PROPERTIES = new Set([
   "entity type",
   "account active",
   "account allow",
   "account deny",
   "account statement",
-  "account source",
-  "account self",
-  "account map",
   "transaction share",
   "transaction into",
 ]);
 
 /**
  * The items Core supports, and the transactions it does not, marked dropped; reports every
- * unsupported item. Other unsupported items are left out.
+ * unsupported item. Other unsupported items are left out. With `group` set, for a group ledger,
+ * a posting's split is not reported: conversion reads it (docs/core/group-ledgers.md, "Group
+ * ledgers").
  */
 export function supported(
   items: readonly ItemData[],
   source: SourcePath,
   out: Diagnostic[],
+  group = false,
 ): { item: ItemData; dropped?: true }[] {
   return items.flatMap((item) => {
-    const what = unsupported(item);
+    const what = unsupported(item, group);
     if (what === undefined) return [{ item }];
     out.push(diagnostic("syntax.unsupported", `${what} is not supported yet`, source, item.span));
     return item.kind === "transaction" ? [{ item, dropped: true as const }] : [];
   });
 }
 
-function unsupported(item: ItemData): string | undefined {
+function unsupported(item: ItemData, group: boolean): string | undefined {
   if (item.kind === "balance") return undefined;
   if (item.kind === "transaction") {
     for (const line of item.lines)
       if (line.kind === "property" && PROPERTIES.has(`transaction ${line.key}`)) return line.key;
     if (item.anchor?.period !== undefined) return "a period after an anchor";
     for (const p of item.postings) {
-      const what = posting(p);
+      const what = posting(p, group);
       if (what !== undefined) return what;
     }
     return tags(item.tags);
   }
   if (DECLARATIONS.has(item.kind)) return item.kind;
-  if (item.kind === "account-root" && ROOT_TYPES.has(item.args[1] ?? ""))
-    return `account-root of type ${item.args[1] ?? ""}`;
   for (const line of item.lines)
     if (line.kind === "property" && PROPERTIES.has(`${item.kind} ${line.key}`))
       return `${item.kind} ${line.key}`;
   return undefined;
 }
 
-function posting(p: PostingData): string | undefined {
-  for (const line of p.lines)
-    if (line.kind === "split" || line.kind === "paid-by") return line.kind;
+function posting(p: PostingData, group: boolean): string | undefined {
+  if (!group)
+    for (const line of p.lines)
+      if (line.kind === "split" || line.kind === "paid-by") return line.kind;
   return tags(p.tags);
 }
 

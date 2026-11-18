@@ -1,15 +1,17 @@
 // `obligations` (docs/core/obligations.md, "`obligations`"): one row per obligation and commodity,
 // with its progress. Settled obligations are left out unless `all` is set.
 
-import { obligationPlace, within } from "../data/model/account.js";
+import { inAccount, obligationPlaceIn, type ObligationPlace } from "../data/model/account.js";
 import { compareText } from "../data/model/order.js";
-import type { Amount, Id, TimeValue } from "../data/model/types.js";
+import type { Account, Amount, Id, TimeValue } from "../data/model/types.js";
 import { timeInput } from "../data/time/time.js";
 import { decimal, sub } from "../data/values/decimal.js";
 import { initialized, obligationEntitiesOf, type Hueke } from "../engine/hueke.js";
 import { isSettled, progress } from "../engine/query/obligations.js";
 import { compareAccounts } from "../engine/query/tree.js";
 import type { TimeInput } from "../engine/query/query.js";
+
+export type { ObligationPlace };
 
 export interface ObligationsOptions {
   /** Obligation accounts or obligations, sub-accounts included; every obligation account if absent. */
@@ -35,21 +37,33 @@ export interface ObligationProgress {
   readonly postings: readonly Id[];
 }
 
+/** Each ledger's accounts by ID, kept: a ledger never changes after `init`. */
+const keptAccounts = new WeakMap<Hueke, ReadonlyMap<Id, Account>>();
+
+function accountsOf(ledger: Hueke): ReadonlyMap<Id, Account> {
+  let accounts = keptAccounts.get(ledger);
+  if (!accounts) {
+    accounts = new Map(ledger.accounts.map((a) => [a.id, a]));
+    keptAccounts.set(ledger, accounts);
+  }
+  return accounts;
+}
+
 export function obligations(ledger: Hueke, options: ObligationsOptions = {}): ObligationProgress[] {
   if (!initialized(ledger)) throw new Error("obligations() before init()");
   const { timezone, weekStart } = ledger.settings;
   const at = options.at === undefined ? undefined : timeInput(options.at, { timezone, weekStart });
-  const accounts = new Map(ledger.accounts.map((a) => [a.id, a]));
+  const accounts = accountsOf(ledger);
   const entities = obligationEntitiesOf(ledger);
   // An account given that is neither an obligation account nor inside one matches nothing; an
   // empty list is no list.
   const given =
     options.accounts && options.accounts.length > 0
-      ? options.accounts.filter((a) => obligationPlace(a, accounts) !== undefined)
+      ? options.accounts.filter((a) => obligationPlaceIn(a, accounts) !== undefined)
       : undefined;
   const rows: ObligationProgress[] = [];
   for (const [account, byCommodity] of progress(ledger, at)) {
-    if (given && !given.some((a) => within(account, a))) continue;
+    if (given && !given.some((a) => inAccount(account, a))) continue;
     const who = [...(entities.get(account) ?? [])].sort(compareText);
     if (options.entity !== undefined && !who.includes(options.entity)) continue;
     const settled = [...byCommodity].map(([c, p]) => isSettled(ledger, c, p));
@@ -75,4 +89,13 @@ export function obligations(ledger: Hueke, options: ObligationsOptions = {}): Ob
   return rows.sort(
     (a, b) => compareAccounts(a.account, b.account) || compareText(a.commodity, b.commodity),
   );
+}
+
+/**
+ * Where an account stands among obligations (docs/core/obligations.md, "API"); undefined for an
+ * account that is neither an obligation account nor inside one.
+ */
+export function obligationPlace(ledger: Hueke, account: Id): ObligationPlace | undefined {
+  if (!initialized(ledger)) throw new Error("obligationPlace() before init()");
+  return obligationPlaceIn(account, accountsOf(ledger));
 }

@@ -1,54 +1,18 @@
 // Presentation for the CLI (docs/cli.md, "Output"): tables and CSV. Nothing here changes what the
 // API computed.
 
-import type { Amount, Hueke, LedgerSettings } from "../index.js";
+import { formatText, valueText, type Amount, type Hueke } from "../index.js";
 
 export type Format = "table" | "csv";
 
-type Marks = Pick<LedgerSettings, "decimalMark" | "groupMark">;
-
-/**
- * Writes a value for a table, without its commodity: in the ledger's marks, padded with zeros up to
- * the commodity's precision, never dropping digits. A fraction is grouped but not padded.
- */
-export function valueText(hueke: Hueke): (a: Amount) => string {
-  const precisions = new Map(hueke.commodities.map((c) => [c.id, c.precision]));
-  return (a) => {
-    const slash = a.value.indexOf("/");
-    if (slash >= 0)
-      return `${number(a.value.slice(0, slash), 0, hueke.settings)}/${number(a.value.slice(slash + 1), 0, hueke.settings)}`;
-    return number(a.value, precisions.get(a.commodity) ?? 0, hueke.settings);
-  };
-}
-
 /**
  * Writes an amount for a table: its value as `valueText` writes it, through the commodity's format,
- * or followed by its commodity when it has none (docs/core/commodities.md, "Display names and
- * formats").
+ * or followed by its commodity when it has none (docs/core/commodities.md, "API").
  */
 export function amountText(hueke: Hueke): (a: Amount) => string {
   const value = valueText(hueke);
   const commodities = new Map(hueke.commodities.map((c) => [c.id, c]));
-  return (a) => {
-    const c = commodities.get(a.commodity);
-    if (c?.format === undefined) return `${value(a)} ${a.commodity}`;
-    const fields: Record<string, string> = {
-      amount: value(a),
-      code: c.id,
-      leaf: c.id.slice(c.id.lastIndexOf(":") + 1),
-      name: c.displayName ?? c.id,
-    };
-    return c.format.replace(/\{(amount|code|leaf|name)\}/g, (_, key: string) => fields[key] ?? "");
-  };
-}
-
-function number(value: string, precision: number, marks: Marks): string {
-  const negative = value.startsWith("-");
-  const [whole = "", fraction = ""] = (negative ? value.slice(1) : value).split(".");
-  const grouped =
-    marks.groupMark === null ? whole : whole.replace(/\B(?=(\d{3})+$)/g, marks.groupMark);
-  const digits = fraction.padEnd(precision, "0");
-  return `${negative ? "-" : ""}${grouped}${digits ? `${marks.decimalMark}${digits}` : ""}`;
+  return (a) => formatText(commodities.get(a.commodity) ?? { id: a.commodity }, value(a));
 }
 
 /** Columns separated by two spaces; columns listed in `right` are right-aligned. */

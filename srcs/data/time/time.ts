@@ -148,13 +148,7 @@ function dateText(year: number, month: number, day: number): string {
 
 /** The local date `days` after one, as text; the date is valid. */
 function addDays(date: string, days: number): string {
-  const d = new Date(0);
-  d.setUTCFullYear(
-    Number(date.slice(0, 4)),
-    Number(date.slice(5, 7)) - 1,
-    Number(date.slice(8)) + days,
-  );
-  return dateText(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  return dateOfDayNumber(dayNumberOf(date) + days);
 }
 
 /** A local date and time, read as if it were UTC, in epoch milliseconds. */

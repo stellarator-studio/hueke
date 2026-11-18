@@ -1,6 +1,6 @@
 // docs/core/accounts.md
 import { describe, expect, it } from "vitest";
-import { balance, check, position, query, register } from "../../srcs/index.js";
+import { balance, check, inAccount, position, query, register } from "../../srcs/index.js";
 import { codes, diagnostics, ledger, rows } from "./ledger.js";
 
 const account = (h: ReturnType<typeof ledger>, id: string) => h.accounts.find((a) => a.id === id);
@@ -504,5 +504,33 @@ account Bank
 `);
     expect(codes(h)).toEqual(["balance.missing-pad-account"]);
     expect(account(h, "Bank:Checking")).not.toHaveProperty("padAccount");
+  });
+});
+
+describe("inAccount", () => {
+  it("includes the account itself and its sub-accounts at any depth", () => {
+    expect(inAccount("Bank", "Bank")).toBe(true);
+    expect(inAccount("Bank:Checking", "Bank")).toBe(true);
+    expect(inAccount("Bank:Checking:Sub", "Bank")).toBe(true);
+    expect(inAccount("Bank:Checking:Sub", "Bank:Checking")).toBe(true);
+  });
+  it("compares whole segments", () => {
+    expect(inAccount("Bank-X", "Bank")).toBe(false);
+    expect(inAccount("BankX", "Bank")).toBe(false);
+    expect(inAccount("BankX:Checking", "Bank")).toBe(false);
+  });
+  it("does not include an account in its sub-account or a sibling", () => {
+    expect(inAccount("Bank", "Bank:Checking")).toBe(false);
+    expect(inAccount("Bank:Savings", "Bank:Checking")).toBe(false);
+  });
+  it("answers for accounts the ledger does not list", () => {
+    const h = ledger(`
+2026-10-12 * "Withdrawal"
+    Assets:Cash          500 NTD
+    Bank:Checking       -500 NTD
+`);
+    expect(h.accounts.some((a) => a.id === "Bank:Elsewhere:Deep")).toBe(false);
+    expect(inAccount("Bank:Elsewhere:Deep", "Bank")).toBe(true);
+    expect(inAccount("Nowhere:Account", "Nowhere")).toBe(true);
   });
 });
